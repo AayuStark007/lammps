@@ -86,6 +86,46 @@ struct LAMMPS_NS::package_styles_lists {
   std::map<std::string,std::string> region_styles;
 };
 
+static const char *BENCH_LJ = R"(
+# 3d Lennard-Jones melt
+
+variable	x index 1
+variable	y index 1
+variable	z index 1
+
+variable	xx equal 20*$x
+variable	yy equal 20*$y
+variable	zz equal 20*$z
+
+units		lj
+atom_style	atomic
+
+lattice		fcc 0.8442
+region		box block 0 ${xx} 0 ${yy} 0 ${zz}
+create_box	1 box
+create_atoms	1 box
+mass		1 1.0
+
+velocity	all create 1.44 87287 loop geom
+
+pair_style	lj/cut 2.5
+pair_coeff	1 1 1.0 1.0 2.5
+
+neighbor	0.3 bin
+neigh_modify	delay 0 every 20 check no
+
+fix		1 all nve
+
+run		100
+)";
+
+static const char* lookup_bench_script(const char *name)
+{
+  if (strcmp(name, "lj") == 0) return BENCH_LJ;
+  // TODO: add more benchmarks
+  return nullptr;
+}
+
 using namespace LAMMPS_NS;
 
 /** \class LAMMPS_NS::LAMMPS
@@ -195,6 +235,10 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
   int citelogfile = CiteMe::VERBOSE;
   char *citefile = nullptr;
   int helpflag = 0;
+
+  // custom [dinos]
+  int benchflag = 0;
+  char *benchname = nullptr;
 
   suffix = suffix2 = suffixp = nullptr;
   suffix_enable = 0;
@@ -428,6 +472,12 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
       iarg += 3;
       while (iarg < narg && arg[iarg][0] != '-') iarg++;
 
+    } else if (strcmp(arg[iarg], "-bench") == 0) {
+      if (iarg+2 > narg) error->universe_all(FLERR, "Invalid command line argument");
+      benchflag = 1;
+      benchname = arg[iarg+1];
+      iarg += 2;
+      continue;
     } else error->universe_all(FLERR,"Invalid command-line argument");
   }
 
@@ -503,7 +553,16 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
     world = universe->uworld;
 
     if (universe->me == 0) {
-      if (inflag == 0) infile = stdin;
+      if (benchflag) {
+        const char *script_text = lookup_bench_script(benchname);
+        if (!script_text) {
+          error->one(FLERR, "Unknown -bench name");
+        }
+        infile = fmemopen((void*)script_text, strlen(script_text), "r");
+        if (!infile) {
+          error->one(FLERR, "Failed to open in-memory file");
+        }
+      } else if (inflag == 0) infile = stdin;
       else if (strcmp(arg[inflag], "none") == 0) infile = stdin;
       else infile = fopen(arg[inflag],"r");
       if (infile == nullptr)
@@ -576,6 +635,17 @@ LAMMPS::LAMMPS(int narg, char **arg, MPI_Comm communicator) :
         infile = fopen(arg[inflag],"r");
         if (infile == nullptr)
           error->one(FLERR,"Cannot open input script {}: {}",arg[inflag], utils::getsyserror());
+      }
+      
+      if (benchflag) {
+        const char *script_text = lookup_bench_script(benchname);
+        if (!script_text) {
+          error->one(FLERR, "Unknown -bench name");
+        }
+        infile = fmemopen((void*)script_text, strlen(script_text), "r");
+        if (!infile) {
+          error->one(FLERR, "Failed to open in-memory file");
+        }
       }
     }
 
