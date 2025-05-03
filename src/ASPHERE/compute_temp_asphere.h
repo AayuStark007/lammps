@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(temp/asphere,ComputeTempAsphere);
-// clang-format on
+
+ComputeStyle(temp/asphere,ComputeTempAsphere)
+
 #else
 
 #ifndef LMP_COMPUTE_TEMP_ASPHERE_H
@@ -35,20 +35,18 @@ class ComputeTempAsphere : public Compute {
 
   void remove_bias(int, double *);
   void restore_bias(int, double *);
-  void remove_bias_thr(int, double *, double *);
-  void restore_bias_thr(int, double *, double *);
 
  private:
   int mode;
   double tfactor;
   char *id_bias;
-  class Compute *tbias;    // ptr to additional bias compute
+  class Compute *tbias;              // ptr to additional bias compute
   class AtomVecEllipsoid *avec;
 
   void dof_compute();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -67,7 +65,7 @@ Self-explanatory.
 
 E: Compute temp/asphere requires extended particles
 
-This compute cannot be used with point particles.
+This compute cannot be used with point paritlces.
 
 E: Could not find compute ID for temperature bias
 

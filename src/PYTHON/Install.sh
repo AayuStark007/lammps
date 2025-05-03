@@ -26,14 +26,16 @@ action () {
   fi
 }
 
-# force rebuild of files using python header
+# force rebuild of files with LMP_KOKKOS switch
+# also variable so its *.d dependence on changed python_wrapper.h is rebuilt
 
-touch ../lmppython.h
+touch ../python_wrapper.h
+touch ../variable.cpp
 
 # all package files with no dependencies
 
 for file in *.cpp *.h; do
-  test -f ${file} && action $file
+  action $file
 done
 
 # edit 2 Makefile.package files to include/exclude package info

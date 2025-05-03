@@ -15,7 +15,7 @@
 
 #include <iostream>
 #include <cassert>
-#include <cmath>
+#include <math.h>
 
 #include "lal_gayberne.h"
 

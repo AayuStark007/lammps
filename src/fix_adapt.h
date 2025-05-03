@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(adapt,FixAdapt);
-// clang-format on
+
+FixStyle(adapt,FixAdapt)
+
 #else
 
 #ifndef LMP_FIX_ADAPT_H
@@ -26,7 +26,7 @@ namespace LAMMPS_NS {
 
 class FixAdapt : public Fix {
  public:
-  int diamflag;    // 1 if atom diameters will vary, for AtomVecGranular
+  int diamflag;        // 1 if atom diameters will vary, for AtomVecGranular
   int chgflag;
 
   FixAdapt(class LAMMPS *, int, char **);
@@ -37,34 +37,27 @@ class FixAdapt : public Fix {
   void setup_pre_force(int);
   void pre_force(int);
   void post_run();
-  void setup_pre_force_respa(int, int);
-  void pre_force_respa(int, int, int);
+  void setup_pre_force_respa(int,int);
+  void pre_force_respa(int,int,int);
   void set_arrays(int);
-  void write_restart(FILE *);
-  void restart(char *);
 
  private:
-  int nadapt, resetflag, scaleflag, massflag;
-  int anypair, anybond;
+  int nadapt,resetflag,scaleflag;
+  int anypair;
   int nlevels_respa;
-  char *id_fix_diam, *id_fix_chg;
-  class FixStore *fix_diam, *fix_chg;
-  double previous_diam_scale, previous_chg_scale;
-  int discflag;
+  char *id_fix_diam,*id_fix_chg;
+  class FixStore *fix_diam,*fix_chg;
 
   struct Adapt {
-    int which, ivar;
+    int which,ivar;
     char *var;
-    char *pstyle, *pparam;
-    char *bstyle, *bparam;
-    int ilo, ihi, jlo, jhi;
-    int pdim, bdim;
-    double *scalar, scalar_orig;
-    double *vector, *vector_orig;
-    double **array, **array_orig;
+    char *pstyle,*pparam;
+    int ilo,ihi,jlo,jhi;
+    int pdim;
+    double *scalar,scalar_orig;
+    double **array,**array_orig;
     int aparam;
     class Pair *pair;
-    class Bond *bond;
   };
 
   Adapt *adapt;
@@ -74,7 +67,7 @@ class FixAdapt : public Fix {
   void restore_settings();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -114,18 +107,6 @@ Self-explanatory
 E: Fix adapt type pair range is not valid for pair hybrid sub-style
 
 Self-explanatory.
-
-E: Fix adapt bond style does not exist
-
-UNDOCUMENTED
-
-E: Fix adapt bond style param not supported
-
-UNDOCUMENTED
-
-E: Fix adapt does not support bond_style hybrid
-
-UNDOCUMENTED
 
 E: Fix adapt kspace style does not exist
 

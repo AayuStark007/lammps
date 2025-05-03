@@ -58,7 +58,7 @@ inline int _host_alloc(mat_type &mat, copy_type &cm, const size_t n,
   cl_int error_flag;
   cl_context context;
   CL_SAFE_CALL(clGetMemObjectInfo(cm.cbegin(),CL_MEM_CONTEXT,sizeof(context),
-                                  &context,nullptr));
+                                  &context,NULL));
 
   cl_mem_flags buffer_perm;
   cl_map_flags map_perm;
@@ -103,12 +103,12 @@ inline int _host_alloc(mat_type &mat, copy_type &cm, const size_t n,
       map_perm=CL_MAP_READ | CL_MAP_WRITE;
   }
 
-  mat.cbegin()=clCreateBuffer(context,buffer_perm,n,nullptr,&error_flag);
+  mat.cbegin()=clCreateBuffer(context,buffer_perm,n,NULL,&error_flag);
   if (error_flag != CL_SUCCESS)
     return UCL_MEMORY_ERROR;
-  *mat.host_ptr() = (typename mat_type::data_type*)
-    clEnqueueMapBuffer(cm.cq(),mat.cbegin(),CL_TRUE,
-		       map_perm,0,n,0,NULL,NULL,NULL);
+    *mat.host_ptr() = (typename mat_type::data_type*)
+                      clEnqueueMapBuffer(cm.cq(),mat.cbegin(),CL_TRUE,
+                                         map_perm,0,n,0,NULL,NULL,NULL);
 
   mat.cq()=cm.cq();
   CL_SAFE_CALL(clRetainCommandQueue(mat.cq()));
@@ -116,15 +116,18 @@ inline int _host_alloc(mat_type &mat, copy_type &cm, const size_t n,
 }
 
 template <class mat_type, class copy_type>
-inline int _host_view(mat_type &mat, copy_type &cm, const size_t o,
-                      const size_t n) {
+inline int _host_view(mat_type &mat, copy_type &cm, const size_t n) {
   cl_int error_flag;
-  cl_buffer_region subbuffer;
-  subbuffer.origin = o;
-  subbuffer.size = n;
-  mat.cbegin()=clCreateSubBuffer(cm.cbegin(), 0,
-                                 CL_BUFFER_CREATE_TYPE_REGION, &subbuffer,
-                                 &error_flag);
+  cl_context context;
+  CL_SAFE_CALL(clGetMemObjectInfo(cm.cbegin(),CL_MEM_CONTEXT,sizeof(context),
+                                  &context,NULL));
+  cl_mem_flags orig_flags;
+  CL_SAFE_CALL(clGetMemObjectInfo(cm.cbegin(),CL_MEM_FLAGS,sizeof(orig_flags),
+                                  &orig_flags,NULL));
+  orig_flags=orig_flags & ~CL_MEM_ALLOC_HOST_PTR;
+
+  mat.cbegin()=clCreateBuffer(context, CL_MEM_USE_HOST_PTR | orig_flags, n,
+                              *mat.host_ptr(), &error_flag);
 
   CL_CHECK_ERR(error_flag);
   CL_SAFE_CALL(clRetainCommandQueue(mat.cq()));
@@ -156,13 +159,13 @@ inline int _host_alloc(mat_type &mat, UCL_Device &dev, const size_t n,
   }
 
   cl_int error_flag;
-  mat.cbegin()=clCreateBuffer(dev.context(),buffer_perm,n,nullptr,&error_flag);
+  mat.cbegin()=clCreateBuffer(dev.context(),buffer_perm,n,NULL,&error_flag);
   if (error_flag != CL_SUCCESS)
     return UCL_MEMORY_ERROR;
 
   *mat.host_ptr() = (typename mat_type::data_type*)
                     clEnqueueMapBuffer(dev.cq(),mat.cbegin(),CL_TRUE,
-                                       map_perm,0,n,0,nullptr,nullptr,nullptr);
+                                       map_perm,0,n,0,NULL,NULL,NULL);
   mat.cq()=dev.cq();
   CL_SAFE_CALL(clRetainCommandQueue(mat.cq()));
   return UCL_SUCCESS;
@@ -191,10 +194,10 @@ inline int _host_resize(mat_type &mat, const size_t n) {
   cl_int error_flag;
   cl_context context;
   CL_SAFE_CALL(clGetMemObjectInfo(mat.cbegin(),CL_MEM_CONTEXT,sizeof(context),
-                                  &context,nullptr));
+                                  &context,NULL));
   cl_mem_flags buffer_perm;
   CL_SAFE_CALL(clGetMemObjectInfo(mat.cbegin(),CL_MEM_FLAGS,sizeof(buffer_perm),
-                                  &buffer_perm,nullptr));
+                                  &buffer_perm,NULL));
 
   CL_DESTRUCT_CALL(clReleaseMemObject(mat.cbegin()));
 
@@ -206,12 +209,12 @@ inline int _host_resize(mat_type &mat, const size_t n) {
   else
     map_perm=CL_MAP_READ | CL_MAP_WRITE;
 
-  mat.cbegin()=clCreateBuffer(context,buffer_perm,n,nullptr,&error_flag);
+  mat.cbegin()=clCreateBuffer(context,buffer_perm,n,NULL,&error_flag);
   if (error_flag != CL_SUCCESS)
     return UCL_MEMORY_ERROR;
   *mat.host_ptr() = (typename mat_type::data_type*)
                     clEnqueueMapBuffer(mat.cq(),mat.cbegin(),CL_TRUE,
-                                       map_perm,0,n,0,nullptr,nullptr,nullptr);
+                                       map_perm,0,n,0,NULL,NULL,NULL);
   return UCL_SUCCESS;
 }
 
@@ -226,7 +229,7 @@ inline int _device_alloc(mat_type &mat, copy_type &cm, const size_t n,
 
   cl_context context;
   CL_SAFE_CALL(clGetMemObjectInfo(cm.cbegin(),CL_MEM_CONTEXT,sizeof(context),
-               &context,nullptr));
+               &context,NULL));
   cl_mem_flags flag;
   if (kind==UCL_READ_WRITE)
     flag=CL_MEM_READ_WRITE;
@@ -244,7 +247,7 @@ inline int _device_alloc(mat_type &mat, copy_type &cm, const size_t n,
     #endif
   else
     assert(0==1);
-  mat.cbegin()=clCreateBuffer(context,flag,n,nullptr,&error_flag);
+  mat.cbegin()=clCreateBuffer(context,flag,n,NULL,&error_flag);
   if (error_flag != CL_SUCCESS)
     return UCL_MEMORY_ERROR;
   mat.cq()=cm.cq();
@@ -273,7 +276,7 @@ inline int _device_alloc(mat_type &mat, UCL_Device &dev, const size_t n,
     #endif
   else
     assert(0==1);
-  mat.cbegin()=clCreateBuffer(dev.context(),flag,n,nullptr,
+  mat.cbegin()=clCreateBuffer(dev.context(),flag,n,NULL,
                               &error_flag);
   if (error_flag != CL_SUCCESS)
     return UCL_MEMORY_ERROR;
@@ -318,7 +321,7 @@ inline int _device_resize(mat_type &mat, const size_t n) {
 
   cl_context context;
   CL_SAFE_CALL(clGetMemObjectInfo(mat.cbegin(),CL_MEM_CONTEXT,sizeof(context),
-               &context,nullptr));
+               &context,NULL));
   CL_DESTRUCT_CALL(clReleaseMemObject(mat.cbegin()));
 
   cl_mem_flags flag;
@@ -338,7 +341,7 @@ inline int _device_resize(mat_type &mat, const size_t n) {
     #endif
   else
     assert(0==1);
-  mat.cbegin()=clCreateBuffer(context,flag,n,nullptr,&error_flag);
+  mat.cbegin()=clCreateBuffer(context,flag,n,NULL,&error_flag);
   if (error_flag != CL_SUCCESS)
     return UCL_MEMORY_ERROR;
   return UCL_SUCCESS;
@@ -356,7 +359,7 @@ inline int _device_resize(mat_type &mat, const size_t rows,
 
   cl_context context;
   CL_SAFE_CALL(clGetMemObjectInfo(mat.cbegin(),CL_MEM_CONTEXT,sizeof(context),
-               &context,nullptr));
+               &context,NULL));
   CL_DESTRUCT_CALL(clReleaseMemObject(mat.cbegin()));
 
   cl_mem_flags flag;
@@ -376,7 +379,7 @@ inline int _device_resize(mat_type &mat, const size_t rows,
     #endif
   else
     assert(0==1);
-  mat.cbegin()=clCreateBuffer(context,flag,pitch*rows,nullptr,&error_flag);
+  mat.cbegin()=clCreateBuffer(context,flag,pitch*rows,NULL,&error_flag);
   if (error_flag != CL_SUCCESS)
     return UCL_MEMORY_ERROR;
   return UCL_SUCCESS;
@@ -392,28 +395,27 @@ inline void _host_zero(void *ptr, const size_t n) {
 
 inline void _ocl_build(cl_program &program, cl_device_id &device,
                        const char* options = "") {
-  clBuildProgram(program,1,&device,options,nullptr,nullptr);
+  clBuildProgram(program,1,&device,options,NULL,NULL);
 
   cl_build_status build_status;
   CL_SAFE_CALL(clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_STATUS,
                                      sizeof(cl_build_status),&build_status,
-                                     nullptr));
+                                     NULL));
   if (build_status == CL_SUCCESS)
     return;
 
   size_t ms;
   CL_SAFE_CALL(clGetProgramBuildInfo(program, device,CL_PROGRAM_BUILD_LOG, 0,
-                                     nullptr, &ms));
-  char *build_log = new char[ms];
+                                     NULL, &ms));
+  char build_log[ms];
   CL_SAFE_CALL(clGetProgramBuildInfo(program,device,CL_PROGRAM_BUILD_LOG,ms,
-                                     build_log, nullptr));
+                                     build_log, NULL));
 
   std::cerr << std::endl
             << "----------------------------------------------------------\n"
             << " Error compiling OpenCL Program...\n"
             << "----------------------------------------------------------\n";
   std::cerr << build_log << std::endl;
-  delete[] build_log;
 }
 
 inline void _ocl_kernel_from_source(cl_context &context, cl_device_id &device,
@@ -423,7 +425,7 @@ inline void _ocl_kernel_from_source(cl_context &context, cl_device_id &device,
   cl_int error_flag;
 
   cl_program program=clCreateProgramWithSource(context,lines,source,
-                                               nullptr,&error_flag);
+                                               NULL,&error_flag);
   CL_CHECK_ERR(error_flag);
   _ocl_build(program,device,options);
   kernel=clCreateKernel(program,function,&error_flag);
@@ -441,15 +443,15 @@ inline void _device_zero(mat_type &mat, const size_t n, command_queue &cq) {
   #ifdef UCL_CL_ZERO
   cl_int zeroint=0;
   CL_SAFE_CALL(clEnqueueFillBuffer(cq,mat.begin(),&zeroint,sizeof(cl_int),
-                                   mat.byteoff(),n,0,nullptr,nullptr));
+                                   mat.byteoff(),n,0,NULL,NULL));
 
   #else
   cl_context context;
   CL_SAFE_CALL(clGetMemObjectInfo(mat.cbegin(),CL_MEM_CONTEXT,sizeof(context),
-                                  &context,nullptr));
+                                  &context,NULL));
   cl_device_id device;
   CL_SAFE_CALL(clGetContextInfo(context,CL_CONTEXT_DEVICES,
-               sizeof(cl_device_id),&device,nullptr));
+               sizeof(cl_device_id),&device,NULL));
 
   const char * szero[3]={
     "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n",
@@ -466,9 +468,6 @@ inline void _device_zero(mat_type &mat, const size_t n, command_queue &cq) {
   CL_SAFE_CALL(clSetKernelArg(kzero,1,sizeof(cl_int),(void *)&offset));
   size_t kn=n/sizeof(typename mat_type::data_type);
   CL_SAFE_CALL(clEnqueueNDRangeKernel(cq,kzero,1,0,&kn,0,0,0,0));
-  #endif
-  #ifdef GERYON_OCL_FLUSH
-  ucl_flush(cq);
   #endif
 }
 
@@ -586,9 +585,6 @@ template <> struct _ucl_memcpy<1,0> {
     #endif
     CL_SAFE_CALL(clEnqueueReadBuffer(cq,src.cbegin(),block,src_offset,n,
                                      dst.begin(),0,NULL,NULL));
-    #ifdef GERYON_OCL_FLUSH
-    if (block==CL_FALSE) ucl_flush(cq);
-    #endif
   }
   template <class p1, class p2>
   static inline void mc(p1 &dst, const size_t dpitch, const p2 &src,
@@ -610,19 +606,16 @@ template <> struct _ucl_memcpy<1,0> {
         src.cols()==cols/src.element_size())
       CL_SAFE_CALL(clEnqueueReadBuffer(cq,src.cbegin(),block,src_offset,
                                        spitch*rows,
-                                       (char *)dst.begin()+dst_offset,0,nullptr,
-                                       nullptr));
+                                       (char *)dst.begin()+dst_offset,0,NULL,
+                                       NULL));
     else
       for (size_t i=0; i<rows; i++) {
         CL_SAFE_CALL(clEnqueueReadBuffer(cq,src.cbegin(),block,src_offset,cols,
-                                         (char *)dst.begin()+dst_offset,0,nullptr,
-                                         nullptr));
+                                         (char *)dst.begin()+dst_offset,0,NULL,
+                                         NULL));
         src_offset+=spitch;
         dst_offset+=dpitch;
       }
-    #ifdef GERYON_OCL_FLUSH
-    if (block==CL_FALSE) ucl_flush(cq);
-    #endif
   }
 };
 
@@ -644,9 +637,6 @@ template <> struct _ucl_memcpy<0,1> {
     #endif
     CL_SAFE_CALL(clEnqueueWriteBuffer(cq,dst.cbegin(),block,dst_offset,n,
                                       src.begin(),0,NULL,NULL));
-    #ifdef GERYON_OCL_FLUSH
-    if (block==CL_FALSE) ucl_flush(cq);
-    #endif
   }
   template <class p1, class p2>
   static inline void mc(p1 &dst, const size_t dpitch, const p2 &src,
@@ -668,19 +658,16 @@ template <> struct _ucl_memcpy<0,1> {
         src.cols()==cols/src.element_size())
       CL_SAFE_CALL(clEnqueueWriteBuffer(cq,dst.cbegin(),block,dst_offset,
                                         spitch*rows,
-                                        (char *)src.begin()+src_offset,0,nullptr,
-                                        nullptr));
+                                        (char *)src.begin()+src_offset,0,NULL,
+                                        NULL));
     else
       for (size_t i=0; i<rows; i++) {
         CL_SAFE_CALL(clEnqueueWriteBuffer(cq,dst.cbegin(),block,dst_offset,cols,
-                                          (char *)src.begin()+src_offset,0,nullptr,
-                                          nullptr));
+                                          (char *)src.begin()+src_offset,0,NULL,
+                                          NULL));
         src_offset+=spitch;
         dst_offset+=dpitch;
       }
-    #ifdef GERYON_OCL_FLUSH
-    if (block==CL_FALSE) ucl_flush(cq);
-    #endif
   }
 };
 
@@ -692,7 +679,7 @@ template <int mem1, int mem2> struct _ucl_memcpy {
                         const size_t dst_offset, const size_t src_offset) {
     if (src.cbegin()!=dst.cbegin() || src_offset!=dst_offset) {
       CL_SAFE_CALL(clEnqueueCopyBuffer(cq,src.cbegin(),dst.cbegin(),src_offset,
-                                       dst_offset,n,0,nullptr,nullptr));
+                                       dst_offset,n,0,NULL,NULL));
       #ifdef UCL_DBG_MEM_TRACE
       std::cerr << "UCL_COPY 6NS\n";
       #endif
@@ -702,9 +689,6 @@ template <int mem1, int mem2> struct _ucl_memcpy {
     #endif
 
     if (block==CL_TRUE) ucl_sync(cq);
-    #ifdef GERYON_OCL_FLUSH
-    else ucl_flush(cq);
-    #endif
   }
   template <class p1, class p2>
   static inline void mc(p1 &dst, const size_t dpitch, const p2 &src,
@@ -719,13 +703,13 @@ template <int mem1, int mem2> struct _ucl_memcpy {
       if (spitch==dpitch && dst.cols()==src.cols() &&
           src.cols()==cols/src.element_size())
         CL_SAFE_CALL(clEnqueueCopyBuffer(cq,src.cbegin(),dst.cbegin(),src_offset,
-                                         dst_offset,spitch*rows,0,nullptr,nullptr));
+                                         dst_offset,spitch*rows,0,NULL,NULL));
 
       else
         for (size_t i=0; i<rows; i++) {
           CL_SAFE_CALL(clEnqueueCopyBuffer(cq,src.cbegin(),dst.cbegin(),
                                            src_offset,dst_offset,cols,0,
-                                           nullptr,nullptr));
+                                           NULL,NULL));
           src_offset+=spitch;
           dst_offset+=dpitch;
         }
@@ -735,9 +719,6 @@ template <int mem1, int mem2> struct _ucl_memcpy {
     #endif
 
     if (block==CL_TRUE) ucl_sync(cq);
-    #ifdef GERYON_OCL_FLUSH
-    else ucl_flush(cq);
-    #endif
   }
 };
 

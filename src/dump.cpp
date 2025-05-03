@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,28 +11,28 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 #include "dump.h"
-
 #include "atom.h"
-#include "compute.h"
-#include "domain.h"
-#include "error.h"
-#include "fix.h"
-#include "group.h"
 #include "irregular.h"
-#include "memory.h"
-#include "modify.h"
-#include "output.h"
 #include "update.h"
-
-#include <cstring>
+#include "domain.h"
+#include "group.h"
+#include "output.h"
+#include "memory.h"
+#include "error.h"
+#include "force.h"
+#include "modify.h"
+#include "fix.h"
 
 using namespace LAMMPS_NS;
 
-#if defined(LMP_QSORT)
 // allocate space for static class variable
+
 Dump *Dump::dumpptr;
-#endif
 
 #define BIG 1.0e20
 #define EPSILON 1.0e-6
@@ -42,36 +41,39 @@ enum{ASCEND,DESCEND};
 
 /* ---------------------------------------------------------------------- */
 
-Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) : Pointers(lmp)
+Dump::Dump(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp)
 {
   MPI_Comm_rank(world,&me);
   MPI_Comm_size(world,&nprocs);
 
-  id = utils::strdup(arg[0]);
+  int n = strlen(arg[0]) + 1;
+  id = new char[n];
+  strcpy(id,arg[0]);
 
   igroup = group->find(arg[1]);
   groupbit = group->bitmask[igroup];
 
-  style = utils::strdup(arg[2]);
+  n = strlen(arg[2]) + 1;
+  style = new char[n];
+  strcpy(style,arg[2]);
 
-  filename = utils::strdup(arg[4]);
+  n = strlen(arg[4]) + 1;
+  filename = new char[n];
+  strcpy(filename,arg[4]);
 
   comm_forward = comm_reverse = 0;
 
   first_flag = 0;
   flush_flag = 1;
 
-  format = nullptr;
-  format_default = nullptr;
+  format = NULL;
+  format_default = NULL;
 
-  format_line_user = nullptr;
-  format_float_user = nullptr;
-  format_int_user = nullptr;
-  format_bigint_user = nullptr;
-  format_column_user = nullptr;
-
-  refreshflag = 0;
-  refresh = nullptr;
+  format_line_user = NULL;
+  format_float_user = NULL;
+  format_int_user = NULL;
+  format_bigint_user = NULL;
+  format_column_user = NULL;
 
   clearstep = 0;
   sort_flag = 0;
@@ -80,29 +82,19 @@ Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) : Pointers(lmp)
   buffer_flag = 0;
   padflag = 0;
   pbcflag = 0;
-  time_flag = 0;
-  unit_flag = 0;
-  unit_count = 0;
-  delay_flag = 0;
-  write_header_flag = 1;
-
-  maxfiles = -1;
-  numfiles = 0;
-  fileidx = 0;
-  nameslist = nullptr;
-
+  
   maxbuf = maxids = maxsort = maxproc = 0;
-  buf = bufsort = nullptr;
-  ids = idsort = nullptr;
-  index = proclist = nullptr;
-  irregular = nullptr;
+  buf = bufsort = NULL;
+  ids = idsort = NULL;
+  index = proclist = NULL;
+  irregular = NULL;
 
   maxsbuf = 0;
-  sbuf = nullptr;
+  sbuf = NULL;
 
-  maxpbc = -1;
-  xpbc = vpbc = nullptr;
-  imagepbc = nullptr;
+  maxpbc = 0;
+  xpbc = vpbc = NULL;
+  imagepbc = NULL;
 
   // parse filename for special syntax
   // if contains '%', write one file per proc and replace % with proc-ID
@@ -110,10 +102,9 @@ Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) : Pointers(lmp)
   // check file suffixes
   //   if ends in .bin = binary file
   //   else if ends in .gz = gzipped text file
-  //   else if ends in .zst = Zstd compressed text file
   //   else ASCII text file
 
-  fp = nullptr;
+  fp = NULL;
   singlefile_opened = 0;
   compressed = 0;
   binary = 0;
@@ -124,7 +115,7 @@ Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) : Pointers(lmp)
   filewriter = 0;
   if (me == 0) filewriter = 1;
   fileproc = 0;
-  multiname = nullptr;
+  multiname = NULL;
 
   char *ptr;
   if ((ptr = strchr(filename,'%'))) {
@@ -136,16 +127,18 @@ Dump::Dump(LAMMPS *lmp, int /*narg*/, char **arg) : Pointers(lmp)
     filewriter = 1;
     fileproc = me;
     MPI_Comm_split(world,me,0,&clustercomm);
+    multiname = new char[strlen(filename) + 16];
     *ptr = '\0';
-    multiname = utils::strdup(fmt::format("{}{}{}", filename, me, ptr+1));
+    sprintf(multiname,"%s%d%s",filename,me,ptr+1);
     *ptr = '%';
   }
 
   if (strchr(filename,'*')) multifile = 1;
 
-  if (utils::strmatch(filename, "\\.bin$")) binary = 1;
-  if (utils::strmatch(filename, "\\.gz$")
-      || utils::strmatch(filename, "\\.zst$")) compressed = 1;
+  char *suffix = filename + strlen(filename) - strlen(".bin");
+  if (suffix > filename && strcmp(suffix,".bin") == 0) binary = 1;
+  suffix = filename + strlen(filename) - strlen(".gz");
+  if (suffix > filename && strcmp(suffix,".gz") == 0) compressed = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -164,8 +157,6 @@ Dump::~Dump()
   delete [] format_int_user;
   delete [] format_bigint_user;
 
-  delete [] refresh;
-
   // format_column_user is deallocated by child classes that use it
 
   memory->destroy(buf);
@@ -177,32 +168,24 @@ Dump::~Dump()
   delete irregular;
 
   memory->destroy(sbuf);
-
+  
   if (pbcflag) {
     memory->destroy(xpbc);
     memory->destroy(vpbc);
     memory->destroy(imagepbc);
   }
-
+  
   if (multiproc) MPI_Comm_free(&clustercomm);
 
-  // delete storage for caching file names
+  // XTC style sets fp to NULL since it closes file in its destructor
 
-  if (maxfiles > 0) {
-    for (int idx=0; idx < numfiles; ++idx)
-      delete[] nameslist[idx];
-    delete[] nameslist;
-  }
-
-  // XTC style sets fp to a null pointer since it closes file in its destructor
-
-  if (multifile == 0 && fp != nullptr) {
+  if (multifile == 0 && fp != NULL) {
     if (compressed) {
       if (filewriter) pclose(fp);
     } else {
       if (filewriter) fclose(fp);
     }
-    fp = nullptr;
+    fp = NULL;
   }
 }
 
@@ -221,10 +204,10 @@ void Dump::init()
     delete irregular;
 
     maxids = maxsort = maxproc = 0;
-    bufsort = nullptr;
-    ids = idsort = nullptr;
-    index = proclist = nullptr;
-    irregular = nullptr;
+    bufsort = NULL;
+    ids = idsort = NULL;
+    index = proclist = NULL;
+    irregular = NULL;
   }
 
   if (sort_flag) {
@@ -235,7 +218,7 @@ void Dump::init()
       error->all(FLERR,"Cannot dump sort on atom IDs with no atom IDs defined");
     if (sortcol && sortcol > size_one)
       error->all(FLERR,"Dump sort column is invalid");
-    if (nprocs > 1 && irregular == nullptr)
+    if (nprocs > 1 && irregular == NULL)
       irregular = new Irregular(lmp);
 
     bigint size = group->count(igroup);
@@ -252,7 +235,7 @@ void Dump::init()
     int gcmcflag = 0;
     for (int i = 0; i < modify->nfix; i++)
       if ((strcmp(modify->fix[i]->style,"gcmc") == 0))
-        gcmcflag = 1;
+	gcmcflag = 1;
 
     if (sortcol == 0 && atom->tag_consecutive() && !gcmcflag) {
       tagint *tag = atom->tag;
@@ -273,7 +256,7 @@ void Dump::init()
       if (maxall-minall+1 == isize) {
         reorderflag = 1;
         double range = maxall-minall + EPSILON;
-        idlo = static_cast<tagint> (range*me/nprocs + minall);
+        idlo = static_cast<int> (range*me/nprocs + minall);
         tagint idhi = static_cast<tagint> (range*(me+1)/nprocs + minall);
 
         tagint lom1 = static_cast<tagint> ((idlo-1-minall)/range * nprocs);
@@ -291,18 +274,8 @@ void Dump::init()
     }
   }
 
-  // search for refresh compute specified by dump_modify refresh
-
-  if (refreshflag) {
-    int icompute;
-    for (icompute = 0; icompute < modify->ncompute; icompute++)
-      if (strcmp(refresh,modify->compute[icompute]->id) == 0) break;
-    if (icompute < modify->ncompute) irefresh = icompute;
-    else error->all(FLERR,"Dump could not find refresh compute ID");
-  }
-
   // preallocation for PBC copies if requested
-
+  
   if (pbcflag && atom->nlocal > maxpbc) pbc_allocate();
 }
 
@@ -327,10 +300,6 @@ void Dump::write()
 {
   imageint *imagehold;
   double **xhold,**vhold;
-
-  // if timestep < delaystep, just return
-
-  if (delay_flag && update->ntimestep < delaystep) return;
 
   // if file per timestep, open new file
 
@@ -379,7 +348,7 @@ void Dump::write()
   if (multiproc)
     MPI_Allreduce(&bnme,&nheader,1,MPI_LMP_BIGINT,MPI_SUM,clustercomm);
 
-  if (filewriter && write_header_flag) write_header(nheader);
+  if (filewriter) write_header(nheader);
 
   // insure buf is sized for packing and communicating
   // use nmax to insure filewriter proc can receive info from others
@@ -417,20 +386,15 @@ void Dump::write()
     atom->x = xpbc;
     atom->v = vpbc;
     atom->image = imagepbc;
-
-    // for triclinic, PBC is applied in lamda coordinates
-
-    if (domain->triclinic) domain->x2lamda(nlocal);
     domain->pbc();
-    if (domain->triclinic) domain->lamda2x(nlocal);
   }
-
+  
   // pack my data into buf
   // if sorting on IDs also request ID list from pack()
   // sort buf as needed
 
   if (sort_flag && sortcol == 0) pack(ids);
-  else pack(nullptr);
+  else pack(NULL);
   if (sort_flag) sort();
 
   // if buffering, convert doubles into strings
@@ -511,20 +475,15 @@ void Dump::write()
     atom->image = imagehold;
   }
 
-  // trigger post-dump refresh by specified compute
-  // currently used for incremental dump files
-
-  if (refreshflag) modify->compute[irefresh]->refresh();
-
   // if file per timestep, close file if I am filewriter
 
   if (multifile) {
     if (compressed) {
-      if (filewriter && fp != nullptr) pclose(fp);
+      if (filewriter && fp != NULL) pclose(fp);
     } else {
-      if (filewriter && fp != nullptr) fclose(fp);
+      if (filewriter && fp != NULL) fclose(fp);
     }
-    fp = nullptr;
+    fp = NULL;
   }
 }
 
@@ -540,8 +499,6 @@ void Dump::openfile()
 
   if (singlefile_opened) return;
   if (multifile == 0) singlefile_opened = 1;
-
-  unit_count = 0;
 
   // if one file per timestep, replace '*' with current timestep
 
@@ -563,17 +520,6 @@ void Dump::openfile()
       sprintf(filecurrent,pad,filestar,update->ntimestep,ptr+1);
     }
     *ptr = '*';
-    if (maxfiles > 0) {
-      if (numfiles < maxfiles) {
-        nameslist[numfiles] = utils::strdup(filecurrent);
-        ++numfiles;
-      } else {
-        remove(nameslist[fileidx]);
-        delete[] nameslist[fileidx];
-        nameslist[fileidx] = utils::strdup(filecurrent);
-        fileidx = (fileidx + 1) % maxfiles;
-      }
-    }
   }
 
   // each proc with filewriter = 1 opens a file
@@ -581,11 +527,12 @@ void Dump::openfile()
   if (filewriter) {
     if (compressed) {
 #ifdef LAMMPS_GZIP
-      auto gzip = fmt::format("gzip -6 > {}",filecurrent);
+      char gzip[128];
+      sprintf(gzip,"gzip -6 > %s",filecurrent);
 #ifdef _WIN32
-      fp = _popen(gzip.c_str(),"wb");
+      fp = _popen(gzip,"wb");
 #else
-      fp = popen(gzip.c_str(),"w");
+      fp = popen(gzip,"w");
 #endif
 #else
       error->one(FLERR,"Cannot open gzipped file");
@@ -598,8 +545,8 @@ void Dump::openfile()
       fp = fopen(filecurrent,"w");
     }
 
-    if (fp == nullptr) error->one(FLERR,"Cannot open dump file");
-  } else fp = nullptr;
+    if (fp == NULL) error->one(FLERR,"Cannot open dump file");
+  } else fp = NULL;
 
   // delete string with timestep replaced
 
@@ -689,13 +636,9 @@ void Dump::sort()
       MPI_Allreduce(&max,&maxall,1,MPI_DOUBLE,MPI_MAX,world);
       double range = maxall-minall + EPSILON*(maxall-minall);
       if (range == 0.0) range = EPSILON;
-
-      // proc assignment is inverted if sortorder = DESCEND
-
       for (i = 0; i < nme; i++) {
         value = buf[i*size_one + sortcolm1];
         iproc = static_cast<int> ((value-minall)/range * nprocs);
-        if (sortorder == DESCEND) iproc = nprocs-1 - iproc;
         proclist[i] = iproc;
       }
     }
@@ -742,7 +685,6 @@ void Dump::sort()
         index[idsort[i]-idlo] = i;
   }
 
-#if defined(LMP_QSORT)
   if (!reorderflag) {
     dumpptr = this;
     for (i = 0; i < nme; i++) index[i] = i;
@@ -750,14 +692,6 @@ void Dump::sort()
     else if (sortorder == ASCEND) qsort(index,nme,sizeof(int),bufcompare);
     else qsort(index,nme,sizeof(int),bufcompare_reverse);
   }
-#else
-  if (!reorderflag) {
-    for (i = 0; i < nme; i++) index[i] = i;
-    if (sortcol == 0) utils::merge_sort(index,nme,(void *)this,idcompare);
-    else if (sortorder == ASCEND) utils::merge_sort(index,nme,(void *)this,bufcompare);
-    else utils::merge_sort(index,nme,(void *)this,bufcompare_reverse);
-  }
-#endif
 
   // reset buf size and maxbuf to largest of any post-sort nme values
   // this insures proc 0 can receive everyone's info
@@ -777,8 +711,6 @@ void Dump::sort()
   for (i = 0; i < nme; i++)
     memcpy(&buf[i*size_one],&bufsort[index[i]*size_one],nbytes);
 }
-
-#if defined(LMP_QSORT)
 
 /* ----------------------------------------------------------------------
    compare two atom IDs
@@ -840,65 +772,6 @@ int Dump::bufcompare_reverse(const void *pi, const void *pj)
   return 0;
 }
 
-#else
-
-/* ----------------------------------------------------------------------
-   compare two atom IDs
-   called via merge_sort() in sort() method
-------------------------------------------------------------------------- */
-
-int Dump::idcompare(const int i, const int j, void *ptr)
-{
-  tagint *idsort = ((Dump *)ptr)->idsort;
-  if (idsort[i] < idsort[j]) return -1;
-  else if (idsort[i] > idsort[j]) return 1;
-  else return 0;
-}
-
-/* ----------------------------------------------------------------------
-   compare two buffer values with size_one stride
-   called via merge_sort() in sort() method
-   sort in ASCENDing order
-------------------------------------------------------------------------- */
-
-int Dump::bufcompare(const int i, const int j, void *ptr)
-{
-  Dump *dptr = (Dump *) ptr;
-  double *bufsort     = dptr->bufsort;
-  const int size_one  = dptr->size_one;
-  const int sortcolm1 = dptr->sortcolm1;
-
-  const int ii=i*size_one + sortcolm1;
-  const int jj=j*size_one + sortcolm1;
-
-  if (bufsort[ii] < bufsort[jj]) return -1;
-  else if (bufsort[ii] > bufsort[jj]) return 1;
-  else return 0;
-}
-
-/* ----------------------------------------------------------------------
-   compare two buffer values with size_one stride
-   called via merge_sort() in sort() method
-   sort in DESCENDing order
-------------------------------------------------------------------------- */
-
-int Dump::bufcompare_reverse(const int i, const int j, void *ptr)
-{
-  Dump *dptr = (Dump *) ptr;
-  double *bufsort     = dptr->bufsort;
-  const int size_one  = dptr->size_one;
-  const int sortcolm1 = dptr->sortcolm1;
-
-  const int ii=i*size_one + sortcolm1;
-  const int jj=j*size_one + sortcolm1;
-
-  if (bufsort[ii] < bufsort[jj]) return 1;
-  else if (bufsort[ii] > bufsort[jj]) return -1;
-  else return 0;
-}
-
-#endif
-
 /* ----------------------------------------------------------------------
    process params common to all dumps here
    if unknown param, call modify_param specific to the dump
@@ -926,20 +799,6 @@ void Dump::modify_params(int narg, char **arg)
         error->all(FLERR,"Dump_modify buffer yes not allowed for this style");
       iarg += 2;
 
-    } else if (strcmp(arg[iarg],"delay") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
-      delaystep = utils::bnumeric(FLERR,arg[iarg+1],false,lmp);
-      if (delaystep >= 0) delay_flag = 1;
-      else delay_flag = 0;
-      iarg += 2;
-
-    } else if (strcmp(arg[iarg],"header") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
-      if (strcmp(arg[iarg+1],"yes") == 0) write_header_flag = 1;
-      else if (strcmp(arg[iarg+1],"no") == 0) write_header_flag = 0;
-      else error->all(FLERR,"Illegal dump_modify command");
-      iarg += 2;
-
     } else if (strcmp(arg[iarg],"every") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
       int idump;
@@ -948,10 +807,12 @@ void Dump::modify_params(int narg, char **arg)
       int n;
       if (strstr(arg[iarg+1],"v_") == arg[iarg+1]) {
         delete [] output->var_dump[idump];
-        output->var_dump[idump] = utils::strdup(&arg[iarg+1][2]);
+        n = strlen(&arg[iarg+1][2]) + 1;
+        output->var_dump[idump] = new char[n];
+        strcpy(output->var_dump[idump],&arg[iarg+1][2]);
         n = 0;
       } else {
-        n = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+        n = force->inumeric(FLERR,arg[iarg+1]);
         if (n <= 0) error->all(FLERR,"Illegal dump_modify command");
       }
       output->every_dump[idump] = n;
@@ -960,9 +821,9 @@ void Dump::modify_params(int narg, char **arg)
     } else if (strcmp(arg[iarg],"fileper") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
       if (!multiproc)
-        error->all(FLERR,"Cannot use dump_modify fileper "
+	error->all(FLERR,"Cannot use dump_modify fileper "
                    "without % in dump file name");
-      int nper = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      int nper = force->inumeric(FLERR,arg[iarg+1]);
       if (nper <= 0) error->all(FLERR,"Illegal dump_modify command");
 
       multiproc = nprocs/nper;
@@ -978,9 +839,10 @@ void Dump::modify_params(int narg, char **arg)
       MPI_Comm_split(world,icluster,0,&clustercomm);
 
       delete [] multiname;
+      multiname = new char[strlen(filename) + 16];
       char *ptr = strchr(filename,'%');
       *ptr = '\0';
-      multiname = utils::strdup(fmt::format("{}{}{}", filename, icluster, ptr+1));
+      sprintf(multiname,"%s%d%s",filename,icluster,ptr+1);
       *ptr = '%';
       iarg += 2;
 
@@ -1006,10 +868,10 @@ void Dump::modify_params(int narg, char **arg)
         delete [] format_int_user;
         delete [] format_bigint_user;
         delete [] format_float_user;
-        format_line_user = nullptr;
-        format_int_user = nullptr;
-        format_bigint_user = nullptr;
-        format_float_user = nullptr;
+        format_line_user = NULL;
+        format_int_user = NULL;
+        format_bigint_user = NULL;
+        format_float_user = NULL;
         // pass format none to child classes which may use it
         // not an error if they don't
         modify_param(narg-iarg,&arg[iarg]);
@@ -1021,7 +883,9 @@ void Dump::modify_params(int narg, char **arg)
 
       if (strcmp(arg[iarg+1],"line") == 0) {
         delete [] format_line_user;
-        format_line_user = utils::strdup(arg[iarg+2]);
+        int n = strlen(arg[iarg+2]) + 1;
+        format_line_user = new char[n];
+        strcpy(format_line_user,arg[iarg+2]);
         iarg += 3;
       } else {   // pass other format options to child classes
         int n = modify_param(narg-iarg,&arg[iarg]);
@@ -1029,33 +893,12 @@ void Dump::modify_params(int narg, char **arg)
         iarg += n;
       }
 
-    } else if (strcmp(arg[iarg],"maxfiles") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
-      if (!multifile)
-        error->all(FLERR,"Cannot use dump_modify maxfiles "
-                   "without * in dump file name");
-      // wipe out existing storage
-      if (maxfiles > 0) {
-        for (int idx=0; idx < numfiles; ++idx)
-          delete[] nameslist[idx];
-        delete[] nameslist;
-      }
-      maxfiles = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-      if (maxfiles == 0) error->all(FLERR,"Illegal dump_modify command");
-      if (maxfiles > 0) {
-        nameslist = new char*[maxfiles];
-        numfiles = 0;
-        for (int idx=0; idx < maxfiles; ++idx)
-          nameslist[idx] = nullptr;
-        fileidx = 0;
-      }
-      iarg += 2;
     } else if (strcmp(arg[iarg],"nfile") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
       if (!multiproc)
-        error->all(FLERR,"Cannot use dump_modify nfile "
+	error->all(FLERR,"Cannot use dump_modify nfile "
                    "without % in dump file name");
-      int nfile = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      int nfile = force->inumeric(FLERR,arg[iarg+1]);
       if (nfile <= 0) error->all(FLERR,"Illegal dump_modify command");
       nfile = MIN(nfile,nprocs);
 
@@ -1076,15 +919,16 @@ void Dump::modify_params(int narg, char **arg)
       MPI_Comm_split(world,icluster,0,&clustercomm);
 
       delete [] multiname;
+      multiname = new char[strlen(filename) + 16];
       char *ptr = strchr(filename,'%');
       *ptr = '\0';
-      multiname = utils::strdup(fmt::format("{}{}{}", filename, icluster, ptr+1));
+      sprintf(multiname,"%s%d%s",filename,icluster,ptr+1);
       *ptr = '%';
       iarg += 2;
 
     } else if (strcmp(arg[iarg],"pad") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
-      padflag = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      padflag = force->inumeric(FLERR,arg[iarg+1]);
       if (padflag < 0) error->all(FLERR,"Illegal dump_modify command");
       iarg += 2;
 
@@ -1104,7 +948,7 @@ void Dump::modify_params(int narg, char **arg)
         sortorder = ASCEND;
       } else {
         sort_flag = 1;
-        sortcol = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+        sortcol = force->inumeric(FLERR,arg[iarg+1]);
         sortorder = ASCEND;
         if (sortcol == 0) error->all(FLERR,"Illegal dump_modify command");
         if (sortcol < 0) {
@@ -1115,20 +959,6 @@ void Dump::modify_params(int narg, char **arg)
       }
       iarg += 2;
 
-    } else if (strcmp(arg[iarg],"time") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
-      if (strcmp(arg[iarg+1],"yes") == 0) time_flag = 1;
-      else if (strcmp(arg[iarg+1],"no") == 0) time_flag = 0;
-      else error->all(FLERR,"Illegal dump_modify command");
-      iarg += 2;
-
-    } else if (strcmp(arg[iarg],"units") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal dump_modify command");
-      if (strcmp(arg[iarg+1],"yes") == 0) unit_flag = 1;
-      else if (strcmp(arg[iarg+1],"no") == 0) unit_flag = 0;
-      else error->all(FLERR,"Illegal dump_modify command");
-      iarg += 2;
-
     } else {
       int n = modify_param(narg-iarg,&arg[iarg]);
       if (n == 0) error->all(FLERR,"Illegal dump_modify command");
@@ -1137,12 +967,6 @@ void Dump::modify_params(int narg, char **arg)
   }
 }
 
-/* ---------------------------------------------------------------------- */
-
-double Dump::compute_time()
-{
-  return update->atime + (update->ntimestep - update->atimestep)*update->dt;
-}
 /* ----------------------------------------------------------------------
    return # of bytes of allocated memory
 ------------------------------------------------------------------------- */
@@ -1162,9 +986,9 @@ void Dump::pbc_allocate()
    return # of bytes of allocated memory
 ------------------------------------------------------------------------- */
 
-double Dump::memory_usage()
+bigint Dump::memory_usage()
 {
-  double bytes = memory->usage(buf,size_one*maxbuf);
+  bigint bytes = memory->usage(buf,size_one*maxbuf);
   bytes += memory->usage(sbuf,maxsbuf);
   if (sort_flag) {
     if (sortcol == 0) bytes += memory->usage(ids,maxids);
@@ -1172,11 +996,11 @@ double Dump::memory_usage()
     if (sortcol == 0) bytes += memory->usage(idsort,maxsort);
     bytes += memory->usage(index,maxsort);
     bytes += memory->usage(proclist,maxproc);
-    if (irregular) bytes += (double)irregular->memory_usage();
+    if (irregular) bytes += irregular->memory_usage();
   }
   if (pbcflag) {
-    bytes += (double)6*maxpbc * sizeof(double);
-    bytes += (double)maxpbc * sizeof(imageint);
+    bytes += 6*maxpbc * sizeof(double);
+    bytes += maxpbc * sizeof(imageint);
   }
   return bytes;
 }

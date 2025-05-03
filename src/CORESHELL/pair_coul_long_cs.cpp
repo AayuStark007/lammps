@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,11 +15,22 @@
    Contributing author: Hendrik Heenen (hendrik.heenen@mytum.de)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_coul_long_cs.h"
-#include <cmath>
 #include "atom.h"
+#include "comm.h"
 #include "force.h"
+#include "kspace.h"
+#include "neighbor.h"
 #include "neigh_list.h"
+#include "update.h"
+#include "integrate.h"
+#include "respa.h"
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -42,8 +52,7 @@ using namespace LAMMPS_NS;
 PairCoulLongCS::PairCoulLongCS(LAMMPS *lmp) : PairCoulLong(lmp)
 {
   ewaldflag = pppmflag = 1;
-  single_enable = 0; // TODO: single function does not match compute
-  ftable = nullptr;
+  ftable = NULL;
   qdist = 0.0;
 }
 
@@ -60,7 +69,8 @@ void PairCoulLongCS::compute(int eflag, int vflag)
   double rsq;
 
   ecoul = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,16 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <ctype.h>
 #include "fix.h"
-
 #include "atom.h"
-#include "atom_masks.h"
-#include "error.h"
-#include "force.h"
 #include "group.h"
+#include "force.h"
+#include "comm.h"
+#include "atom_masks.h"
 #include "memory.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -32,35 +31,38 @@ int Fix::instance_total = 0;
 
 /* ---------------------------------------------------------------------- */
 
-Fix::Fix(LAMMPS *lmp, int /*narg*/, char **arg) :
-  Pointers(lmp),
-  id(nullptr), style(nullptr), extlist(nullptr), vector_atom(nullptr), array_atom(nullptr),
-  vector_local(nullptr), array_local(nullptr), eatom(nullptr), vatom(nullptr)
+Fix::Fix(LAMMPS *lmp, int narg, char **arg) : Pointers(lmp),
+id(NULL), style(NULL), extlist(NULL), vector_atom(NULL), array_atom(NULL),
+vector_local(NULL), array_local(NULL), eatom(NULL), vatom(NULL)
 {
   instance_me = instance_total++;
 
   // fix ID, group, and style
   // ID must be all alphanumeric chars or underscores
 
-  id = utils::strdup(arg[0]);
-  if (!utils::is_id(id))
-    error->all(FLERR,"Fix ID must be alphanumeric or underscore characters");
+  int n = strlen(arg[0]) + 1;
+  id = new char[n];
+  strcpy(id,arg[0]);
+
+  for (int i = 0; i < n-1; i++)
+    if (!isalnum(id[i]) && id[i] != '_')
+      error->all(FLERR,"Fix ID must be alphanumeric or underscore characters");
 
   igroup = group->find(arg[1]);
   if (igroup == -1) error->all(FLERR,"Could not find fix group ID");
   groupbit = group->bitmask[igroup];
 
-  style = utils::strdup(arg[2]);
+  n = strlen(arg[2]) + 1;
+  style = new char[n];
+  strcpy(style,arg[2]);
 
   restart_global = restart_peratom = restart_file = 0;
   force_reneighbor = 0;
-  box_change = NO_BOX_CHANGE;
+  box_change_size = box_change_shape = box_change_domain = 0;
   thermo_energy = 0;
-  thermo_virial = 0;
-  energy_global_flag = energy_peratom_flag = 0;
-  virial_global_flag = virial_peratom_flag = 0;
-  ecouple_flag = 0;
   rigid_flag = 0;
+  peatom_flag = 0;
+  virial_flag = 0;
   no_change_box = 0;
   time_integrate = 0;
   time_depend = 0;
@@ -68,20 +70,14 @@ Fix::Fix(LAMMPS *lmp, int /*narg*/, char **arg) :
   restart_pbc = 0;
   wd_header = wd_section = 0;
   dynamic_group_allow = 0;
-  dynamic = 0;
   dof_flag = 0;
   special_alter_flag = 0;
   enforce2d_flag = 0;
   respa_level_support = 0;
   respa_level = -1;
-  maxexchange = 0;
-  maxexchange_dynamic = 0;
-  pre_exchange_migrate = 0;
-  stores_ids = 0;
 
   scalar_flag = vector_flag = array_flag = 0;
   peratom_flag = local_flag = 0;
-  global_freq = local_freq = peratom_freq = -1;
   size_vector_variable = size_array_rows_variable = 0;
 
   comm_forward = comm_reverse = comm_border = 0;
@@ -99,7 +95,6 @@ Fix::Fix(LAMMPS *lmp, int /*narg*/, char **arg) :
 
   maxeatom = maxvatom = 0;
   vflag_atom = 0;
-  centroidstressflag = CENTROID_SAME;
 
   // KOKKOS per-fix data masks
 
@@ -108,7 +103,6 @@ Fix::Fix(LAMMPS *lmp, int /*narg*/, char **arg) :
   datamask_modify = ALL_MASK;
 
   kokkosable = 0;
-  forward_comm_device = 0;
   copymode = 0;
 }
 
@@ -135,34 +129,16 @@ void Fix::modify_params(int narg, char **arg)
 
   int iarg = 0;
   while (iarg < narg) {
-    if (strcmp(arg[iarg],"dynamic/dof") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix_modify command");
-      if (strcmp(arg[iarg+1],"no") == 0) dynamic = 0;
-      else if (strcmp(arg[iarg+1],"yes") == 0) dynamic = 1;
-      else error->all(FLERR,"Illegal fix_modify command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"energy") == 0) {
+    if (strcmp(arg[iarg],"energy") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix_modify command");
       if (strcmp(arg[iarg+1],"no") == 0) thermo_energy = 0;
-      else if (strcmp(arg[iarg+1],"yes") == 0) {
-        if (energy_global_flag == 0 && energy_peratom_flag == 0)
-          error->all(FLERR,"Illegal fix_modify command");
-        thermo_energy = 1;
-      } else error->all(FLERR,"Illegal fix_modify command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"virial") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix_modify command");
-      if (strcmp(arg[iarg+1],"no") == 0) thermo_virial = 0;
-      else if (strcmp(arg[iarg+1],"yes") == 0) {
-        if (virial_global_flag == 0 && virial_peratom_flag == 0)
-          error->all(FLERR,"Illegal fix_modify command");
-        thermo_virial = 1;
-      } else error->all(FLERR,"Illegal fix_modify command");
+      else if (strcmp(arg[iarg+1],"yes") == 0) thermo_energy = 1;
+      else error->all(FLERR,"Illegal fix_modify command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"respa") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix_modify command");
       if (!respa_level_support) error->all(FLERR,"Illegal fix_modify command");
-      int lvl = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      int lvl = force->inumeric(FLERR,arg[iarg+1]);
       if (lvl < 0) error->all(FLERR,"Illegal fix_modify command");
       respa_level = lvl-1;
       iarg += 2;
@@ -174,18 +150,10 @@ void Fix::modify_params(int narg, char **arg)
   }
 }
 
-void::Fix::set_molecule(int, tagint, int, double *, double *, double *)
-{
-  error->all(FLERR,"Molecule update not implemented for fix {}", style);
-}
-
 /* ----------------------------------------------------------------------
-   setup for peratom energy and global/peratom virial computation
+   setup for energy, virial computation
    see integrate::ev_set() for values of eflag (0-3) and vflag (0-6)
-   fixes call Fix::ev_init() if tally energy and virial values
-   if thermo_energy is not set, energy tallying is disabled
-   if thermo_virial is not set, virial tallying is disabled
-   global energy is tallied separately, output by compute_scalar() method
+   fixes call this if use ev_tally()
 ------------------------------------------------------------------------- */
 
 void Fix::ev_setup(int eflag, int vflag)
@@ -194,19 +162,13 @@ void Fix::ev_setup(int eflag, int vflag)
 
   evflag = 1;
 
-  if (!thermo_energy) eflag_either = eflag_global = eflag_atom = 0;
-  else {
-    eflag_either = eflag;
-    eflag_global = eflag & ENERGY_GLOBAL;
-    eflag_atom = eflag & ENERGY_ATOM;
-  }
+  eflag_either = eflag;
+  eflag_global = eflag % 2;
+  eflag_atom = eflag / 2;
 
-  if (!thermo_virial) vflag_either = vflag_global = vflag_atom = 0;
-  else {
-    vflag_either = vflag;
-    vflag_global = vflag & (VIRIAL_PAIR | VIRIAL_FDOTR);
-    vflag_atom = vflag & (VIRIAL_ATOM | VIRIAL_CENTROID);
-  }
+  vflag_either = vflag;
+  vflag_global = vflag % 4;
+  vflag_atom = vflag / 4;
 
   // reallocate per-atom arrays if necessary
 
@@ -244,10 +206,9 @@ void Fix::ev_setup(int eflag, int vflag)
 }
 
 /* ----------------------------------------------------------------------
-   setup for global/peratom virial computation
+   setup for virial computation
    see integrate::ev_set() for values of vflag (0-6)
-   fixes call Fix::v_init() if tally virial values but not energy
-   if thermo_virial is not set, virial tallying is disabled
+   fixes call this if use v_tally()
 ------------------------------------------------------------------------- */
 
 void Fix::v_setup(int vflag)
@@ -255,8 +216,9 @@ void Fix::v_setup(int vflag)
   int i,n;
 
   evflag = 1;
-  vflag_global = vflag & (VIRIAL_PAIR | VIRIAL_FDOTR);
-  vflag_atom = vflag & (VIRIAL_ATOM | VIRIAL_CENTROID);
+
+  vflag_global = vflag % 4;
+  vflag_atom = vflag / 4;
 
   // reallocate per-atom array if necessary
 
@@ -306,6 +268,7 @@ void Fix::ev_tally(int n, int *list, double total, double eng, double *v)
   v_tally(n,list,total,v);
 }
 
+
 /* ----------------------------------------------------------------------
    tally virial into global and per-atom accumulators
    n = # of local owned atoms involved, with local indices in list
@@ -344,57 +307,4 @@ void Fix::v_tally(int n, int *list, double total, double *v)
       vatom[m][5] += fraction*v[5];
     }
   }
-}
-
-/* ----------------------------------------------------------------------
-   tally virial into global and per-atom accumulators
-   i = local index of atom
-   v = total virial for the interaction
-   increment global virial by v
-   increment per-atom virial by v
-   this method can be used when fix computes forces in post_force()
-   and the force depends on a distance to some external object
-     e.g. fix wall/lj93: compute virial only on owned atoms
-------------------------------------------------------------------------- */
-
-void Fix::v_tally(int i, double *v)
-{
-  if (vflag_global) {
-    virial[0] += v[0];
-    virial[1] += v[1];
-    virial[2] += v[2];
-    virial[3] += v[3];
-    virial[4] += v[4];
-    virial[5] += v[5];
-  }
-
-  if (vflag_atom) {
-    vatom[i][0] += v[0];
-    vatom[i][1] += v[1];
-    vatom[i][2] += v[2];
-    vatom[i][3] += v[3];
-    vatom[i][4] += v[4];
-    vatom[i][5] += v[5];
-  }
-}
-
-/* ----------------------------------------------------------------------
-   tally virial component into global and per-atom accumulators
-   n = index of virial component (0-5)
-   i = local index of atom
-   vn = nth component of virial for the interaction
-   increment nth component of global virial by vn
-   increment nth component of per-atom virial by vn
-   this method can be used when fix computes forces in post_force()
-   and the force depends on a distance to some external object
-     e.g. fix wall/lj93: compute virial only on owned atoms
-------------------------------------------------------------------------- */
-
-void Fix::v_tally(int n, int i, double vn)
-{
-  if (vflag_global)
-    virial[n] += vn;
-
-  if (vflag_atom)
-    vatom[i][n] += vn;
 }

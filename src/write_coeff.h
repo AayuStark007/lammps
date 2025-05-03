@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,34 +12,35 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(write_coeff,WriteCoeff);
-// clang-format on
+
+CommandStyle(write_coeff,WriteCoeff)
+
 #else
 
 #ifndef LMP_WRITE_COEFF_H
 #define LMP_WRITE_COEFF_H
 
-#include "command.h"
+#include <stdio.h>
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class WriteCoeff : public Command {
+class WriteCoeff : protected Pointers {
  public:
-  WriteCoeff(class LAMMPS *lmp) : Command(lmp){};
+  WriteCoeff(class LAMMPS *lmp) : Pointers(lmp) {};
   void command(int, char **);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
 
 /* ERROR/WARNING messages:
 
-E: Write_coeff command before simulation box is defined
+E: write_coeff command before simulation box is defined
 
-UNDOCUMENTED
+Self-explanatory.
 
 E: Illegal ... command
 
@@ -47,18 +48,14 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
+E: Atom count is inconsistent, cannot write data file
+
+The sum of atoms across processors does not equal the global number
+of atoms.  Probably some atoms have been lost.
+
 E: Cannot open coeff file %s
 
 The specified file cannot be opened.  Check that the path and name are
 correct.
-
-U: write_coeff command before simulation box is defined
-
-Self-explanatory.
-
-U: Atom count is inconsistent, cannot write data file
-
-The sum of atoms across processors does not equal the global number
-of atoms.  Probably some atoms have been lost.
 
 */

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,14 +15,15 @@
    Contributing authors: Leo Silbert (SNL), Gary Grest (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include "pair_gran_hertz_history.h"
-#include <cmath>
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "fix.h"
-#include "fix_neigh_history.h"
 #include "neighbor.h"
 #include "neigh_list.h"
 #include "comm.h"
@@ -54,7 +54,8 @@ void PairGranHertzHistory::compute(int eflag, int vflag)
   int *touch,**firsttouch;
   double *shear,*allshear,**firstshear;
 
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   int shearupdate = 1;
   if (update->setupflag) shearupdate = 0;
@@ -94,8 +95,8 @@ void PairGranHertzHistory::compute(int eflag, int vflag)
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
-  firsttouch = fix_history->firstflag;
-  firstshear = fix_history->firstvalue;
+  firsttouch = list->listgranhistory->firstneigh;
+  firstshear = list->listgranhistory->firstdouble;
 
   // loop over neighbors of my atoms
 
@@ -182,7 +183,6 @@ void PairGranHertzHistory::compute(int eflag, int vflag)
         ccel = kn*(radsum-r)*rinv - damp;
         polyhertz = sqrt((radsum-r)*radi*radj / radsum);
         ccel *= polyhertz;
-        if (limit_damping && (ccel < 0.0)) ccel = 0.0;
 
         // relative velocities
 
@@ -279,29 +279,23 @@ void PairGranHertzHistory::compute(int eflag, int vflag)
 
 void PairGranHertzHistory::settings(int narg, char **arg)
 {
-  if (narg != 6 && narg != 7) error->all(FLERR,"Illegal pair_style command");
+  if (narg != 6) error->all(FLERR,"Illegal pair_style command");
 
-  kn = utils::numeric(FLERR,arg[0],false,lmp);
+  kn = force->numeric(FLERR,arg[0]);
   if (strcmp(arg[1],"NULL") == 0) kt = kn * 2.0/7.0;
-  else kt = utils::numeric(FLERR,arg[1],false,lmp);
+  else kt = force->numeric(FLERR,arg[1]);
 
-  gamman = utils::numeric(FLERR,arg[2],false,lmp);
+  gamman = force->numeric(FLERR,arg[2]);
   if (strcmp(arg[3],"NULL") == 0) gammat = 0.5 * gamman;
-  else gammat = utils::numeric(FLERR,arg[3],false,lmp);
+  else gammat = force->numeric(FLERR,arg[3]);
 
-  xmu = utils::numeric(FLERR,arg[4],false,lmp);
-  dampflag = utils::inumeric(FLERR,arg[5],false,lmp);
+  xmu = force->numeric(FLERR,arg[4]);
+  dampflag = force->inumeric(FLERR,arg[5]);
   if (dampflag == 0) gammat = 0.0;
 
   if (kn < 0.0 || kt < 0.0 || gamman < 0.0 || gammat < 0.0 ||
       xmu < 0.0 || xmu > 10000.0 || dampflag < 0 || dampflag > 1)
     error->all(FLERR,"Illegal pair_style command");
-
-  limit_damping = 0;
-  if (narg == 7) {
-    if (strcmp(arg[6], "limit_damping") == 0) limit_damping = 1;
-    else error->all(FLERR,"Illegal pair_style command");
-  }
 
   // convert Kn and Kt from pressure units to force/distance^2
 
@@ -311,9 +305,9 @@ void PairGranHertzHistory::settings(int narg, char **arg)
 
 /* ---------------------------------------------------------------------- */
 
-double PairGranHertzHistory::single(int i, int j, int /*itype*/, int /*jtype*/,
+double PairGranHertzHistory::single(int i, int j, int itype, int jtype,
                                     double rsq,
-                                    double /*factor_coul*/, double /*factor_lj*/,
+                                    double factor_coul, double factor_lj,
                                     double &fforce)
 {
   double radi,radj,radsum;
@@ -396,7 +390,6 @@ double PairGranHertzHistory::single(int i, int j, int /*itype*/, int /*jtype*/,
   ccel = kn*(radsum-r)*rinv - damp;
   polyhertz = sqrt((radsum-r)*radi*radj / radsum);
   ccel *= polyhertz;
-  if (limit_damping && (ccel < 0.0)) ccel = 0.0;
 
   // relative velocities
 
@@ -414,7 +407,7 @@ double PairGranHertzHistory::single(int i, int j, int /*itype*/, int /*jtype*/,
 
   int jnum = list->numneigh[i];
   int *jlist = list->firstneigh[i];
-  double *allshear = fix_history->firstvalue[i];
+  double *allshear = list->listgranhistory->firstdouble[i];
 
   for (int jj = 0; jj < jnum; jj++) {
     neighprev++;

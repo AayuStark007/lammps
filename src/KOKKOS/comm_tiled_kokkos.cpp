@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,11 +11,23 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "comm_tiled_kokkos.h"
-
+#include "comm_brick.h"
 #include "atom_kokkos.h"
-#include "atom_masks.h"
 #include "atom_vec.h"
+#include "domain.h"
+#include "force.h"
+#include "pair.h"
+#include "neighbor.h"
+#include "modify.h"
+#include "fix.h"
+#include "compute.h"
+#include "output.h"
+#include "dump.h"
+#include "memory.h"
+#include "error.h"
+#include "atom_masks.h"
 
 using namespace LAMMPS_NS;
 
@@ -27,6 +38,9 @@ using namespace LAMMPS_NS;
 #define EPSILON 1.0e-6
 
 #define DELTA_PROCS 16
+
+enum{SINGLE,MULTI};               // same as in Comm
+enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
 
 /* ---------------------------------------------------------------------- */
 
@@ -102,7 +116,7 @@ void CommTiledKokkos::reverse_comm()
    atoms exchanged with procs that touch sub-box in each of 3 dims
    send out atoms that have left my box, receive ones entering my box
    atoms will be lost if not inside a touching proc's box
-     can happen if atom moves outside of non-periodic boundary
+     can happen if atom moves outside of non-periodic bounary
      or if atom moves more than one proc away
    this routine called before every reneighboring
    for triclinic, atoms must be in lamda coords (0-1) before exchange is called
@@ -248,5 +262,5 @@ void CommTiledKokkos::forward_comm_array(int nsize, double **array)
 
 int CommTiledKokkos::exchange_variable(int n, double *inbuf, double *&outbuf)
 {
-  return CommTiled::exchange_variable(n,inbuf,outbuf);
+  CommTiled::exchange_variable(n,inbuf,outbuf);
 }

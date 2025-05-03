@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,13 @@
 ------------------------------------------------------------------------- */
 
 #ifdef ANGLE_CLASS
-// clang-format off
-AngleStyle(harmonic/kk,AngleHarmonicKokkos<LMPDeviceType>);
-AngleStyle(harmonic/kk/device,AngleHarmonicKokkos<LMPDeviceType>);
-AngleStyle(harmonic/kk/host,AngleHarmonicKokkos<LMPHostType>);
-// clang-format on
+
+AngleStyle(harmonic/kk,AngleHarmonicKokkos<LMPDeviceType>)
+AngleStyle(harmonic/kk/device,AngleHarmonicKokkos<LMPDeviceType>)
+AngleStyle(harmonic/kk/host,AngleHarmonicKokkos<LMPHostType>)
+
 #else
 
-// clang-format off
 #ifndef LMP_ANGLE_HARMONIC_KOKKOS_H
 #define LMP_ANGLE_HARMONIC_KOKKOS_H
 
@@ -40,9 +39,8 @@ class AngleHarmonicKokkos : public AngleHarmonic {
 
   AngleHarmonicKokkos(class LAMMPS *);
   virtual ~AngleHarmonicKokkos();
-  void compute(int, int);
-  void coeff(int, char **);
-  void read_restart(FILE *);
+  virtual void compute(int, int);
+  virtual void coeff(int, char **);
 
   template<int NEWTON_BOND, int EVFLAG>
   KOKKOS_INLINE_FUNCTION
@@ -81,7 +79,7 @@ class AngleHarmonicKokkos : public AngleHarmonic {
   typename ArrayTypes<DeviceType>::t_ffloat_1d d_k;
   typename ArrayTypes<DeviceType>::t_ffloat_1d d_theta0;
 
-  void allocate();
+  virtual void allocate();
 };
 
 }

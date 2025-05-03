@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,37 +12,30 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(create_bonds,CreateBonds);
-// clang-format on
+
+CommandStyle(create_bonds,CreateBonds)
+
 #else
 
 #ifndef LMP_CREATE_BONDS_H
 #define LMP_CREATE_BONDS_H
 
-#include "command.h"
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class CreateBonds : public Command {
+class CreateBonds : protected Pointers {
  public:
   CreateBonds(class LAMMPS *);
   void command(int, char **);
 
  private:
-  int igroup, group1bit, group2bit;
-  int btype, atype, dtype;
-  tagint batom1, batom2, aatom1, aatom2, aatom3, datom1, datom2, datom3, datom4;
-  double rmin, rmax;
-
-  void many();
-  void single_bond();
-  void single_angle();
-  void single_dihedral();
-  void single_improper();
+  inline int sbmask(int j) {
+    return j >> SBBITS & 3;
+  }
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -76,22 +69,6 @@ E: Invalid bond type in create_bonds command
 
 Self-explanatory.
 
-E: Cannot use special no with create_bonds many
-
-UNDOCUMENTED
-
-E: Invalid angle type in create_bonds command
-
-UNDOCUMENTED
-
-E: Invalid dihedral type in create_bonds command
-
-UNDOCUMENTED
-
-E: Invalid improper type in create_bonds command
-
-UNDOCUMENTED
-
 E: Create_bonds requires a pair style be defined
 
 Self-explanatory.
@@ -119,33 +96,5 @@ E: New bond exceeded bonds per atom in create_bonds
 
 See the read_data command for info on setting the "extra bond per
 atom" header value to allow for additional bonds to be formed.
-
-E: Create_bonds single/bond atoms do not exist
-
-UNDOCUMENTED
-
-E: Create_bonds single/angle atoms do not exist
-
-UNDOCUMENTED
-
-E: New angle exceeded angles per atom in create_bonds
-
-UNDOCUMENTED
-
-E: Create_bonds single/dihedral atoms do not exist
-
-UNDOCUMENTED
-
-E: New dihedral exceeded dihedrals per atom in create_bonds
-
-UNDOCUMENTED
-
-E: Create_bonds single/improper atoms do not exist
-
-UNDOCUMENTED
-
-E: New improper exceeded impropers per atom in create_bonds
-
-UNDOCUMENTED
 
 */

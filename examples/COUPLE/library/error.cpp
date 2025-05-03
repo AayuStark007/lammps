@@ -1,6 +1,6 @@
 #include <mpi.h>
-#include <cstdio>
-#include <cstdlib>
+#include <stdio.h>
+#include <stdlib.h>
 #include "error.h"
 
 /* ---------------------------------------------------------------------- */

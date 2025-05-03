@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -11,30 +11,34 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "imbalance_store.h"
-
 #include "atom.h"
+#include "input.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
 
 /* -------------------------------------------------------------------- */
 
-ImbalanceStore::ImbalanceStore(LAMMPS *lmp) : Imbalance(lmp), name(nullptr) {}
+ImbalanceStore::ImbalanceStore(LAMMPS *lmp) : Imbalance(lmp), name(0) {}
 
 /* -------------------------------------------------------------------- */
 
 ImbalanceStore::~ImbalanceStore()
 {
-  delete[] name;
+  delete [] name;
 }
 
 /* -------------------------------------------------------------------- */
 
 int ImbalanceStore::options(int narg, char **arg)
 {
-  if (narg < 1) error->all(FLERR, "Illegal balance weight command");
-  name = utils::strdup(arg[0]);
+  if (narg < 1) error->all(FLERR,"Illegal balance weight command");
+
+  int len = strlen(arg[0]) + 1;
+  name = new char[len];
+  memcpy(name,arg[0],len);
 
   return 1;
 }
@@ -43,22 +47,23 @@ int ImbalanceStore::options(int narg, char **arg)
 
 void ImbalanceStore::compute(double *weight)
 {
-  int flag, cols;
-  int index = atom->find_custom(name, flag, cols);
-
+  int dflag = 0;
+  int idx = atom->find_custom(name,dflag);
+  
   // property does not exist
-
-  if (index < 0 || flag != 1 || cols)
-    error->all(FLERR, "Balance weight store vector does not exist");
-
-  double *prop = atom->dvector[index];
+  
+  if (idx < 0 || dflag != 1) return;
+  
+  double *prop = atom->dvector[idx];
   const int nlocal = atom->nlocal;
-  for (int i = 0; i < nlocal; ++i) prop[i] = weight[i];
+  
+  for (int i = 0; i < nlocal; ++i)
+    prop[i] = weight[i];
 }
 
 /* -------------------------------------------------------------------- */
 
-std::string ImbalanceStore::info()
+void ImbalanceStore::info(FILE *fp)
 {
-  return fmt::format("  storing weight in atom property d_{}\n", name);
+  fprintf(fp,"  storing weight in atom property d_%s\n",name);
 }

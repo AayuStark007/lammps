@@ -1,6 +1,7 @@
 /* -*- c++ -*- ----------------------------------------------------------
+
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,17 +13,17 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(tersoff/mod/kk,PairTersoffMODKokkos<LMPDeviceType>);
-PairStyle(tersoff/mod/kk/device,PairTersoffMODKokkos<LMPDeviceType>);
-PairStyle(tersoff/mod/kk/host,PairTersoffMODKokkos<LMPHostType>);
-// clang-format on
+
+PairStyle(tersoff/mod/kk,PairTersoffMODKokkos<LMPDeviceType>)
+PairStyle(tersoff/mod/kk/device,PairTersoffMODKokkos<LMPDeviceType>)
+PairStyle(tersoff/mod/kk/host,PairTersoffMODKokkos<LMPHostType>)
+
 #else
 
-// clang-format off
 #ifndef LMP_PAIR_TERSOFF_MOD_KOKKOS_H
 #define LMP_PAIR_TERSOFF_MOD_KOKKOS_H
 
+#include <stdio.h>
 #include "pair_kokkos.h"
 #include "pair_tersoff_mod.h"
 #include "neigh_list_kokkos.h"
@@ -101,8 +102,8 @@ class PairTersoffMODKokkos : public PairTersoffMOD {
 
   KOKKOS_INLINE_FUNCTION
   double bondorder(const int &i, const int &j, const int &k,
-        const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
-        const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2) const;
+	      const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
+	      const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2) const;
 
   KOKKOS_INLINE_FUNCTION
   double ters_gijk(const int &i, const int &j, const int &k, const F_FLOAT &cos) const;
@@ -112,21 +113,21 @@ class PairTersoffMODKokkos : public PairTersoffMOD {
 
   KOKKOS_INLINE_FUNCTION
   void ters_dthb(const int &i, const int &j, const int &k, const F_FLOAT &prefactor,
-        const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
-        const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2,
-        F_FLOAT *fi, F_FLOAT *fj, F_FLOAT *fk) const;
+	      const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
+	      const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2,
+	      F_FLOAT *fi, F_FLOAT *fj, F_FLOAT *fk) const;
 
   KOKKOS_INLINE_FUNCTION
   void ters_dthbj(const int &i, const int &j, const int &k, const F_FLOAT &prefactor,
-        const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
-        const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2,
-        F_FLOAT *fj, F_FLOAT *fk) const;
+	      const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
+	      const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2,
+	      F_FLOAT *fj, F_FLOAT *fk) const;
 
   KOKKOS_INLINE_FUNCTION
   void ters_dthbk(const int &i, const int &j, const int &k, const F_FLOAT &prefactor,
-        const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
-        const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2,
-        F_FLOAT *fk) const;
+	      const F_FLOAT &rij, const F_FLOAT &dx1, const F_FLOAT &dy1, const F_FLOAT &dz1,
+	      const F_FLOAT &rik, const F_FLOAT &dx2, const F_FLOAT &dy2, const F_FLOAT &dz2,
+	      F_FLOAT *fk) const;
 
   KOKKOS_INLINE_FUNCTION
   double vec3_dot(const F_FLOAT x[3], const double y[3]) const {
@@ -152,14 +153,12 @@ class PairTersoffMODKokkos : public PairTersoffMOD {
   int sbmask(const int& j) const;
 
   struct params_ters{
-    KOKKOS_INLINE_FUNCTION
-    params_ters() {powerm=0;lam3=0;h=0;powern=0;beta=0;lam2=0;bigb=0;bigr=0;bigd=0;
-      lam1=0;biga=0;powern_del=0;cutsq=0;c1=0;c2=0;c3=0;c4=0;c5=0;ca1=0;ca4=0;};
-    KOKKOS_INLINE_FUNCTION
-    params_ters(int /*i*/) {powerm=0;lam3=0;h=0;powern=0;beta=0;lam2=0;bigb=0;bigr=0;bigd=0;
-      lam1=0;biga=0;powern_del=0;cutsq=0;c1=0;c2=0;c3=0;c4=0;c5=0;ca1=0;ca4=0;};
+    params_ters(){powerm=0;lam3=0;h=0;powern=0;beta=0;lam2=0;bigb=0;bigr=0;bigd=0;
+	    lam1=0;biga=0;powern_del=0;cutsq=0;c1=0;c2=0;c3=0;c4=0;c5=0;ca1=0;ca4=0;};
+    params_ters(int i){powerm=0;lam3=0;h=0;powern=0;beta=0;lam2=0;bigb=0;bigr=0;bigd=0;
+	    lam1=0;biga=0;powern_del=0;cutsq=0;c1=0;c2=0;c3=0;c4=0;c5=0;ca1=0;ca4=0;};
     F_FLOAT powerm, lam3, h, powern, beta, lam2, bigb, bigr, bigd,
-      lam1, biga, powern_del, cutsq, c1, c2, c3, c4, c5, ca1, ca4;
+	    lam1, biga, powern_del, cutsq, c1, c2, c3, c4, c5, ca1, ca4;
   };
 
   template<int NEIGHFLAG>
@@ -171,24 +170,26 @@ class PairTersoffMODKokkos : public PairTersoffMOD {
   template<int NEIGHFLAG>
   KOKKOS_INLINE_FUNCTION
   void v_tally3(EV_FLOAT &ev, const int &i, const int &j, const int &k,
-    F_FLOAT *fj, F_FLOAT *fk, F_FLOAT *drij, F_FLOAT *drik) const;
+		F_FLOAT *fj, F_FLOAT *fk, F_FLOAT *drij, F_FLOAT *drik) const;
 
   KOKKOS_INLINE_FUNCTION
   void v_tally3_atom(EV_FLOAT &ev, const int &i, const int &j, const int &k,
-    F_FLOAT *fj, F_FLOAT *fk, F_FLOAT *drji, F_FLOAT *drjk) const;
+		F_FLOAT *fj, F_FLOAT *fk, F_FLOAT *drji, F_FLOAT *drjk) const;
 
   void allocate();
   void setup_params();
 
  protected:
+  void cleanup_copy();
+
   typedef Kokkos::DualView<int***,DeviceType> tdual_int_3d;
   Kokkos::DualView<params_ters***,Kokkos::LayoutRight,DeviceType> k_params;
   typename Kokkos::DualView<params_ters***,
     Kokkos::LayoutRight,DeviceType>::t_dev_const_um paramskk;
-  // hardwired to space for 12 atom types
+  // hardwired to space for 15 atom types
   //params_ters m_params[MAX_TYPES_STACKPARAMS+1][MAX_TYPES_STACKPARAMS+1][MAX_TYPES_STACKPARAMS+1];
 
-  int inum;
+  int inum; 
   typename AT::t_x_array_randomread x;
   typename AT::t_f_array f;
   typename AT::t_int_1d_randomread type;
@@ -196,24 +197,16 @@ class PairTersoffMODKokkos : public PairTersoffMOD {
 
   DAT::tdual_efloat_1d k_eatom;
   DAT::tdual_virial_array k_vatom;
-  typename ArrayTypes<DeviceType>::t_efloat_1d d_eatom;
-  typename ArrayTypes<DeviceType>::t_virial_array d_vatom;
-
-  int need_dup;
-  Kokkos::Experimental::ScatterView<F_FLOAT*[3], typename DAT::t_f_array::array_layout,typename KKDevice<DeviceType>::value,typename Kokkos::Experimental::ScatterSum,Kokkos::Experimental::ScatterDuplicated> dup_f;
-  Kokkos::Experimental::ScatterView<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,typename KKDevice<DeviceType>::value,typename Kokkos::Experimental::ScatterSum,Kokkos::Experimental::ScatterDuplicated> dup_eatom;
-  Kokkos::Experimental::ScatterView<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,typename KKDevice<DeviceType>::value,typename Kokkos::Experimental::ScatterSum,Kokkos::Experimental::ScatterDuplicated> dup_vatom;
-  Kokkos::Experimental::ScatterView<F_FLOAT*[3], typename DAT::t_f_array::array_layout,typename KKDevice<DeviceType>::value,typename Kokkos::Experimental::ScatterSum,Kokkos::Experimental::ScatterNonDuplicated> ndup_f;
-  Kokkos::Experimental::ScatterView<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,typename KKDevice<DeviceType>::value,typename Kokkos::Experimental::ScatterSum,Kokkos::Experimental::ScatterNonDuplicated> ndup_eatom;
-  Kokkos::Experimental::ScatterView<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,typename KKDevice<DeviceType>::value,typename Kokkos::Experimental::ScatterSum,Kokkos::Experimental::ScatterNonDuplicated> ndup_vatom;
+  DAT::t_efloat_1d d_eatom;
+  DAT::t_virial_array d_vatom;
 
   typedef Kokkos::DualView<F_FLOAT**[7],Kokkos::LayoutRight,DeviceType> tdual_ffloat_2d_n7;
   typedef typename tdual_ffloat_2d_n7::t_dev_const_randomread t_ffloat_2d_n7_randomread;
   typedef typename tdual_ffloat_2d_n7::t_host t_host_ffloat_2d_n7;
 
-  typename AT::t_neighbors_2d d_neighbors;
-  typename AT::t_int_1d_randomread d_ilist;
-  typename AT::t_int_1d_randomread d_numneigh;
+  typename ArrayTypes<DeviceType>::t_neighbors_2d d_neighbors;
+  typename ArrayTypes<DeviceType>::t_int_1d_randomread d_ilist;
+  typename ArrayTypes<DeviceType>::t_int_1d_randomread d_numneigh;
   //NeighListKokkos<DeviceType> k_list;
 
   int neighflag,newton_pair;
@@ -232,11 +225,7 @@ class PairTersoffMODKokkos : public PairTersoffMOD {
 
 /* ERROR/WARNING messages:
 
-E: Cannot (yet) use full neighbor list style with tersoff/mod/kk
-
-Self-explanatory.
-
-E: Cannot use chosen neighbor list style with tersoff/mod/kk
+E: Cannot use chosen neighbor list style with tersoff/kk
 
 Self-explanatory.
 

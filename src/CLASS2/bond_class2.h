@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef BOND_CLASS
-// clang-format off
-BondStyle(class2,BondClass2);
-// clang-format on
+
+BondStyle(class2,BondClass2)
+
 #else
 
 #ifndef LMP_BOND_CLASS2_H
 #define LMP_BOND_CLASS2_H
 
+#include <stdio.h>
 #include "bond.h"
 
 namespace LAMMPS_NS {
@@ -29,21 +30,20 @@ class BondClass2 : public Bond {
   BondClass2(class LAMMPS *);
   virtual ~BondClass2();
   virtual void compute(int, int);
-  virtual void coeff(int, char **);
+  void coeff(int, char **);
   double equilibrium_distance(int);
   void write_restart(FILE *);
-  virtual void read_restart(FILE *);
+  void read_restart(FILE *);
   void write_data(FILE *);
   double single(int, double, int, int, double &);
-  virtual void *extract(const char *, int &);
 
  protected:
-  double *r0, *k2, *k3, *k4;
+  double *r0,*k2,*k3,*k4;
 
   void allocate();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

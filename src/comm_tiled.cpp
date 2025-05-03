@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,49 +11,43 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-/* ----------------------------------------------------------------------
-   Contributing author (multi and triclinic support):
-     Adrian Diaz (University of Florida)
-------------------------------------------------------------------------- */
-
+#include <string.h>
 #include "comm_tiled.h"
-
+#include "comm_brick.h"
 #include "atom.h"
 #include "atom_vec.h"
-#include "compute.h"
 #include "domain.h"
-#include "dump.h"
-#include "error.h"
-#include "fix.h"
-#include "memory.h"
-#include "neighbor.h"
+#include "force.h"
 #include "pair.h"
-
-#include <cmath>
-#include <cstring>
+#include "neighbor.h"
+#include "modify.h"
+#include "fix.h"
+#include "compute.h"
+#include "output.h"
+#include "dump.h"
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
 #define BUFFACTOR 1.5
 #define BUFFACTOR 1.5
-#define BUFMIN 1024
+#define BUFMIN 1000
+#define BUFEXTRA 1000
 #define EPSILON 1.0e-6
 
 #define DELTA_PROCS 16
+
+enum{SINGLE,MULTI};               // same as in Comm
+enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
 
 /* ---------------------------------------------------------------------- */
 
 CommTiled::CommTiled(LAMMPS *lmp) : Comm(lmp)
 {
   style = 1;
-  layout = Comm::LAYOUT_UNIFORM;
-  pbc_flag = nullptr;
-  buf_send = nullptr;
-  buf_recv = nullptr;
-  overlap = nullptr;
-  rcbinfo = nullptr;
-  cutghostmulti = nullptr;
-  cutghostmultiold = nullptr;
+  layout = LAYOUT_UNIFORM;
+  pbc_flag = NULL;
   init_buffers();
 }
 
@@ -65,7 +58,7 @@ CommTiled::CommTiled(LAMMPS *lmp) : Comm(lmp)
 //           The call to Comm::copy_arrays() then converts the shallow copy
 //           into a deep copy of the class with the new layout.
 
-CommTiled::CommTiled(LAMMPS * /*lmp*/, Comm *oldcomm) : Comm(*oldcomm)
+CommTiled::CommTiled(LAMMPS *lmp, Comm *oldcomm) : Comm(*oldcomm)
 {
   style = 1;
   layout = oldcomm->layout;
@@ -80,10 +73,8 @@ CommTiled::~CommTiled()
   memory->destroy(buf_send);
   memory->destroy(buf_recv);
   memory->destroy(overlap);
-  deallocate_swap(maxswap);
+  deallocate_swap(nswap);
   memory->sfree(rcbinfo);
-  memory->destroy(cutghostmulti);
-  memory->destroy(cutghostmultiold);
 }
 
 /* ----------------------------------------------------------------------
@@ -92,22 +83,26 @@ CommTiled::~CommTiled()
 
 void CommTiled::init_buffers()
 {
-  buf_send = buf_recv = nullptr;
-  maxsend = maxrecv = BUFMIN;
-  grow_send(maxsend,2);
+  // bufextra = max size of one exchanged atom
+  //          = allowed overflow of sendbuf in exchange()
+  // atomvec, fix reset these 2 maxexchange values if needed
+  // only necessary if their size > BUFEXTRA
+
+  maxexchange = maxexchange_atom + maxexchange_fix;
+  bufextra = maxexchange + BUFEXTRA;
+
+  maxsend = BUFMIN;
+  memory->create(buf_send,maxsend+bufextra,"comm:buf_send");
+  maxrecv = BUFMIN;
   memory->create(buf_recv,maxrecv,"comm:buf_recv");
 
   maxoverlap = 0;
-  overlap = nullptr;
-  rcbinfo = nullptr;
-  cutghostmulti = nullptr;
-  cutghostmultiold = nullptr;
-  sendbox_multi = nullptr;
-  sendbox_multiold = nullptr;
+  overlap = NULL;
 
-  // Note this may skip growing multi arrays, will call again in init()
-  maxswap = 6;
-  allocate_swap(maxswap);
+  nswap = 2 * domain->dimension;
+  allocate_swap(nswap);
+
+  rcbinfo = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -116,40 +111,12 @@ void CommTiled::init()
 {
   Comm::init();
 
-  // cannot set nswap in init_buffers() b/c
-  // dimension command can be after comm_style command
+  // temporary restrictions
 
-  nswap = 2*domain->dimension;
-
-  memory->destroy(cutghostmulti);
-  if (mode == Comm::MULTI) {
-    // If inconsitent # of collections, destroy any preexisting arrays (may be missized)
-    if (ncollections != neighbor->ncollections) {
-      ncollections = neighbor->ncollections;
-    }
-
-    // delete any old user cutoffs if # of collections chanaged
-    if (cutusermulti && ncollections != ncollections_cutoff) {
-      if(me == 0) error->warning(FLERR, "cutoff/multi settings discarded, must be defined"
-                                        " after customizing collections in neigh_modify");
-      memory->destroy(cutusermulti);
-      cutusermulti = nullptr;
-    }
-
-    // grow sendbox_multi now that ncollections is known
-    for (int i = 0; i < maxswap; i ++)
-      grow_swap_send_multi(i,DELTA_PROCS);
-
-    memory->create(cutghostmulti,ncollections,3,"comm:cutghostmulti");
-  }
-
-  memory->destroy(cutghostmultiold);
-  if (mode == Comm::MULTIOLD)
-    memory->create(cutghostmultiold,atom->ntypes+1,3,"comm:cutghostmultiold");
-
-  int bufextra_old = bufextra;
-  init_exchange();
-  if (bufextra > bufextra_old) grow_send(maxsend+bufextra,2);
+  if (triclinic)
+    error->all(FLERR,"Cannot yet use comm_style tiled with triclinic box");
+  if (mode == MULTI)
+    error->all(FLERR,"Cannot yet use comm_style tiled with multi-mode comm");
 }
 
 /* ----------------------------------------------------------------------
@@ -164,26 +131,17 @@ void CommTiled::setup()
   // domain properties used in setup method and methods it calls
 
   dimension = domain->dimension;
-  int *periodicity = domain->periodicity;
-  int ntypes = atom->ntypes;
+  prd = domain->prd;
+  boxlo = domain->boxlo;
+  boxhi = domain->boxhi;
+  sublo = domain->sublo;
+  subhi = domain->subhi;
 
-  if (triclinic == 0) {
-    prd = domain->prd;
-    boxlo = domain->boxlo;
-    boxhi = domain->boxhi;
-    sublo = domain->sublo;
-    subhi = domain->subhi;
-  } else {
-    prd = domain->prd_lamda;
-    boxlo = domain->boxlo_lamda;
-    boxhi = domain->boxhi_lamda;
-    sublo = domain->sublo_lamda;
-    subhi = domain->subhi_lamda;
-  }
+  int *periodicity = domain->periodicity;
 
   // set function pointers
 
-  if (layout != Comm::LAYOUT_TILED) {
+  if (layout != LAYOUT_TILED) {
     box_drop = &CommTiled::box_drop_brick;
     box_other = &CommTiled::box_other_brick;
     box_touch = &CommTiled::box_touch_brick;
@@ -197,86 +155,17 @@ void CommTiled::setup()
 
   // if RCB decomp exists and just changed, gather needed global RCB info
 
-  if (layout == Comm::LAYOUT_TILED) coord2proc_setup();
+  if (layout == LAYOUT_TILED) coord2proc_setup();
 
   // set cutoff for comm forward and comm reverse
   // check that cutoff < any periodic box length
 
-  if (mode == Comm::MULTI) {
-    double **cutcollectionsq = neighbor->cutcollectionsq;
+  double cut = MAX(neighbor->cutneighmax,cutghostuser);
+  cutghost[0] = cutghost[1] = cutghost[2] = cut;
 
-    // build collection array for atom exchange
-    neighbor->build_collection(0);
-
-    // If using multi/reduce, communicate particles a distance equal
-    // to the max cutoff with equally sized or smaller collections
-    // If not, communicate the maximum cutoff of the entire collection
-    for (i = 0; i < ncollections; i++) {
-      if (cutusermulti) {
-        cutghostmulti[i][0] = cutusermulti[i];
-        cutghostmulti[i][1] = cutusermulti[i];
-        cutghostmulti[i][2] = cutusermulti[i];
-      } else {
-        cutghostmulti[i][0] = 0.0;
-        cutghostmulti[i][1] = 0.0;
-        cutghostmulti[i][2] = 0.0;
-      }
-
-      for (j = 0; j < ncollections; j++){
-        if (multi_reduce && (cutcollectionsq[j][j] > cutcollectionsq[i][i])) continue;
-        cutghostmulti[i][0] = MAX(cutghostmulti[i][0],sqrt(cutcollectionsq[i][j]));
-        cutghostmulti[i][1] = MAX(cutghostmulti[i][1],sqrt(cutcollectionsq[i][j]));
-        cutghostmulti[i][2] = MAX(cutghostmulti[i][2],sqrt(cutcollectionsq[i][j]));
-      }
-    }
-  }
-
-  if (mode == Comm::MULTIOLD) {
-    double *cuttype = neighbor->cuttype;
-    for (i = 1; i <= ntypes; i++) {
-      double tmp = 0.0;
-      if (cutusermultiold) tmp = cutusermultiold[i];
-      cutghostmultiold[i][0] = MAX(tmp,cuttype[i]);
-      cutghostmultiold[i][1] = MAX(tmp,cuttype[i]);
-      cutghostmultiold[i][2] = MAX(tmp,cuttype[i]);
-    }
-  }
-
-  double cut = get_comm_cutoff();
-  if ((cut == 0.0) && (me == 0))
-    error->warning(FLERR,"Communication cutoff is 0.0. No ghost atoms "
-                   "will be generated. Atoms may get lost.");
-
-  if (triclinic == 0) cutghost[0] = cutghost[1] = cutghost[2] = cut;
-  else {
-    double *h_inv = domain->h_inv;
-    double length0,length1,length2;
-    length0 = sqrt(h_inv[0]*h_inv[0] + h_inv[5]*h_inv[5] + h_inv[4]*h_inv[4]);
-    cutghost[0] = cut * length0;
-    length1 = sqrt(h_inv[1]*h_inv[1] + h_inv[3]*h_inv[3]);
-    cutghost[1] = cut * length1;
-    length2 = h_inv[2];
-    cutghost[2] = cut * length2;
-    if (mode == Comm::MULTI) {
-      for (i = 0; i < ncollections; i++) {
-        cutghostmulti[i][0] *= length0;
-        cutghostmulti[i][1] *= length1;
-        cutghostmulti[i][2] *= length2;
-      }
-    }
-
-    if (mode == Comm::MULTIOLD) {
-      for (i = 1; i <= ntypes; i++) {
-        cutghostmultiold[i][0] *= length0;
-        cutghostmultiold[i][1] *= length1;
-        cutghostmultiold[i][2] *= length2;
-      }
-    }
-  }
-
-  if ((periodicity[0] && cutghost[0] > prd[0]) ||
-      (periodicity[1] && cutghost[1] > prd[1]) ||
-      (dimension == 3 && periodicity[2] && cutghost[2] > prd[2]))
+  if ((periodicity[0] && cut > prd[0]) ||
+      (periodicity[1] && cut > prd[1]) ||
+      (dimension == 3 && periodicity[2] && cut > prd[2]))
     error->all(FLERR,"Communication cutoff for comm_style tiled "
                "cannot exceed periodic box length");
 
@@ -291,7 +180,6 @@ void CommTiled::setup()
     cut = MIN(prd[0],prd[1]);
     if (dimension == 3) cut = MIN(cut,prd[2]);
     cut *= EPSILON*EPSILON;
-    cutghost[0] = cutghost[1] = cutghost[2] = cut;
   }
 
   // setup forward/reverse communication
@@ -318,11 +206,11 @@ void CommTiled::setup()
       lo1[0] = sublo[0]; lo1[1] = sublo[1]; lo1[2] = sublo[2];
       hi1[0] = subhi[0]; hi1[1] = subhi[1]; hi1[2] = subhi[2];
       if (idir == 0) {
-        lo1[idim] = sublo[idim] - cutghost[idim];
+        lo1[idim] = sublo[idim] - cut;
         hi1[idim] = sublo[idim];
       } else {
         lo1[idim] = subhi[idim];
-        hi1[idim] = subhi[idim] + cutghost[idim];
+        hi1[idim] = subhi[idim] + cut;
       }
 
       two = 0;
@@ -407,222 +295,60 @@ void CommTiled::setup()
       //      = obox in other 2 dims
       // if sbox touches other proc's sub-box boundaries in lower dims,
       //   extend sbox in those lower dims to include ghost atoms
-      // single mode and multi mode
 
-      double oboxlo[3],oboxhi[3],sbox[6],sbox_multi[6],sbox_multiold[6];
+      double oboxlo[3],oboxhi[3],sbox[6];
 
-      if (mode == Comm::SINGLE) {
-        for (i = 0; i < noverlap; i++) {
-          pbc_flag[iswap][i] = 0;
-          pbc[iswap][i][0] = pbc[iswap][i][1] = pbc[iswap][i][2] =
-            pbc[iswap][i][3] = pbc[iswap][i][4] = pbc[iswap][i][5] = 0;
+      for (i = 0; i < noverlap; i++) {
+        pbc_flag[iswap][i] = 0;
+        pbc[iswap][i][0] = pbc[iswap][i][1] = pbc[iswap][i][2] =
+          pbc[iswap][i][3] = pbc[iswap][i][4] = pbc[iswap][i][5] = 0;
 
-          (this->*box_other)(idim,idir,overlap[i],oboxlo,oboxhi);
+        (this->*box_other)(idim,idir,overlap[i],oboxlo,oboxhi);
 
-          if (i < noverlap1) {
-            sbox[0] = MAX(oboxlo[0],lo1[0]);
-            sbox[1] = MAX(oboxlo[1],lo1[1]);
-            sbox[2] = MAX(oboxlo[2],lo1[2]);
-            sbox[3] = MIN(oboxhi[0],hi1[0]);
-            sbox[4] = MIN(oboxhi[1],hi1[1]);
-            sbox[5] = MIN(oboxhi[2],hi1[2]);
-          } else {
-            pbc_flag[iswap][i] = 1;
-            if (idir == 0) pbc[iswap][i][idim] = 1;
-            else pbc[iswap][i][idim] = -1;
-            if (triclinic) {
-              if (idim == 1) pbc[iswap][i][5] = pbc[iswap][i][idim];
-              if (idim == 2) pbc[iswap][i][4] = pbc[iswap][i][3] = pbc[iswap][i][idim];
-            }
-            sbox[0] = MAX(oboxlo[0],lo2[0]);
-            sbox[1] = MAX(oboxlo[1],lo2[1]);
-            sbox[2] = MAX(oboxlo[2],lo2[2]);
-            sbox[3] = MIN(oboxhi[0],hi2[0]);
-            sbox[4] = MIN(oboxhi[1],hi2[1]);
-            sbox[5] = MIN(oboxhi[2],hi2[2]);
-          }
-
-          if (idir == 0) {
-            sbox[idim] = sublo[idim];
-            if (i < noverlap1)
-              sbox[3+idim] = MIN(sbox[3+idim]+cutghost[idim],subhi[idim]);
-            else
-              sbox[3+idim] = MIN(sbox[3+idim]-prd[idim]+cutghost[idim],subhi[idim]);
-          } else {
-            if (i < noverlap1) sbox[idim] = MAX(sbox[idim]-cutghost[idim],sublo[idim]);
-            else sbox[idim] = MAX(sbox[idim]+prd[idim]-cutghost[idim],sublo[idim]);
-            sbox[3+idim] = subhi[idim];
-          }
-
-          if (idim >= 1) {
-            if (sbox[0] == oboxlo[0]) sbox[0] -= cutghost[0];
-            if (sbox[3] == oboxhi[0]) sbox[3] += cutghost[0];
-          }
-          if (idim == 2) {
-            if (sbox[1] == oboxlo[1]) sbox[1] -= cutghost[1];
-            if (sbox[4] == oboxhi[1]) sbox[4] += cutghost[1];
-          }
-
-          memcpy(sendbox[iswap][i],sbox,6*sizeof(double));
+        if (i < noverlap1) {
+          sbox[0] = MAX(oboxlo[0],lo1[0]);
+          sbox[1] = MAX(oboxlo[1],lo1[1]);
+          sbox[2] = MAX(oboxlo[2],lo1[2]);
+          sbox[3] = MIN(oboxhi[0],hi1[0]);
+          sbox[4] = MIN(oboxhi[1],hi1[1]);
+          sbox[5] = MIN(oboxhi[2],hi1[2]);
+        } else {
+          pbc_flag[iswap][i] = 1;
+          if (idir == 0) pbc[iswap][i][idim] = 1;
+          else pbc[iswap][i][idim] = -1;
+          sbox[0] = MAX(oboxlo[0],lo2[0]);
+          sbox[1] = MAX(oboxlo[1],lo2[1]);
+          sbox[2] = MAX(oboxlo[2],lo2[2]);
+          sbox[3] = MIN(oboxhi[0],hi2[0]);
+          sbox[4] = MIN(oboxhi[1],hi2[1]);
+          sbox[5] = MIN(oboxhi[2],hi2[2]);
         }
-      }
 
-      if (mode == Comm::MULTI) {
-        for (i = 0; i < noverlap; i++) {
-          pbc_flag[iswap][i] = 0;
-          pbc[iswap][i][0] = pbc[iswap][i][1] = pbc[iswap][i][2] =
-            pbc[iswap][i][3] = pbc[iswap][i][4] = pbc[iswap][i][5] = 0;
-
-          (this->*box_other)(idim,idir,overlap[i],oboxlo,oboxhi);
-
-          if (i < noverlap1) {
-            sbox[0] = MAX(oboxlo[0],lo1[0]);
-            sbox[1] = MAX(oboxlo[1],lo1[1]);
-            sbox[2] = MAX(oboxlo[2],lo1[2]);
-            sbox[3] = MIN(oboxhi[0],hi1[0]);
-            sbox[4] = MIN(oboxhi[1],hi1[1]);
-            sbox[5] = MIN(oboxhi[2],hi1[2]);
-          } else {
-            pbc_flag[iswap][i] = 1;
-            if (idir == 0) pbc[iswap][i][idim] = 1;
-            else pbc[iswap][i][idim] = -1;
-            if (triclinic) {
-              if (idim == 1) pbc[iswap][i][5] = pbc[iswap][i][idim];
-              if (idim == 2) pbc[iswap][i][4] = pbc[iswap][i][3] = pbc[iswap][i][idim];
-            }
-            sbox[0] = MAX(oboxlo[0],lo2[0]);
-            sbox[1] = MAX(oboxlo[1],lo2[1]);
-            sbox[2] = MAX(oboxlo[2],lo2[2]);
-            sbox[3] = MIN(oboxhi[0],hi2[0]);
-            sbox[4] = MIN(oboxhi[1],hi2[1]);
-            sbox[5] = MIN(oboxhi[2],hi2[2]);
-          }
-
-          for (int icollection = 0; icollection < ncollections; icollection++) {
-            sbox_multi[0] = sbox[0];
-            sbox_multi[1] = sbox[1];
-            sbox_multi[2] = sbox[2];
-            sbox_multi[3] = sbox[3];
-            sbox_multi[4] = sbox[4];
-            sbox_multi[5] = sbox[5];
-            if (idir == 0) {
-              sbox_multi[idim] = sublo[idim];
-              if (i < noverlap1)
-                sbox_multi[3+idim] =
-                  MIN(sbox_multi[3+idim]+cutghostmulti[icollection][idim],subhi[idim]);
-              else
-                sbox_multi[3+idim] =
-                  MIN(sbox_multi[3+idim]-prd[idim]+cutghostmulti[icollection][idim],
-                      subhi[idim]);
-            } else {
-              if (i < noverlap1)
-                sbox_multi[idim] =
-                  MAX(sbox_multi[idim]-cutghostmulti[icollection][idim],sublo[idim]);
-              else
-                sbox_multi[idim] =
-                  MAX(sbox_multi[idim]+prd[idim]-cutghostmulti[icollection][idim],
-                      sublo[idim]);
-              sbox_multi[3+idim] = subhi[idim];
-            }
-
-            if (idim >= 1) {
-              if (sbox_multi[0] == oboxlo[0])
-                sbox_multi[0] -= cutghostmulti[icollection][idim];
-              if (sbox_multi[3] == oboxhi[0])
-                sbox_multi[3] += cutghostmulti[icollection][idim];
-            }
-            if (idim == 2) {
-              if (sbox_multi[1] == oboxlo[1])
-                sbox_multi[1] -= cutghostmulti[icollection][idim];
-              if (sbox_multi[4] == oboxhi[1])
-                sbox_multi[4] += cutghostmulti[icollection][idim];
-            }
-
-            memcpy(sendbox_multi[iswap][i][icollection],sbox_multi,6*sizeof(double));
-          }
+        if (idir == 0) {
+          sbox[idim] = sublo[idim];
+          if (i < noverlap1) sbox[3+idim] = MIN(sbox[3+idim]+cut,subhi[idim]);
+          else sbox[3+idim] = MIN(sbox[3+idim]-prd[idim]+cut,subhi[idim]);
+        } else {
+          if (i < noverlap1) sbox[idim] = MAX(sbox[idim]-cut,sublo[idim]);
+          else sbox[idim] = MAX(sbox[idim]+prd[idim]-cut,sublo[idim]);
+          sbox[3+idim] = subhi[idim];
         }
-      }
 
-      if (mode == Comm::MULTIOLD) {
-        for (i = 0; i < noverlap; i++) {
-          pbc_flag[iswap][i] = 0;
-          pbc[iswap][i][0] = pbc[iswap][i][1] = pbc[iswap][i][2] =
-            pbc[iswap][i][3] = pbc[iswap][i][4] = pbc[iswap][i][5] = 0;
-
-          (this->*box_other)(idim,idir,overlap[i],oboxlo,oboxhi);
-
-          if (i < noverlap1) {
-            sbox[0] = MAX(oboxlo[0],lo1[0]);
-            sbox[1] = MAX(oboxlo[1],lo1[1]);
-            sbox[2] = MAX(oboxlo[2],lo1[2]);
-            sbox[3] = MIN(oboxhi[0],hi1[0]);
-            sbox[4] = MIN(oboxhi[1],hi1[1]);
-            sbox[5] = MIN(oboxhi[2],hi1[2]);
-          } else {
-            pbc_flag[iswap][i] = 1;
-            if (idir == 0) pbc[iswap][i][idim] = 1;
-            else pbc[iswap][i][idim] = -1;
-            if (triclinic) {
-              if (idim == 1) pbc[iswap][i][5] = pbc[iswap][i][idim];
-              if (idim == 2) pbc[iswap][i][4] = pbc[iswap][i][3] = pbc[iswap][i][idim];
-            }
-            sbox[0] = MAX(oboxlo[0],lo2[0]);
-            sbox[1] = MAX(oboxlo[1],lo2[1]);
-            sbox[2] = MAX(oboxlo[2],lo2[2]);
-            sbox[3] = MIN(oboxhi[0],hi2[0]);
-            sbox[4] = MIN(oboxhi[1],hi2[1]);
-            sbox[5] = MIN(oboxhi[2],hi2[2]);
-          }
-
-          for (int itype = 1; itype <= atom->ntypes; itype++) {
-            sbox_multiold[0] = sbox[0];
-            sbox_multiold[1] = sbox[1];
-            sbox_multiold[2] = sbox[2];
-            sbox_multiold[3] = sbox[3];
-            sbox_multiold[4] = sbox[4];
-            sbox_multiold[5] = sbox[5];
-            if (idir == 0) {
-              sbox_multiold[idim] = sublo[idim];
-              if (i < noverlap1)
-                sbox_multiold[3+idim] =
-                  MIN(sbox_multiold[3+idim]+cutghostmultiold[itype][idim],subhi[idim]);
-              else
-                sbox_multiold[3+idim] =
-                  MIN(sbox_multiold[3+idim]-prd[idim]+cutghostmultiold[itype][idim],
-                      subhi[idim]);
-            } else {
-              if (i < noverlap1)
-                sbox_multiold[idim] =
-                  MAX(sbox_multiold[idim]-cutghostmultiold[itype][idim],sublo[idim]);
-              else
-                sbox_multiold[idim] =
-                  MAX(sbox_multiold[idim]+prd[idim]-cutghostmultiold[itype][idim],
-                      sublo[idim]);
-              sbox_multiold[3+idim] = subhi[idim];
-            }
-
-            if (idim >= 1) {
-              if (sbox_multiold[0] == oboxlo[0])
-                sbox_multiold[0] -= cutghostmultiold[itype][idim];
-              if (sbox_multiold[3] == oboxhi[0])
-                sbox_multiold[3] += cutghostmultiold[itype][idim];
-            }
-            if (idim == 2) {
-              if (sbox_multiold[1] == oboxlo[1])
-                sbox_multiold[1] -= cutghostmultiold[itype][idim];
-              if (sbox_multiold[4] == oboxhi[1])
-                sbox_multiold[4] += cutghostmultiold[itype][idim];
-            }
-
-            memcpy(sendbox_multiold[iswap][i][itype],sbox_multiold,6*sizeof(double));
-          }
+        if (idim >= 1) {
+          if (sbox[0] == oboxlo[0]) sbox[0] -= cut;
+          if (sbox[3] == oboxhi[0]) sbox[3] += cut;
         }
+        if (idim == 2) {
+          if (sbox[1] == oboxlo[1]) sbox[1] -= cut;
+          if (sbox[4] == oboxhi[1]) sbox[4] += cut;
+        }
+
+        memcpy(sendbox[iswap][i],sbox,6*sizeof(double));
       }
 
       iswap++;
     }
   }
-
 
   // setup exchange communication = subset of forward/reverse comm procs
   // loop over dimensions
@@ -698,15 +424,15 @@ void CommTiled::setup()
     }
   }
 
-  // reallocate MPI Requests as needed
+  // reallocate MPI Requests and Statuses as needed
 
   int nmax = 0;
   for (i = 0; i < nswap; i++) nmax = MAX(nmax,nprocmax[i]);
   for (i = 0; i < dimension; i++) nmax = MAX(nmax,nexchprocmax[i]);
-  if (nmax > maxrequest) {
-    maxrequest = nmax;
+  if (nmax > maxreqstat) {
+    maxreqstat = nmax;
     delete [] requests;
-    requests = new MPI_Request[maxrequest];
+    requests = new MPI_Request[maxreqstat];
   }
 }
 
@@ -715,7 +441,7 @@ void CommTiled::setup()
    other per-atom attributes may also be sent via pack/unpack routines
 ------------------------------------------------------------------------- */
 
-void CommTiled::forward_comm(int /*dummy*/)
+void CommTiled::forward_comm(int dummy)
 {
   int i,irecv,n,nsend,nrecv;
   AtomVec *avec = atom->avec;
@@ -789,7 +515,7 @@ void CommTiled::forward_comm(int /*dummy*/)
                     MPI_DOUBLE,recvproc[iswap][i],0,world,&requests[i]);
       }
       if (sendother[iswap]) {
-        for (i = 0; i < nsend; i++) {
+        for (i = 0; i < nsendproc[iswap]; i++) {
           n = avec->pack_comm(sendnum[iswap][i],sendlist[iswap][i],
                               buf_send,pbc_flag[iswap][i],pbc[iswap][i]);
           MPI_Send(buf_send,n,MPI_DOUBLE,sendproc[iswap][i],0,world);
@@ -898,7 +624,7 @@ void CommTiled::reverse_comm()
    atoms exchanged with procs that touch sub-box in each of 3 dims
    send out atoms that have left my box, receive ones entering my box
    atoms will be lost if not inside a touching proc's box
-     can happen if atom moves outside of non-periodic boundary
+     can happen if atom moves outside of non-periodic bounary
      or if atom moves more than one proc away
    this routine called before every reneighboring
    for triclinic, atoms must be in lamda coords (0-1) before exchange is called
@@ -917,32 +643,31 @@ void CommTiled::exchange()
   // map_set() is done at end of borders()
   // clear ghost count and any ghost bonus data internal to AtomVec
 
-  if (map_style != Atom::MAP_NONE) atom->map_clear();
+  if (map_style) atom->map_clear();
   atom->nghost = 0;
   atom->avec->clear_bonus();
 
-  // insure send buf has extra space for a single atom
-  // only need to reset if a fix can dynamically add to size of single atom
+  // insure send buf is large enough for single atom
+  // bufextra = max size of one atom = allowed overflow of sendbuf
+  // fixes can change per-atom size requirement on-the-fly
 
-  if (maxexchange_fix_dynamic) {
-    int bufextra_old = bufextra;
-    init_exchange();
-    if (bufextra > bufextra_old) grow_send(maxsend+bufextra,2);
-  }
+  int bufextra_old = bufextra;
+  maxexchange = maxexchange_atom + maxexchange_fix;
+  bufextra = maxexchange + BUFEXTRA;
+  if (bufextra > bufextra_old)
+    memory->grow(buf_send,maxsend+bufextra,"comm:buf_send");
 
   // domain properties used in exchange method and methods it calls
   // subbox bounds for orthogonal or triclinic
 
+  prd = domain->prd;
+  boxlo = domain->boxlo;
+  boxhi = domain->boxhi;
+
   if (triclinic == 0) {
-    prd = domain->prd;
-    boxlo = domain->boxlo;
-    boxhi = domain->boxhi;
     sublo = domain->sublo;
     subhi = domain->subhi;
   } else {
-    prd = domain->prd_lamda;
-    boxlo = domain->boxlo_lamda;
-    boxhi = domain->boxhi_lamda;
     sublo = domain->sublo_lamda;
     subhi = domain->subhi_lamda;
   }
@@ -969,10 +694,6 @@ void CommTiled::exchange()
         if (proc != me) {
           buf_send[nsend++] = proc;
           nsend += avec->pack_exchange(i,&buf_send[nsend]);
-        } else {
-          // DEBUG statment
-          // error->warning(FLERR,"Losing atom in CommTiled::exchange() send, "
-          //                "likely bad dynamics");
         }
         avec->copy(nlocal-1,i,1);
         nlocal--;
@@ -1022,9 +743,6 @@ void CommTiled::exchange()
         if (value >= lo && value < hi) {
           m += avec->unpack_exchange(&buf_recv[m]);
           continue;
-        } else {
-          // DEBUG statment
-          // error->warning(FLERR,"Losing atom in CommTiled::exchange() recv");
         }
       }
       m += static_cast<int> (buf_recv[m]);
@@ -1046,14 +764,11 @@ void CommTiled::exchange()
 
 void CommTiled::borders()
 {
-  int i,m,n,nlast,nsend,nrecv,ngroup,nprior,ncount,ncountall;
+  int i,m,n,nlast,nsend,nrecv,ngroup,ncount,ncountall;
   double xlo,xhi,ylo,yhi,zlo,zhi;
   double *bbox;
   double **x;
   AtomVec *avec = atom->avec;
-
-  // After exchanging, need to reconstruct collection array for border communication
-  if (mode == Comm::MULTI) neighbor->build_collection(0);
 
   // send/recv max one = max # of atoms in single send/recv for any swap
   // send/recv max all = max # of atoms in all sends/recvs within any swap
@@ -1071,158 +786,52 @@ void CommTiled::borders()
     // for x-dim swaps, check owned atoms
     // for yz-dim swaps, check owned and ghost atoms
     // store sent atom indices in sendlist for use in future timesteps
-    // single mode and multi mode
+    // NOTE: assume SINGLE mode, add logic for MULTI mode later
 
     x = atom->x;
     if (iswap % 2 == 0) nlast = atom->nlocal + atom->nghost;
 
     ncountall = 0;
-
     for (m = 0; m < nsendproc[iswap]; m++) {
+      bbox = sendbox[iswap][m];
+      xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
+      xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
 
-      if (mode == Comm::SINGLE) {
-        bbox = sendbox[iswap][m];
-        xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-        xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
+      ncount = 0;
 
-        ncount = 0;
-
-        if (!bordergroup) {
-          for (i = 0; i < nlast; i++) {
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-        } else {
-          ngroup = atom->nfirst;
-          for (i = 0; i < ngroup; i++) {
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-          for (i = atom->nlocal; i < nlast; i++) {
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
+      if (!bordergroup) {
+        for (i = 0; i < nlast; i++) {
+          if (x[i][0] >= xlo && x[i][0] < xhi &&
+              x[i][1] >= ylo && x[i][1] < yhi &&
+              x[i][2] >= zlo && x[i][2] < zhi) {
+            if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
+            sendlist[iswap][m][ncount++] = i;
           }
         }
-
-        sendnum[iswap][m] = ncount;
-        smaxone = MAX(smaxone,ncount);
-        ncountall += ncount;
-
-      } else if (mode == Comm::MULTI) {
-
-        int* collection=neighbor->collection;
-        int icollection;
-        ncount = 0;
-
-        if (!bordergroup) {
-          for (i = 0; i < nlast; i++) {
-            icollection=collection[i];
-            bbox = sendbox_multi[iswap][m][icollection];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-        } else {
-          ngroup = atom->nfirst;
-          for (i = 0; i < ngroup; i++) {
-            icollection=collection[i];
-            bbox = sendbox_multi[iswap][m][icollection];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-          for (i = atom->nlocal; i < nlast; i++) {
-            icollection=collection[i];
-            bbox = sendbox_multi[iswap][m][icollection];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-        }
-
-        sendnum[iswap][m] = ncount;
-        smaxone = MAX(smaxone,ncount);
-        ncountall += ncount;
       } else {
-
-        int* type=atom->type;
-        int itype;
-        ncount = 0;
-
-        if (!bordergroup) {
-          for (i = 0; i < nlast; i++) {
-            itype=type[i];
-            bbox = sendbox_multiold[iswap][m][itype];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-        } else {
-          ngroup = atom->nfirst;
-          for (i = 0; i < ngroup; i++) {
-            itype=type[i];
-            bbox = sendbox_multiold[iswap][m][itype];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
-          }
-          for (i = atom->nlocal; i < nlast; i++) {
-            itype=type[i];
-            bbox = sendbox_multiold[iswap][m][itype];
-            xlo = bbox[0]; ylo = bbox[1]; zlo = bbox[2];
-            xhi = bbox[3]; yhi = bbox[4]; zhi = bbox[5];
-            if (x[i][0] >= xlo && x[i][0] < xhi &&
-                x[i][1] >= ylo && x[i][1] < yhi &&
-                x[i][2] >= zlo && x[i][2] < zhi) {
-              if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
-              sendlist[iswap][m][ncount++] = i;
-            }
+        ngroup = atom->nfirst;
+        for (i = 0; i < ngroup; i++) {
+          if (x[i][0] >= xlo && x[i][0] < xhi &&
+              x[i][1] >= ylo && x[i][1] < yhi &&
+              x[i][2] >= zlo && x[i][2] < zhi) {
+            if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
+            sendlist[iswap][m][ncount++] = i;
           }
         }
-
-        sendnum[iswap][m] = ncount;
-        smaxone = MAX(smaxone,ncount);
-        ncountall += ncount;
+        for (i = atom->nlocal; i < nlast; i++) {
+          if (x[i][0] >= xlo && x[i][0] < xhi &&
+              x[i][1] >= ylo && x[i][1] < yhi &&
+              x[i][2] >= zlo && x[i][2] < zhi) {
+            if (ncount == maxsendlist[iswap][m]) grow_list(iswap,m,ncount);
+            sendlist[iswap][m][ncount++] = i;
+          }
+        }
       }
-    }
 
+      sendnum[iswap][m] = ncount;
+      smaxone = MAX(smaxone,ncount);
+      ncountall += ncount;
+    }
     smaxall = MAX(smaxall,ncountall);
 
     // send sendnum counts to procs who recv from me except self
@@ -1275,8 +884,8 @@ void CommTiled::borders()
     if (rmaxall*size_border > maxrecv) grow_recv(rmaxall*size_border);
 
     // swap atoms with other procs using pack_border(), unpack_border()
-    // can use Waitany() because calls to unpack_border()
-    //   increment per-atom arrays as much as needed
+    // use Waitall() instead of Waitany() because calls to unpack_border()
+    //   must increment per-atom arrays in ascending order
 
     if (ghost_velocity) {
       if (recvother[iswap]) {
@@ -1300,12 +909,11 @@ void CommTiled::borders()
                                 buf_send);
       }
       if (recvother[iswap]) {
-        for (i = 0; i < nrecv; i++) {
-          MPI_Waitany(nrecv,requests,&m,MPI_STATUS_IGNORE);
+        MPI_Waitall(nrecv,requests,MPI_STATUS_IGNORE);
+        for (m = 0; m < nrecv; m++)
           avec->unpack_border_vel(recvnum[iswap][m],firstrecv[iswap][m],
                                   &buf_recv[size_border*
                                             forward_recv_offset[iswap][m]]);
-        }
       }
 
     } else {
@@ -1325,36 +933,24 @@ void CommTiled::borders()
       if (sendself[iswap]) {
         avec->pack_border(sendnum[iswap][nsend],sendlist[iswap][nsend],
                           buf_send,pbc_flag[iswap][nsend],pbc[iswap][nsend]);
-        avec->unpack_border(recvnum[iswap][nrecv],firstrecv[iswap][nrecv],
+        avec->unpack_border(recvnum[iswap][nsend],firstrecv[iswap][nsend],
                             buf_send);
       }
       if (recvother[iswap]) {
-        for (i = 0; i < nrecv; i++) {
-          MPI_Waitany(nrecv,requests,&m,MPI_STATUS_IGNORE);
+        MPI_Waitall(nrecv,requests,MPI_STATUS_IGNORE);
+        for (m = 0; m < nrecv; m++)
           avec->unpack_border(recvnum[iswap][m],firstrecv[iswap][m],
                               &buf_recv[size_border*
                                         forward_recv_offset[iswap][m]]);
-        }
       }
     }
 
     // increment ghost atoms
 
     n = nrecvproc[iswap];
-    if (n) {
-      nprior = atom->nghost + atom->nlocal;
+    if (n)
       atom->nghost += forward_recv_offset[iswap][n-1] + recvnum[iswap][n-1];
-      if (neighbor->style == Neighbor::MULTI) neighbor->build_collection(nprior);
-    }
   }
-
-  // For molecular systems we lose some bits for local atom indices due
-  // to encoding of special pairs in neighbor lists. Check for overflows.
-
-  if ((atom->molecular != Atom::ATOMIC)
-      && ((atom->nlocal + atom->nghost) > NEIGHMASK))
-    error->one(FLERR,"Per-processor number of atoms is too large for "
-               "molecular neighbor lists");
 
   // insure send/recv buffers are long enough for all forward & reverse comm
   // send buf is for one forward or reverse sends to one proc
@@ -1367,7 +963,7 @@ void CommTiled::borders()
 
   // reset global->local map
 
-  if (map_style != Atom::MAP_NONE) atom->map_set();
+  if (map_style) atom->map_set();
 }
 
 /* ----------------------------------------------------------------------
@@ -1571,7 +1167,7 @@ void CommTiled::reverse_comm_fix(Fix *fix, int size)
    NOTE: how to setup one big buf recv with correct offsets ??
 ------------------------------------------------------------------------- */
 
-void CommTiled::reverse_comm_fix_variable(Fix * /*fix*/)
+void CommTiled::reverse_comm_fix_variable(Fix *fix)
 {
   error->all(FLERR,"Reverse comm fix variable not yet supported by CommTiled");
 }
@@ -1835,7 +1431,7 @@ void CommTiled::forward_comm_array(int nsize, double **array)
    NOTE: this method is currently not used
 ------------------------------------------------------------------------- */
 
-int CommTiled::exchange_variable(int n, double * /*inbuf*/, double *& /*outbuf*/)
+int CommTiled::exchange_variable(int n, double *inbuf, double *&outbuf)
 {
   int nrecv = n;
   return nrecv;
@@ -1849,9 +1445,11 @@ int CommTiled::exchange_variable(int n, double * /*inbuf*/, double *& /*outbuf*/
 
 void CommTiled::box_drop_brick(int idim, double *lo, double *hi, int &indexme)
 {
-  int dir;
-  int index = -1;
+  // NOTE: this is not triclinic compatible
+  // NOTE: these error messages are internal sanity checks
+  //       should not occur, can be removed at some point
 
+  int index,dir;
   if (hi[idim] == sublo[idim]) {
     index = myloc[idim] - 1;
     dir = -1;
@@ -1914,7 +1512,7 @@ void CommTiled::box_drop_brick(int idim, double *lo, double *hi, int &indexme)
    no need to split lo/hi box as recurse b/c OK if box extends outside RCB box
 ------------------------------------------------------------------------- */
 
-void CommTiled::box_drop_tiled(int /*idim*/, double *lo, double *hi, int &indexme)
+void CommTiled::box_drop_tiled(int idim, double *lo, double *hi, int &indexme)
 {
   box_drop_tiled_recurse(lo,hi,0,nprocs-1,indexme);
 }
@@ -2006,7 +1604,7 @@ void CommTiled::box_other_brick(int idim, int idir,
    return other box owned by proc as lo/hi corner pts
 ------------------------------------------------------------------------- */
 
-void CommTiled::box_other_tiled(int /*idim*/, int /*idir*/,
+void CommTiled::box_other_tiled(int idim, int idir,
                                 int proc, double *lo, double *hi)
 {
   double (*split)[2] = rcbinfo[proc].mysplit;
@@ -2209,29 +1807,24 @@ void CommTiled::coord2proc_setup()
 
 int CommTiled::coord2proc(double *x, int &igx, int &igy, int &igz)
 {
-  if (layout != Comm::LAYOUT_TILED) return Comm::coord2proc(x,igx,igy,igz);
+  if (layout != LAYOUT_TILED) return Comm::coord2proc(x,igx,igy,igz);
   return point_drop_tiled_recurse(x,0,nprocs-1);
 }
 
 /* ----------------------------------------------------------------------
    realloc the size of the send buffer as needed with BUFFACTOR and bufextra
-   flag = 0, don't need to realloc with copy, just free/malloc w/ BUFFACTOR
-   flag = 1, realloc with BUFFACTOR
-   flag = 2, free/malloc w/out BUFFACTOR
+   if flag = 1, realloc
+   if flag = 0, don't need to realloc with copy, just free/malloc
 ------------------------------------------------------------------------- */
 
 void CommTiled::grow_send(int n, int flag)
 {
-  if (flag == 0) {
-    maxsend = static_cast<int> (BUFFACTOR * n);
+  maxsend = static_cast<int> (BUFFACTOR * n);
+  if (flag)
+    memory->grow(buf_send,maxsend+bufextra,"comm:buf_send");
+  else {
     memory->destroy(buf_send);
     memory->create(buf_send,maxsend+bufextra,"comm:buf_send");
-  } else if (flag == 1) {
-    maxsend = static_cast<int> (BUFFACTOR * n);
-    memory->grow(buf_send,maxsend+bufextra,"comm:buf_send");
-  } else {
-    memory->destroy(buf_send);
-    memory->grow(buf_send,maxsend+bufextra,"comm:buf_send");
   }
 }
 
@@ -2284,29 +1877,25 @@ void CommTiled::allocate_swap(int n)
   pbc_flag = new int*[n];
   pbc = new int**[n];
   sendbox = new double**[n];
-  sendbox_multi = new double***[n];
-  sendbox_multiold = new double***[n];
   maxsendlist = new int*[n];
   sendlist = new int**[n];
 
   for (int i = 0; i < n; i++) {
-    sendproc[i] = recvproc[i] = nullptr;
-    sendnum[i] = recvnum[i] = nullptr;
-    size_forward_recv[i] = firstrecv[i] = nullptr;
-    size_reverse_send[i] = size_reverse_recv[i] = nullptr;
-    forward_recv_offset[i] = reverse_recv_offset[i] = nullptr;
+    sendproc[i] = recvproc[i] = NULL;
+    sendnum[i] = recvnum[i] = NULL;
+    size_forward_recv[i] = firstrecv[i] = NULL;
+    size_reverse_send[i] = size_reverse_recv[i] = NULL;
+    forward_recv_offset[i] = reverse_recv_offset[i] = NULL;
 
-    pbc_flag[i] = nullptr;
-    pbc[i] = nullptr;
-    sendbox[i] = nullptr;
-    sendbox_multi[i] = nullptr;
-    sendbox_multiold[i] = nullptr;
-    maxsendlist[i] = nullptr;
-    sendlist[i] = nullptr;
+    pbc_flag[i] = NULL;
+    pbc[i] = NULL;
+    sendbox[i] = NULL;
+    maxsendlist[i] = NULL;
+    sendlist[i] = NULL;
   }
 
-  maxrequest = 0;
-  requests = nullptr;
+  maxreqstat = 0;
+  requests = NULL;
 
   for (int i = 0; i < n; i++) {
     nprocmax[i] = DELTA_PROCS;
@@ -2349,9 +1938,6 @@ void CommTiled::grow_swap_send(int i, int n, int nold)
   memory->create(pbc[i],n,6,"comm:pbc_flag");
   memory->destroy(sendbox[i]);
   memory->create(sendbox[i],n,6,"comm:sendbox");
-  grow_swap_send_multi(i,n);
-  memory->destroy(sendbox_multiold[i]);
-  memory->create(sendbox_multiold[i],n,atom->ntypes+1,6,"comm:sendbox_multiold");
 
   delete [] maxsendlist[i];
   maxsendlist[i] = new int[n];
@@ -2383,19 +1969,6 @@ void CommTiled::grow_swap_recv(int i, int n)
   size_reverse_send[i] = new int[n];
 }
 
-
-/* ----------------------------------------------------------------------
-   grow info for swap I for multi as ncollections can change
-------------------------------------------------------------------------- */
-
-void CommTiled::grow_swap_send_multi(int i, int n)
-{
-  memory->destroy(sendbox_multi[i]);
-
-  if (ncollections > 0)
-    memory->create(sendbox_multi[i],n,ncollections,6,"comm:sendbox_multi");
-}
-
 /* ----------------------------------------------------------------------
    deallocate swap info
 ------------------------------------------------------------------------- */
@@ -2423,9 +1996,6 @@ void CommTiled::deallocate_swap(int n)
     delete [] pbc_flag[i];
     memory->destroy(pbc[i]);
     memory->destroy(sendbox[i]);
-    memory->destroy(sendbox_multi[i]);
-    memory->destroy(sendbox_multiold[i]);
-
     delete [] maxsendlist[i];
 
     for (int j = 0; j < nprocmax[i]; j++) memory->destroy(sendlist[i][j]);
@@ -2446,8 +2016,6 @@ void CommTiled::deallocate_swap(int n)
   delete [] pbc_flag;
   delete [] pbc;
   delete [] sendbox;
-  delete [] sendbox_multi;
-  delete [] sendbox_multiold;
   delete [] maxsendlist;
   delete [] sendlist;
 
@@ -2471,8 +2039,8 @@ void CommTiled::deallocate_swap(int n)
    return # of bytes of allocated memory
 ------------------------------------------------------------------------- */
 
-double CommTiled::memory_usage()
+bigint CommTiled::memory_usage()
 {
-  double bytes = 0;
+  bigint bytes = 0;
   return bytes;
 }

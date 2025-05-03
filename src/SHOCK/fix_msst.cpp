@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -14,26 +13,26 @@
 
 /* ----------------------------------------------------------------------
    Contributing authors: Laurence Fried (LLNL), Evan Reed (LLNL, Stanford)
-     implementation of the Multi-Scale Shock Method
-   see Reed, Fried, Joannopoulos, Phys Rev Lett, 90, 235503 (2003)
+   implementation of the Multi-Scale Shock Method
+   See Reed, Fried, Joannopoulos, Phys Rev Lett, 90, 235503 (2003)
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include "fix_msst.h"
-
 #include "atom.h"
+#include "force.h"
 #include "comm.h"
+#include "output.h"
+#include "modify.h"
 #include "compute.h"
+#include "kspace.h"
+#include "update.h"
+#include "respa.h"
 #include "domain.h"
 #include "error.h"
-#include "fix_external.h"
-#include "force.h"
-#include "kspace.h"
-#include "memory.h"
-#include "modify.h"
-#include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "thermo.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -41,13 +40,14 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixMSST::FixMSST(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg), old_velocity(nullptr), rfix(nullptr),
-  id_temp(nullptr), id_press(nullptr), id_pe(nullptr), temperature(nullptr),
-  pressure(nullptr), pe(nullptr)
+  Fix(lmp, narg, arg), old_velocity(NULL), rfix(NULL), 
+  id_temp(NULL), id_press(NULL), id_pe(NULL), temperature(NULL), 
+  pressure(NULL), pe(NULL), atoms_allocated(0)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix msst command");
 
   restart_global = 1;
+  box_change_size = 1;
   time_integrate = 1;
   scalar_flag = 1;
   vector_flag = 1;
@@ -55,7 +55,6 @@ FixMSST::FixMSST(LAMMPS *lmp, int narg, char **arg) :
   global_freq = 1;
   extscalar = 1;
   extvector = 0;
-  ecouple_flag = 1;
 
   // set defaults
 
@@ -64,11 +63,6 @@ FixMSST::FixMSST(LAMMPS *lmp, int narg, char **arg) :
   p0 = 0.0;
   v0 = 1.0;
   e0 = 0.0;
-  TS_int = 0;
-  T0S0 = 0.0;
-  S_elec = 0.0;
-  S_elec_1 = 0.0;
-  S_elec_2 = 0.0;
 
   qmass = 1.0e1;
   mu = 0.0;
@@ -77,140 +71,164 @@ FixMSST::FixMSST(LAMMPS *lmp, int narg, char **arg) :
   v0_set = 0;
   e0_set = 0;
   tscale = 0.01;
-  dftb = 0;
-  beta = 0.0;
 
-  if (strcmp(arg[3],"x") == 0) {
+  if ( strcmp(arg[3],"x") == 0 )
     direction = 0;
-    box_change |= BOX_CHANGE_X;
-  } else if (strcmp(arg[3],"y") == 0) {
+  else if ( strcmp(arg[3],"y") == 0 )
     direction = 1;
-    box_change |= BOX_CHANGE_Y;
-  } else if (strcmp(arg[3],"z") == 0) {
+  else if ( strcmp(arg[3],"z") == 0 )
     direction = 2;
-    box_change |= BOX_CHANGE_Z;
-  } else error->all(FLERR,"Illegal fix msst command");
+  else {
+    error->all(FLERR,"Illegal fix msst command");
+  }
 
-  velocity = utils::numeric(FLERR,arg[4],false,lmp);
-  if (velocity < 0) error->all(FLERR,"Illegal fix msst command");
+  velocity = force->numeric(FLERR,arg[4]);
+  if ( velocity < 0 )
+    error->all(FLERR,"Illegal fix msst command");
 
-  // optional args
-
-  int iarg = 5;
-  while (iarg < narg) {
-    if (strcmp(arg[iarg],"q") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      qmass = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"mu") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      mu = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"p0") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      p0 = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+  for ( int iarg = 5; iarg < narg; iarg++ ) {
+    if ( strcmp(arg[iarg],"q") == 0 ) {
+      qmass = force->numeric(FLERR,arg[iarg+1]);
+      iarg++;
+    } else if ( strcmp(arg[iarg],"mu") == 0 ) {
+      mu = force->numeric(FLERR,arg[iarg+1]);
+      iarg++;
+    } else if ( strcmp(arg[iarg],"p0") == 0 ) {
+      p0 = force->numeric(FLERR,arg[iarg+1]);
+      iarg++;
       p0_set = 1;
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"v0") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      v0 = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+    } else if ( strcmp(arg[iarg],"v0") == 0 ) {
+      v0 = force->numeric(FLERR,arg[iarg+1]);
       v0_set = 1;
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"e0") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      e0 = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      iarg++;
+    } else if ( strcmp(arg[iarg],"e0") == 0 ) {
+      e0 = force->numeric(FLERR,arg[iarg+1]);
       e0_set = 1;
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"tscale") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      tscale = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      iarg++;
+    } else if ( strcmp(arg[iarg],"tscale") == 0 ) {
+      tscale = force->numeric(FLERR,arg[iarg+1]);
       if (tscale < 0.0 || tscale > 1.0)
         error->all(FLERR,"Fix msst tscale must satisfy 0 <= tscale < 1");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"dftb") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      if (strcmp(arg[iarg+1],"yes") == 0) dftb = 1;
-      else if (strcmp(arg[iarg+1],"yes") == 0) dftb = 0;
-      else error->all(FLERR,"Illegal fix msst command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"beta") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix msst command");
-      beta = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      if (beta < 0.0 || beta > 1.0)
-        error->all(FLERR,"Illegal fix msst command");
-      iarg += 2;
+      iarg++;
     } else error->all(FLERR,"Illegal fix msst command");
   }
 
-  // output MSST info
-
   if (comm->me == 0) {
-    std::string mesg = "MSST parameters:\n";
-    if (direction == 0) mesg += "  Shock in x direction\n";
-    else if (direction == 1) mesg += "  Shock in y direction\n";
-    else if (direction == 2) mesg += "  Shock in z direction\n";
-    mesg += fmt::format("  Cell mass-like parameter qmass "
-                        "(units of mass^2/length^4) = {:.8g}\n", qmass);
-    mesg += fmt::format("  Shock velocity = {:.8g}\n", velocity);
-    mesg += fmt::format("  Artificial viscosity "
-                        "(units of mass/length/time) = {:.8g}\n", mu);
+    if (screen) {
+      fprintf(screen,"MSST parameters:\n");
+      if (direction == 0) fprintf(screen,"  Shock in x direction\n");
+      else if (direction == 1) fprintf(screen,"  Shock in y direction\n");
+      else if (direction == 2) fprintf(screen,"  Shock in z direction\n");
+      fprintf(screen,"  Cell mass-like parameter qmass "
+              "(units of mass^2/length^4) = %12.5e\n", qmass);
+      fprintf(screen,"  Shock velocity = %12.5e\n", velocity);
+      fprintf(screen,"  Artificial viscosity "
+              "(units of mass/length/time) = %12.5e\n", mu);
 
-    if (p0_set)
-      mesg += fmt::format("  Initial pressure specified to be {:.8g}\n", p0);
-    else mesg += "  Initial pressure calculated on first step\n";
+      if (p0_set)
+        fprintf(screen,"  Initial pressure specified to be %12.5e\n", p0);
+      else fprintf(screen,"  Initial pressure calculated on first step\n");
 
-    if (v0_set)
-      mesg += fmt::format("  Initial volume specified to be {:.8g}\n", v0);
-    else mesg += "  Initial volume calculated on first step\n";
+      if (v0_set)
+        fprintf(screen,"  Initial volume specified to be %12.5e\n", v0);
+      else fprintf(screen,"  Initial volume calculated on first step\n");
 
-    if (e0_set)
-      mesg += fmt::format("  Initial energy specified to be {:.8g}\n", e0);
-    else mesg += "  Initial energy calculated on first step\n";
-    utils::logmesg(lmp,mesg);
+      if (e0_set)
+        fprintf(screen,"  Initial energy specified to be %12.5e\n", e0);
+      else fprintf(screen,"  Initial energy calculated on first step\n");
+    }
+    if (logfile) {
+      fprintf(logfile,"MSST parameters:\n");
+      if (direction == 0) fprintf(logfile,"  Shock in x direction\n");
+      else if (direction == 1) fprintf(logfile,"  Shock in y direction\n");
+      else if (direction == 2) fprintf(logfile,"  Shock in z direction\n");
+      fprintf(logfile,"  Cell mass-like parameter qmass "
+              "(units of mass^2/length^4) = %12.5e\n", qmass);
+      fprintf(logfile,"  Shock velocity = %12.5e\n", velocity);
+      fprintf(logfile,"  Artificial viscosity "
+              "(units of mass/length/time) = %12.5e\n", mu);
+
+      if (p0_set)
+        fprintf(logfile,"  Initial pressure specified to be %12.5e\n", p0);
+      else fprintf(logfile,"  Initial pressure calculated on first step\n");
+
+      if (v0_set)
+        fprintf(logfile,"  Initial volume specified to be %12.5e\n", v0);
+      else fprintf(logfile,"  Initial volume calculated on first step\n");
+
+      if (e0_set)
+        fprintf(logfile,"  Initial energy specified to be %12.5e\n", e0);
+      else fprintf(logfile,"  Initial energy calculated on first step\n");
+    }
   }
 
   // check for periodicity in controlled dimensions
 
   if (domain->nonperiodic) error->all(FLERR,"Fix msst requires a periodic box");
 
-  // create a new temperature compute
-  // id = fix-ID + "MSST_temp"
+  // create a new compute temp style
+  // id = fix-ID + temp
   // compute group = all since pressure is always global (group all)
   //   and thus its KE/temperature contribution should use group all
 
-  std::string fixcmd = std::string(id) + "MSST_temp";
-  id_temp = new char[fixcmd.size()+1];
-  strcpy(id_temp,fixcmd.c_str());
-  modify->add_compute(fixcmd + " all temp");
+  int n = strlen(id) + 6;
+  id_temp = new char[n];
+  strcpy(id_temp,id);
+  strcat(id_temp,"_temp");
+
+  char **newarg = new char*[3];
+  newarg[0] = id_temp;
+  newarg[1] = (char *) "all";
+  newarg[2] = (char *) "temp";
+  modify->add_compute(3,newarg);
+  delete [] newarg;
   tflag = 1;
 
-  // create a new pressure compute
-  // id = fix-ID + "MSST_press", compute group = all
+  // create a new compute pressure style
+  // id = fix-ID + press, compute group = all
   // pass id_temp as 4th arg to pressure constructor
 
-  fixcmd = std::string(id) + "MSST_press";
-  id_press = new char[fixcmd.size()+1];
-  strcpy(id_press,fixcmd.c_str());
-  modify->add_compute(fixcmd + " all pressure " + std::string(id_temp));
+  n = strlen(id) + 7;
+  id_press = new char[n];
+  strcpy(id_press,id);
+  strcat(id_press,"_press");
+
+  newarg = new char*[4];
+  newarg[0] = id_press;
+  newarg[1] = (char *) "all";
+  newarg[2] = (char *) "pressure";
+  newarg[3] = id_temp;
+  modify->add_compute(4,newarg);
+  delete [] newarg;
   pflag = 1;
 
-  // create a new potential energy compute
-  // id = fix-ID + "MSST_pe", compute group = all
+  // create a new compute potential energy compute
 
-  fixcmd = std::string(id) + "MSST_pe";
-  id_pe = new char[fixcmd.size()+1];
-  strcpy(id_pe,fixcmd.c_str());
-  modify->add_compute(fixcmd + " all pe");
+  n = strlen(id) + 4;
+  id_pe = new char[n];
+  strcpy(id_pe,id);
+  strcat(id_pe,"_pe");
+
+  newarg = new char*[3];
+  newarg[0] = id_pe;
+  newarg[1] = (char*)"all";
+  newarg[2] = (char*)"pe";
+  modify->add_compute(3,newarg);
+  delete [] newarg;
   peflag = 1;
 
-  // initialize the time derivative of the volume
-
+  // initialize the time derivative of the volume.
   omega[0] = omega[1] = omega[2] = 0.0;
-  nrigid = 0;
-  rfix = nullptr;
 
-  maxold = -1;
-  old_velocity = nullptr;
+  nrigid = 0;
+  rfix = NULL;
+
+  old_velocity = new double* [atom->nlocal];
+  for ( int j = 0; j < atom->nlocal; j++ ) {
+    old_velocity[j] = new double [3];
+  }
+  atoms_allocated = atom->nlocal;
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -229,7 +247,11 @@ FixMSST::~FixMSST()
   delete [] id_press;
   delete [] id_pe;
 
-  memory->destroy(old_velocity);
+  for ( int j = 0; j < atoms_allocated; j++ ) {
+    delete [] old_velocity[j];
+  }
+  delete [] old_velocity;
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -239,6 +261,7 @@ int FixMSST::setmask()
   int mask = 0;
   mask |= INITIAL_INTEGRATE;
   mask |= FINAL_INTEGRATE;
+  mask |= THERMO_ENERGY;
   return mask;
 }
 
@@ -246,7 +269,7 @@ int FixMSST::setmask()
 
 void FixMSST::init()
 {
-  if (atom->mass == nullptr)
+  if (atom->mass == NULL)
     error->all(FLERR,"Cannot use fix msst without per-type mass defined");
 
   // set compute ptrs
@@ -287,35 +310,26 @@ void FixMSST::init()
 
   delete [] rfix;
   nrigid = 0;
-  rfix = nullptr;
+  rfix = NULL;
 
   for (int i = 0; i < modify->nfix; i++)
-    if (utils::strmatch(modify->fix[i]->style,"^rigid")  ||
-        utils::strmatch(modify->fix[i]->style,"^poems$")) nrigid++;
+    if (strcmp(modify->fix[i]->style,"rigid") == 0 ||
+        strcmp(modify->fix[i]->style,"poems") == 0) nrigid++;
   if (nrigid) {
     rfix = new int[nrigid];
     nrigid = 0;
     for (int i = 0; i < modify->nfix; i++)
-      if (utils::strmatch(modify->fix[i]->style,"^rigid") ||
-          utils::strmatch(modify->fix[i]->style,"^poems$")) rfix[nrigid++] = i;
+      if (strcmp(modify->fix[i]->style,"rigid") == 0 ||
+          strcmp(modify->fix[i]->style,"poems") == 0) rfix[nrigid++] = i;
   }
 
-  // find fix external being used to drive LAMMPS from DFTB+
-
-  if (dftb) {
-    for (int i = 0; i < modify->nfix; i++)
-      if (utils::strmatch(modify->fix[i]->style,"^external$"))
-        fix_external = (FixExternal *) modify->fix[i];
-    if (fix_external == nullptr)
-      error->all(FLERR,"Fix msst dftb cannot be used w/out fix external");
-  }
 }
 
 /* ----------------------------------------------------------------------
    compute T,P before integrator starts
 ------------------------------------------------------------------------- */
 
-void FixMSST::setup(int /*vflag*/)
+void FixMSST::setup(int vflag)
 {
   lagrangian_position = 0.0;
 
@@ -324,33 +338,40 @@ void FixMSST::setup(int /*vflag*/)
   couple();
   velocity_sum = compute_vsum();
 
-  if (v0_set == 0) {
+  if ( v0_set == 0 ) {
     v0 = compute_vol();
     v0_set = 1;
-    if (comm->me == 0)
-      utils::logmesg(lmp,"Fix MSST v0 = {:.8g}\n", v0);
+    if (comm->me == 0) {
+      if ( screen ) fprintf(screen,"Fix MSST v0 = %12.5e\n", v0);
+      if ( logfile ) fprintf(logfile,"Fix MSST v0 = %12.5e\n", v0);
+    }
   }
 
-  if (p0_set == 0) {
+  if ( p0_set == 0 ) {
     p0 = p_current[direction];
     p0_set = 1;
 
-    if (comm->me == 0)
-      utils::logmesg(lmp,"Fix MSST p0 = {:.8g}\n", p0);
+    if ( comm->me == 0 ) {
+      if ( screen ) fprintf(screen,"Fix MSST p0 = %12.5e\n", p0);
+      if ( logfile ) fprintf(logfile,"Fix MSST p0 = %12.5e\n", p0);
+    }
   }
 
-  if (e0_set == 0) {
+  if ( e0_set == 0 ) {
     e0 = compute_etotal();
     e0_set = 1;
 
-    if (comm->me == 0)
-      utils::logmesg(lmp,"Fix MSST e0 = {:.8g}\n", e0);
+    if ( comm->me == 0 ) {
+      if ( screen ) fprintf(screen,"Fix MSST e0 = to be %12.5e\n",e0);
+      if ( logfile ) fprintf(logfile,"Fix MSST e0 = to be %12.5e\n",e0);
+    }
+
   }
 
   temperature->compute_vector();
   double *ke_tensor = temperature->vector;
   double ke_temp = ke_tensor[0]+ke_tensor[1]+ke_tensor[2];
-  if (ke_temp > 0.0 && tscale > 0.0) {
+  if (ke_temp > 0.0 && tscale > 0.0 ) {
 
     // transfer energy from atom velocities to cell volume motion
     // to bias initial compression
@@ -364,13 +385,19 @@ void FixMSST::setup(int /*vflag*/)
     omega[direction]=-1*sqrt(fac1);
     double fac2 = omega[direction]/v0;
 
-    if ( comm->me == 0 && tscale != 1.0)
-      utils::logmesg(lmp,"Fix MSST initial strain rate of {:.8g} "
-                     "established by reducing temperature by factor "
-                     "of {:.8g}\n",fac2,tscale);
+    if ( comm->me == 0 && tscale != 1.0) {
+      if ( screen )
+        fprintf(screen,"Fix MSST initial strain rate of %12.5e established "
+                "by reducing temperature by factor of %12.5e\n",
+                fac2,tscale);
+      if ( logfile )
+        fprintf(logfile,"Fix MSST initial strain rate of %12.5e established "
+                "by reducing temperature by factor of %12.5e\n",
+                fac2,tscale);
+    }
     for (int i = 0; i < atom->nlocal; i++) {
       if (mask[i] & groupbit) {
-        for (int k = 0; k < 3; k++) {
+        for (int k = 0; k < 3; k++ ) {
           v[i][k]*=sqrt_initial_temperature_scaling;
         }
       }
@@ -379,7 +406,6 @@ void FixMSST::setup(int /*vflag*/)
 
   // trigger virial computation on next timestep
 
-  pe->addstep(update->ntimestep+1);
   pressure->addstep(update->ntimestep+1);
 }
 
@@ -387,12 +413,12 @@ void FixMSST::setup(int /*vflag*/)
    1st half of Verlet update
 ------------------------------------------------------------------------- */
 
-void FixMSST::initial_integrate(int /*vflag*/)
+void FixMSST::initial_integrate(int vflag)
 {
-  int i,k;
-  double p_msst;                       // MSST driving pressure
+  int sd;
+  double p_msst;                // MSST driving pressure.
+  int i, k;
   double vol;
-
   int nlocal = atom->nlocal;
   int *mask = atom->mask;
   double **v = atom->v;
@@ -400,45 +426,21 @@ void FixMSST::initial_integrate(int /*vflag*/)
   double *mass = atom->mass;
   int *type = atom->type;
   double **x = atom->x;
-  int sd = direction;
 
-  // realloc old_velocity if necessary
+  // check to see if old_velocity is correctly allocated
 
-  if (nlocal > maxold) {
-    memory->destroy(old_velocity);
-    maxold = atom->nmax;
-    memory->create(old_velocity,maxold,3,"msst:old_velocity");
-  }
+  check_alloc(nlocal);
 
-  // for DFTB, extract TS_dftb from fix external
-  // must convert energy to mv^2 units
+  sd = direction;
 
-  if (dftb) {
-    const double TS_dftb = fix_external->compute_vector(0);
-    const double TS = force->ftm2v*TS_dftb;
-    // update S_elec terms and compute TS_dot via finite differences
-    S_elec_2 = S_elec_1;
-    S_elec_1 = S_elec;
-    const double Temp = temperature->compute_scalar();
-    S_elec = TS/Temp;
-    TS_dot = Temp*(3.0*S_elec-4.0*S_elec_1+S_elec_2)/(2.0*update->dt);
-    TS_int += (update->dt*TS_dot);
-    if (update->ntimestep == 1) T0S0 = TS;
-  }
-
-  // compute new pressure and volume
-
+  // compute new pressure and volume.
   temperature->compute_vector();
   pressure->compute_vector();
   couple();
   vol = compute_vol();
 
-  // compute etot + extra terms for conserved quantity
-
-  double e_scale = compute_etotal() + compute_scalar();
-
   // propagate the time derivative of
-  // the volume 1/2 step at fixed vol, r, rdot
+  // the volume 1/2 step at fixed vol, r, rdot.
 
   p_msst = nktv2p * mvv2e * velocity * velocity * total_mass *
     ( v0 - vol)/( v0 * v0);
@@ -446,13 +448,15 @@ void FixMSST::initial_integrate(int /*vflag*/)
     (qmass * nktv2p * mvv2e);
   double B = total_mass * mu / ( qmass * vol );
 
-  // prevent blow-up of the volume
+  // prevent blow-up of the volume.
 
-  if (vol > v0 && A > 0.0) A = -A;
+  if ( vol > v0 && A > 0.0 ) {
+    A = -A;
+  }
 
-  // use Taylor expansion to avoid singularity at B = 0
+  // use taylor expansion to avoid singularity at B == 0.
 
-  if (B * dthalf > 1.0e-06) {
+  if ( B * dthalf > 1.0e-06 ) {
     omega[sd] = ( omega[sd] + A * ( exp(B * dthalf) - 1.0 ) / B )
       * exp(-B * dthalf);
   } else {
@@ -461,124 +465,73 @@ void FixMSST::initial_integrate(int /*vflag*/)
   }
 
   // propagate velocity sum 1/2 step by
-  // temporarily propagating the velocities
+  // temporarily propagating the velocities.
 
   velocity_sum = compute_vsum();
-
-  if (dftb) {
-    for (i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-        for (k = 0; k < 3; k++) {
-          const double C = f[i][k] * force->ftm2v / mass[type[i]];
-          const double TS_term = TS_dot/(mass[type[i]]*velocity_sum);
-          const double escale_term = force->ftm2v*beta*(e0-e_scale) /
-            (mass[type[i]]*velocity_sum);
-          double D = mu * omega[sd] * omega[sd] /
-            (velocity_sum * mass[type[i]] * vol );
-          D += escale_term - TS_term;
-          old_velocity[i][k] = v[i][k];
-          if (k == direction) D -= 2.0 * omega[sd] / vol;
-          if (fabs(dthalf * D) > 1.0e-06) {
-            const double expd = exp(D * dthalf);
-            v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
-          } else {
-            v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
-              0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
-          }
+  for (i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) {
+      for ( k = 0; k < 3; k++ ) {
+        double C = f[i][k] * force->ftm2v / mass[type[i]];
+        double D = mu * omega[sd] * omega[sd] /
+          (velocity_sum * mass[type[i]] * vol );
+        old_velocity[i][k] = v[i][k];
+        if ( k == direction ) {
+          D = D - 2.0 * omega[sd] / vol;
         }
-      }
-    }
-  } else {
-    for (i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-        for (k = 0; k < 3; k++) {
-          const double C = f[i][k] * force->ftm2v / mass[type[i]];
-          double D = mu * omega[sd] * omega[sd] /
-            (velocity_sum * mass[type[i]] * vol );
-          old_velocity[i][k] = v[i][k];
-          if (k == direction) {
-            D -= 2.0 * omega[sd] / vol;
-          }
-          if (fabs(dthalf * D) > 1.0e-06) {
-            const double expd = exp(D * dthalf);
-            v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
-          } else {
-            v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
-              0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
-          }
+        if ( fabs(dthalf * D) > 1.0e-06 ) {
+          double expd = exp(D * dthalf);
+          v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
+        } else {
+          v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
+            0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
         }
       }
     }
   }
-
   velocity_sum = compute_vsum();
 
-  // reset the velocities
+  // reset the velocities.
 
   for (i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
-      v[i][0] = old_velocity[i][0];
-      v[i][1] = old_velocity[i][1];
-      v[i][2] = old_velocity[i][2];
+      for ( k = 0; k < 3; k++ ) {
+        v[i][k] = old_velocity[i][k];
+      }
     }
   }
 
-  // propagate velocities 1/2 step using the new velocity sum
+  // propagate velocities 1/2 step using the new velocity sum.
 
-  if (dftb) {
-    for (i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-        for (k = 0; k < 3; k++) {
-          const double C = f[i][k] * force->ftm2v / mass[type[i]];
-          const double TS_term = TS_dot/(mass[type[i]]*velocity_sum);
-          const double escale_term = force->ftm2v*beta*(e0-e_scale) /
-            (mass[type[i]]*velocity_sum);
-          double D = mu * omega[sd] * omega[sd] /
-            (velocity_sum * mass[type[i]] * vol );
-          D += escale_term - TS_term;
-          if (k == direction) D -= 2.0 * omega[sd] / vol;
-          if (fabs(dthalf * D) > 1.0e-06) {
-            const double expd = exp(D * dthalf);
-            v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
-          } else {
-            v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
-              0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
-          }
+  for (i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) {
+      for ( k = 0; k < 3; k++ ) {
+        double C = f[i][k] * force->ftm2v / mass[type[i]];
+        double D = mu * omega[sd] * omega[sd] /
+          (velocity_sum * mass[type[i]] * vol );
+        if ( k == direction ) {
+          D = D - 2.0 * omega[sd] / vol;
         }
-      }
-    }
-  } else {
-    for (i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-        for (k = 0; k < 3; k++) {
-          const double C = f[i][k] * force->ftm2v / mass[type[i]];
-          double D = mu * omega[sd] * omega[sd] /
-            (velocity_sum * mass[type[i]] * vol );
-          if (k == direction) {
-            D -= 2.0 * omega[sd] / vol;
-          }
-          if (fabs(dthalf * D) > 1.0e-06) {
-            const double expd = exp(D * dthalf);
-            v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
-          } else {
-            v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
-              0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
-          }
+        if ( fabs(dthalf * D) > 1.0e-06 ) {
+          double expd = exp(D * dthalf);
+          v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
+        } else {
+          v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
+            0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
         }
       }
     }
   }
 
-  // propagate the volume 1/2 step
+  // propagate the volume 1/2 step.
 
   double vol1 = vol + omega[sd] * dthalf;
 
-  // rescale positions and change box size
+  // rescale positions and change box size.
 
   dilation[sd] = vol1/vol;
   remap(0);
 
-  // propagate particle positions 1 time step
+  // propagate particle positions 1 time step.
 
   for (i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
@@ -588,11 +541,11 @@ void FixMSST::initial_integrate(int /*vflag*/)
     }
   }
 
-  // propagate the volume 1/2 step
+  // propagate the volume 1/2 step.
 
   double vol2 = vol1 + omega[sd] * dthalf;
 
-  // rescale positions and change box size
+  // rescale positions and change box size.
 
   dilation[sd] = vol2/vol1;
   remap(0);
@@ -607,7 +560,6 @@ void FixMSST::initial_integrate(int /*vflag*/)
 void FixMSST::final_integrate()
 {
   int i;
-  double p_msst;                  // MSST driving pressure
 
   // v update only for atoms in MSST group
 
@@ -618,76 +570,32 @@ void FixMSST::final_integrate()
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
   double vol = compute_vol();
-
+  double p_msst;
   int sd = direction;
 
-  // compute etot + extra terms for conserved quantity
+  // propagate particle velocities 1/2 step.
 
-  double e_scale = compute_etotal() + compute_scalar();
-
-  // for DFTB, extract TS_dftb from fix external
-  // must convert energy to mv^2 units
-
-  if (dftb) {
-    const double TS_dftb = fix_external->compute_vector(0);
-    const double TS = force->ftm2v*TS_dftb;
-    S_elec_2 = S_elec_1;
-    S_elec_1 = S_elec;
-    const double Temp = temperature->compute_scalar();
-    // update S_elec terms and compute TS_dot via finite differences
-    S_elec = TS/Temp;
-    TS_dot = Temp*(3.0*S_elec-4.0*S_elec_1+S_elec_2)/(2.0*update->dt);
-    TS_int += (update->dt*TS_dot);
-    if (update->ntimestep == 1) T0S0 = TS;
-  }
-
-  // propagate particle velocities 1/2 step
-
-  if (dftb) {
-    for (i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-        for (int k = 0; k < 3; k++) {
-          const double C = f[i][k] * force->ftm2v / mass[type[i]];
-          const double TS_term = TS_dot/(mass[type[i]]*velocity_sum);
-          const double escale_term = force->ftm2v*beta*(e0-e_scale) /
-            (mass[type[i]]*velocity_sum);
-          double D = mu * omega[sd] * omega[sd] /
-            (velocity_sum * mass[type[i]] * vol );
-          D += escale_term - TS_term;
-          if (k == direction) D -= 2.0 * omega[sd] / vol;
-          if (fabs(dthalf * D) > 1.0e-06) {
-            const double expd = exp(D * dthalf);
-            v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
-          } else {
-            v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
-              0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
-          }
+  for (i = 0; i < nlocal; i++) {
+    if (mask[i] & groupbit) {
+      for ( int k = 0; k < 3; k++ ) {
+        double C = f[i][k] * force->ftm2v / mass[type[i]];
+        double D = mu * omega[sd] * omega[sd] /
+          (velocity_sum * mass[type[i]] * vol );
+        if ( k == direction ) {
+          D = D - 2.0 * omega[sd] / vol;
         }
-      }
-    }
-  } else {
-    for (i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-        for (int k = 0; k < 3; k++) {
-          const double C = f[i][k] * force->ftm2v / mass[type[i]];
-          double D = mu * omega[sd] * omega[sd] /
-            (velocity_sum * mass[type[i]] * vol );
-          if (k == direction) {
-            D -= 2.0 * omega[sd] / vol;
-          }
-          if (fabs(dthalf * D) > 1.0e-06) {
-            const double expd = exp(D * dthalf);
-            v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
-          } else {
-            v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
-              0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
-          }
+        if ( fabs(dthalf * D) > 1.0e-06 ) {
+          double expd = exp(D * dthalf);
+          v[i][k] = expd * ( C + D * v[i][k] - C / expd ) / D;
+        } else {
+          v[i][k] = v[i][k] + ( C + D * v[i][k] ) * dthalf +
+            0.5 * (D * D * v[i][k] + C * D ) * dthalf * dthalf;
         }
       }
     }
   }
 
-  // compute new pressure and volume
+  // compute new pressure and volume.
 
   temperature->compute_vector();
 
@@ -696,21 +604,23 @@ void FixMSST::final_integrate()
   velocity_sum = compute_vsum();
   vol = compute_vol();
 
-  // propagate the time derivative of the volume 1/2 step at fixed V, r, rdot
+  // propagate the time derivative of the volume 1/2 step at fixed V, r, rdot.
 
   p_msst = nktv2p * mvv2e * velocity * velocity * total_mass *
     ( v0 - vol )/( v0 * v0 );
   double A = total_mass * ( p_current[sd] - p0 - p_msst ) /
     ( qmass * nktv2p * mvv2e );
-  const double B = total_mass * mu  / ( qmass * vol );
+  double B = total_mass * mu  / ( qmass * vol );
 
-  // prevent blow-up of the volume
+  // prevent blow-up of the volume.
 
-  if (vol > v0 && A > 0.0) A = -A;
+  if ( vol > v0 && A > 0.0 ) {
+    A = -A;
+  }
 
   // use taylor expansion to avoid singularity at B == 0.
 
-  if (B * dthalf > 1.0e-06) {
+  if ( B * dthalf > 1.0e-06 ) {
     omega[sd] = ( omega[sd] + A *
                   ( exp(B * dthalf) - 1.0 ) / B ) * exp(-B * dthalf);
   } else {
@@ -722,9 +632,8 @@ void FixMSST::final_integrate()
 
   lagrangian_position -= velocity*vol/v0*update->dt;
 
-  // trigger energy and virial computation on next timestep
+  // trigger virial computation on next timestep
 
-  pe->addstep(update->ntimestep+1);
   pressure->addstep(update->ntimestep+1);
 }
 
@@ -765,7 +674,7 @@ void FixMSST::remap(int flag)
   // reset global and local box to new size/shape
 
   for (i = 0; i < 3; i++) {
-    if (direction == i) {
+    if ( direction == i ) {
       oldlo = domain->boxlo[i];
       oldhi = domain->boxhi[i];
       ctr = 0.5 * (oldlo + oldhi);
@@ -798,12 +707,11 @@ void FixMSST::remap(int flag)
 void FixMSST::write_restart(FILE *fp)
 {
   int n = 0;
-  double list[5];
+  double list[4];
   list[n++] = omega[direction];
   list[n++] = e0;
   list[n++] = v0;
   list[n++] = p0;
-  list[n++] = TS_int;
   if (comm->me == 0) {
     int size = n * sizeof(double);
     fwrite(&size,sizeof(int),1,fp);
@@ -823,8 +731,6 @@ void FixMSST::restart(char *buf)
   e0 = list[n++];
   v0 = list[n++];
   p0 = list[n++];
-  TS_int = list[n++];
-  tscale = 0.0;           // set tscale to zero for restart
   p0_set = 1;
   v0_set = 1;
   e0_set = 1;
@@ -841,16 +747,16 @@ int FixMSST::modify_param(int narg, char **arg)
       tflag = 0;
     }
     delete [] id_temp;
-    id_temp = utils::strdup(arg[1]);
+    int n = strlen(arg[1]) + 1;
+    id_temp = new char[n];
+    strcpy(id_temp,arg[1]);
 
     int icompute = modify->find_compute(id_temp);
-    if (icompute < 0)
-      error->all(FLERR,"Could not find fix_modify temperature ID");
+    if (icompute < 0) error->all(FLERR,"Could not find fix_modify temperature ID");
     temperature = modify->compute[icompute];
 
     if (temperature->tempflag == 0)
-      error->all(FLERR,"Fix_modify temperature ID does not "
-                 "compute temperature");
+      error->all(FLERR,"Fix_modify temperature ID does not compute temperature");
     if (temperature->igroup != 0 && comm->me == 0)
       error->warning(FLERR,"Temperature for MSST is not for group all");
 
@@ -863,7 +769,9 @@ int FixMSST::modify_param(int narg, char **arg)
       pflag = 0;
     }
     delete [] id_press;
-    id_press = utils::strdup(arg[1]);
+    int n = strlen(arg[1]) + 1;
+    id_press = new char[n];
+    strcpy(id_press,arg[1]);
 
     int icompute = modify->find_compute(id_press);
     if (icompute < 0) error->all(FLERR,"Could not find fix_modify pressure ID");
@@ -880,7 +788,7 @@ int FixMSST::modify_param(int narg, char **arg)
 
 double FixMSST::compute_scalar()
 {
-  // compute new pressure and volume
+  // compute new pressure and volume.
 
   temperature->compute_vector();
   pressure->compute_vector();
@@ -897,11 +805,6 @@ double FixMSST::compute_scalar()
     (1.0 - volume/ v0) *
     (1.0 - volume/ v0) * mvv2e;
   energy -= p0 * ( v0 - volume ) / nktv2p;
-
-  // subtract off precomputed TS_int integral value
-  // TS_int = 0 for non DFTB calculations
-
-  if (dftb) energy -= TS_int;
 
   return energy;
 }
@@ -927,12 +830,11 @@ double FixMSST::compute_vector(int n)
 
 /* ----------------------------------------------------------------------
    Computes the deviation of the current point
-   from the Hugoniot in Kelvin for the MSST
+   from the Hugoniot in Kelvin for the MSST.
 ------------------------------------------------------------------------- */
 
 double FixMSST::compute_hugoniot()
 {
-  if (!temperature) return 0.0;
   double v, e, p;
   double dhugo;
 
@@ -953,13 +855,11 @@ double FixMSST::compute_hugoniot()
 
 /* ----------------------------------------------------------------------
    Computes the deviation of the current point from the Rayleigh
-   in pressure units for the MSST
+   in pressure units for the MSST.
 ------------------------------------------------------------------------- */
 
 double FixMSST::compute_rayleigh()
 {
-  if (!temperature) return 0.0;
-
   double v, p;
   double drayleigh;
 
@@ -1001,10 +901,9 @@ double FixMSST::compute_lagrangian_position()
 
 double FixMSST::compute_etotal()
 {
-  if (!pe) return 0.0;
-
   double epot,ekin,etot;
   epot = pe->compute_scalar();
+  if (thermo_energy) epot -= compute_scalar();
   ekin = temperature->compute_scalar();
   ekin *= 0.5 * temperature->dof * force->boltz;
   etot = epot+ekin;
@@ -1021,7 +920,25 @@ double FixMSST::compute_vol()
     return domain->xprd * domain->yprd;
 }
 
-/* ---------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------
+   Checks to see if the allocated size of old_velocity is >= n
+   The number of local atoms can change during a parallel run.
+------------------------------------------------------------------------- */
+
+void FixMSST::check_alloc(int n)
+{
+  if ( atoms_allocated < n ) {
+    for ( int j = 0; j < atoms_allocated; j++ ) {
+      delete [] old_velocity[j];
+    }
+    delete [] old_velocity;
+
+    old_velocity = new double* [n];
+    for ( int j = 0; j < n; j++ )
+      old_velocity[j] = new double [3];
+    atoms_allocated = n;
+  }
+}
 
 double FixMSST::compute_vsum()
 {
@@ -1041,14 +958,4 @@ double FixMSST::compute_vsum()
 
   MPI_Allreduce(&t,&vsum,1,MPI_DOUBLE,MPI_SUM,world);
   return vsum;
-}
-
-/* ----------------------------------------------------------------------
-   memory usage of local atom-based array
-------------------------------------------------------------------------- */
-
-double FixMSST::memory_usage()
-{
-  double bytes = 3*atom->nmax * sizeof(double);
-  return bytes;
 }

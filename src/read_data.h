@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,39 +12,40 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(read_data,ReadData);
-// clang-format on
+
+CommandStyle(read_data,ReadData)
+
 #else
 
 #ifndef LMP_READ_DATA_H
 #define LMP_READ_DATA_H
 
-#include "command.h"
+#include <stdio.h>
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class ReadData : public Command {
+class ReadData : protected Pointers {
  public:
   ReadData(class LAMMPS *);
   ~ReadData();
   void command(int, char **);
 
  private:
-  int me, compressed;
-  char *line, *keyword, *buffer, *style;
+  int me,compressed;
+  char *line,*copy,*keyword,*buffer,*style;
   FILE *fp;
-  char **coeffarg;
-  int ncoeffarg, maxcoeffarg;
-  char argoffset1[8], argoffset2[8];
+  char **arg;
+  int narg,maxarg;
+  char argoffset1[8],argoffset2[8];
 
-  bigint id_offset, mol_offset;
+  bigint id_offset;
 
   int nlocal_previous;
   bigint natoms;
-  bigint nbonds, nangles, ndihedrals, nimpropers;
+  bigint nbonds,nangles,ndihedrals,nimpropers;
   int ntypes;
-  int nbondtypes, nangletypes, ndihedraltypes, nimpropertypes;
+  int nbondtypes,nangletypes,ndihedraltypes,nimpropertypes;
 
   bigint nellipsoids;
   class AtomVecEllipsoid *avec_ellipsoid;
@@ -57,18 +58,18 @@ class ReadData : public Command {
 
   // box info
 
-  double boxlo[3], boxhi[3];
-  double xy, xz, yz;
+  double boxlo[3],boxhi[3];
+  double xy,xz,yz;
   int triclinic;
 
   // optional args
 
-  int addflag, offsetflag, shiftflag, coeffflag;
+  int addflag,offsetflag,shiftflag,coeffflag;
   tagint addvalue;
-  int toffset, boffset, aoffset, doffset, ioffset;
+  int toffset,boffset,aoffset,doffset,ioffset;
   double shift[3];
-  int extra_atom_types, extra_bond_types, extra_angle_types;
-  int extra_dihedral_types, extra_improper_types;
+  int extra_atom_types,extra_bond_types,extra_angle_types;
+  int extra_dihedral_types,extra_improper_types;
   int groupbit;
 
   int nfix;
@@ -97,7 +98,7 @@ class ReadData : public Command {
   void impropers(int);
 
   void bonus(bigint, class AtomVec *, const char *);
-  void bodies(int, class AtomVec *);
+  void bodies(int);
 
   void mass();
   void paircoeffs();
@@ -110,7 +111,7 @@ class ReadData : public Command {
   void fix(int, char *);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -123,13 +124,10 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Read data add atomID offset is too big
+E: Read data add offset is too big
 
-UNDOCUMENTED
-
-E: Read data add molID offset is too big
-
-UNDOCUMENTED
+It cannot be larger than the size of atom IDs, e.g. the maximum 32-bit
+integer.
 
 E: Non-zero read_data shift z value for 2d simulation
 
@@ -151,15 +149,11 @@ E: No impropers allowed with this atom style
 
 Self-explanatory.
 
-E: No bonded interactions allowed with this atom style
-
-UNDOCUMENTED
-
 E: Fix ID for read_data does not exist
 
 Self-explanatory.
 
-E: Cannot run 2d simulation with non-periodic Z dimension
+E: Cannot run 2d simulation with nonperiodic Z dimension
 
 Use the boundary command to make the z dimension periodic in order to
 run a 2d simulation.
@@ -478,8 +472,8 @@ outside a non-periodic simulation box.
 
 E: Subsequent read data induced too many bonds per atom
 
-See the extra/bond/per/atom keyword for the create_box
-or the read_data command to set this limit larger.
+See the create_box extra/bond/per/atom or read_data "extra bond per
+atom" header value to set this limit larger.
 
 E: Bonds assigned incorrectly
 
@@ -488,8 +482,8 @@ This means there is something invalid about the topology definitions.
 
 E: Subsequent read data induced too many angles per atom
 
-See the extra/angle/per/atom keyword for the create_box
-or the read_data command to set this limit larger.
+See the create_box extra/angle/per/atom or read_data "extra angle per
+atom" header value to set this limit larger.
 
 E: Angles assigned incorrectly
 
@@ -499,8 +493,8 @@ definitions.
 
 E: Subsequent read data induced too many dihedrals per atom
 
-See the extra/dihedral/per/atom keyword for the create_box
-or the read_data command to set this limit larger.
+See the create_box extra/dihedral/per/atom or read_data "extra
+dihedral per atom" header value to set this limit larger.
 
 E: Dihedrals assigned incorrectly
 
@@ -510,8 +504,8 @@ definitions.
 
 E: Subsequent read data induced too many impropers per atom
 
-See the extra/improper/per/atom keyword for the create_box
-or the read_data command to set this limit larger.
+See the create_box extra/improper/per/atom or read_data "extra
+improper per atom" header value to set this limit larger.
 
 E: Impropers assigned incorrectly
 
@@ -532,25 +526,25 @@ E: Too many lines in one body in data file - boost MAXBODY
 MAXBODY is a setting at the top of the src/read_data.cpp file.
 Set it larger and re-compile the code.
 
-E: Unexpected empty line in PairCoeffs section
+E: Unexpected end of PairCoeffs section
 
-Read a blank line where there should be coefficient data.
+Read a blank line.
 
-E: Unexpected empty line in BondCoeffs section
+E: Unexpected end of BondCoeffs section
 
-Read a blank line where there should be coefficient data.
+Read a blank line.
 
-E: Unexpected empty line in AngleCoeffs section
+E: Unexpected end of AngleCoeffs section
 
-Read a blank line where there should be coefficient data.
+Read a blank line.
 
-E: Unexpected empty line in DihedralCoeffs section
+E: Unexpected end of DihedralCoeffs section
 
-Read a blank line where there should be coefficient data.
+Read a blank line.
 
-E: Unexpected empty line in ImproperCoeffs section
+E: Unexpected end of ImproperCoeffs section
 
-Read a blank line where there should be coefficient data.
+Read a blank line.
 
 E: Cannot open gzipped file
 
@@ -562,10 +556,5 @@ E: Cannot open file %s
 The specified file cannot be opened.  Check that the path and name are
 correct. If the file is a compressed file, also check that the gzip
 executable can be found and run.
-
-U: Read data add offset is too big
-
-It cannot be larger than the size of atom IDs, e.g. the maximum 32-bit
-integer.
 
 */

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(move,FixMove);
-// clang-format on
+
+FixStyle(move,FixMove)
+
 #else
 
 #ifndef LMP_FIX_MOVE_H
 #define LMP_FIX_MOVE_H
 
+#include <stdio.h>
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -51,27 +52,27 @@ class FixMove : public Fix {
   void reset_dt();
 
  private:
-  char *xvarstr, *yvarstr, *zvarstr, *vxvarstr, *vyvarstr, *vzvarstr;
+  char *xvarstr,*yvarstr,*zvarstr,*vxvarstr,*vyvarstr,*vzvarstr;
   int mstyle;
-  int vxflag, vyflag, vzflag, axflag, ayflag, azflag;
-  double vx, vy, vz, ax, ay, az;
-  double period, omega_rotate;
-  double point[3], axis[3], runit[3];
-  double dt, dtv, dtf;
-  int xvar, yvar, zvar, vxvar, vyvar, vzvar;
-  int xvarstyle, yvarstyle, zvarstyle, vxvarstyle, vyvarstyle, vzvarstyle;
-  int extra_flag, omega_flag, angmom_flag;
-  int radius_flag, ellipsoid_flag, line_flag, tri_flag, body_flag;
-  int theta_flag, quat_flag;
-  int nlevels_respa, nrestart;
+  int vxflag,vyflag,vzflag,axflag,ayflag,azflag;
+  double vx,vy,vz,ax,ay,az;
+  double period,omega_rotate;
+  double point[3],axis[3],runit[3];
+  double dt,dtv,dtf;
+  int xvar,yvar,zvar,vxvar,vyvar,vzvar;
+  int xvarstyle,yvarstyle,zvarstyle,vxvarstyle,vyvarstyle,vzvarstyle;
+  int extra_flag,omega_flag,angmom_flag;
+  int radius_flag,ellipsoid_flag,line_flag,tri_flag,body_flag;
+  int theta_flag,quat_flag;
+  int nlevels_respa,nrestart;
   int time_origin;
 
-  double **xoriginal;    // original coords of atoms
-  double *toriginal;     // original theta of atoms
-  double **qoriginal;    // original quat of atoms
-  int displaceflag, velocityflag;
+  double **xoriginal;         // original coords of atoms
+  double *toriginal;          // original theta of atoms
+  double **qoriginal;         // original quat of atoms
+  int displaceflag,velocityflag;
   int maxatom;
-  double **displace, **velocity;
+  double **displace,**velocity;
 
   class AtomVecEllipsoid *avec_ellipsoid;
   class AtomVecLine *avec_line;
@@ -79,7 +80,7 @@ class FixMove : public Fix {
   class AtomVecBody *avec_body;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -100,9 +101,9 @@ E: Fix move cannot set wiggle z motion for 2d problem
 
 Self-explanatory.
 
-E: Fix move cannot rotate around non z-axis for 2d problem
+E: Fix move cannot rotate aroung non z-axis for 2d problem
 
-UNDOCUMENTED
+Self-explanatory.
 
 E: Fix move cannot define z or vz variable for 2d problem
 
@@ -127,9 +128,5 @@ Atoms can not be added afterwards to this fix option.
 E: Resetting timestep size is not allowed with fix move
 
 This is because fix move is moving atoms based on elapsed time.
-
-U: Fix move cannot rotate aroung non z-axis for 2d problem
-
-Self-explanatory.
 
 */

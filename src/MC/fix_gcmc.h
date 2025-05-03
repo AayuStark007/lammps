@@ -1,6 +1,6 @@
-/* -*- c++ -*- ----------------------------------------------------------
+/* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(gcmc,FixGCMC);
-// clang-format on
+
+FixStyle(gcmc,FixGCMC)
+
 #else
 
 #ifndef LMP_FIX_GCMC_H
 #define LMP_FIX_GCMC_H
 
+#include <stdio.h>
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -56,37 +57,33 @@ class FixGCMC : public Fix {
   double memory_usage();
   void write_restart(FILE *);
   void restart(char *);
-  void grow_molecule_arrays(int);
 
  private:
-  int molecule_group, molecule_group_bit;
+  int molecule_group,molecule_group_bit;
   int molecule_group_inversebit;
-  int exclusion_group, exclusion_group_bit;
-  int ngcmc_type, nevery, seed;
-  int ncycles, nexchanges, nmcmoves;
-  double patomtrans, pmoltrans, pmolrotate, pmctot;
-  int ngas;              // # of gas atoms on all procs
-  int ngas_local;        // # of gas atoms on this proc
-  int ngas_before;       // # of gas atoms on procs < this proc
-  int exchmode;          // exchange ATOM or MOLECULE
-  int movemode;          // move ATOM or MOLECULE
-  int regionflag;        // 0 = anywhere in box, 1 = specific region
-  int iregion;           // gcmc region
-  char *idregion;        // gcmc region id
-  bool pressure_flag;    // true if user specified reservoir pressure
-  bool charge_flag;      // true if user specified atomic charge
-  bool full_flag;        // true if doing full system energy calculations
+  int exclusion_group,exclusion_group_bit;
+  int ngcmc_type,nevery,seed;
+  int ncycles,nexchanges,nmcmoves;
+  int ngas;                 // # of gas atoms on all procs
+  int ngas_local;           // # of gas atoms on this proc
+  int ngas_before;          // # of gas atoms on procs < this proc
+  int mode;                 // ATOM or MOLECULE
+  int regionflag;           // 0 = anywhere in box, 1 = specific region
+  int iregion;              // gcmc region
+  char *idregion;           // gcmc region id
+  bool pressure_flag;       // true if user specified reservoir pressure
+  bool charge_flag;         // true if user specified atomic charge
+  bool full_flag;           // true if doing full system energy calculations
 
-  int natoms_per_molecule;    // number of atoms in each inserted molecule
-  int nmaxmolatoms;           // number of atoms allocated for molecule arrays
+  int natoms_per_molecule;  // number of atoms in each gas molecule
 
-  int groupbitall;            // group bitmask for inserted atoms
-  int ngroups;                // number of group-ids for inserted atoms
-  char **groupstrings;        // list of group-ids for inserted atoms
-  int ngrouptypes;            // number of type-based group-ids for inserted atoms
-  char **grouptypestrings;    // list of type-based group-ids for inserted atoms
-  int *grouptypebits;         // list of type-based group bitmasks
-  int *grouptypes;            // list of type-based group types
+  int groupbitall;          // group bitmask for inserted atoms
+  int ngroups;              // number of group-ids for inserted atoms
+  char** groupstrings;      // list of group-ids for inserted atoms
+  int ngrouptypes;          // number of type-based group-ids for inserted atoms
+  char** grouptypestrings;  // list of type-based group-ids for inserted atoms
+  int* grouptypebits;       // list of type-based group bitmasks
+  int* grouptypes;          // list of type-based group types
   double ntranslation_attempts;
   double ntranslation_successes;
   double nrotation_attempts;
@@ -104,23 +101,17 @@ class FixGCMC : public Fix {
   double chemical_potential;
   double displace;
   double max_rotation_angle;
-  double beta, zz, sigma, volume;
-  double pressure, fugacity_coeff, charge;
-  double xlo, xhi, ylo, yhi, zlo, zhi;
-  double region_xlo, region_xhi, region_ylo, region_yhi, region_zlo, region_zhi;
+  double beta,zz,sigma,volume;
+  double pressure,fugacity_coeff,charge;
+  double xlo,xhi,ylo,yhi,zlo,zhi;
+  double region_xlo,region_xhi,region_ylo,region_yhi,region_zlo,region_zhi;
   double region_volume;
-  double energy_stored;    // full energy of old/current configuration
-  double *sublo, *subhi;
+  double energy_stored;
+  double *sublo,*subhi;
   int *local_gas_list;
   double **cutsq;
-  double **molcoords;
-  double *molq;
-  imageint *molimage;
+  double **atom_coord;
   imageint imagezero;
-  double overlap_cutoffsq;    // square distance cutoff for overlap
-  int overlap_flag;
-  int max_ngas;
-  int min_ngas;
 
   double energy_intra;
 
@@ -132,18 +123,20 @@ class FixGCMC : public Fix {
   class Atom *model_atom;
 
   class Molecule **onemols;
-  int imol, nmol;
-  class Fix *fixrigid, *fixshake;
-  int rigidflag, shakeflag;
-  char *idrigid, *idshake;
-  int triclinic;    // 0 = orthog box, 1 = triclinic
+  int imol,nmol;
+  double **coords;
+  imageint *imageflags;
+  class Fix *fixshake;
+  int shakeflag;
+  char *idshake;
+  int triclinic;                         // 0 = orthog box, 1 = triclinic
 
   class Compute *c_pe;
 
   void options(int, char **);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -198,25 +191,9 @@ E: Fix gcmc atom has charge, but atom style does not
 
 Self-explanatory.
 
-E: Cannot use fix gcmc rigid and not molecule
-
-UNDOCUMENTED
-
 E: Cannot use fix gcmc shake and not molecule
 
 Self-explanatory.
-
-E: Cannot use fix gcmc rigid and shake
-
-UNDOCUMENTED
-
-E: Cannot use fix gcmc rigid with MC moves
-
-UNDOCUMENTED
-
-E: Cannot use fix gcmc shake with MC moves
-
-UNDOCUMENTED
 
 E: Molecule template ID for fix gcmc does not exist
 
@@ -235,9 +212,9 @@ W: Fix gcmc using full_energy option
 
 Fix gcmc has automatically turned on the full_energy option since it
 is required for systems like the one specified by the user. User input
-included one or more of the following: kspace, a hybrid
-pair style, an eam pair style, tail correction,
-or no "single" function for the pair style.
+included one or more of the following: kspace, triclinic, a hybrid
+pair style, an eam pair style, or no "single" function for the pair
+style.
 
 E: Invalid atom type in fix gcmc command
 
@@ -262,19 +239,15 @@ Should not choose the gcmc molecule feature if no molecules are being
 simulated. The general molecule flag is off, but gcmc's molecule flag
 is on.
 
-E: Fix gcmc rigid fix does not exist
-
-UNDOCUMENTED
-
-E: Fix gcmc and fix rigid/small not using same molecule template ID
-
-UNDOCUMENTED
-
 E: Fix gcmc shake fix does not exist
 
 Self-explanatory.
 
 E: Fix gcmc and fix shake not using same molecule template ID
+
+Self-explanatory.
+
+E: Fix gcmc can not currently be used with fix rigid or fix rigid/small
 
 Self-explanatory.
 
@@ -301,24 +274,9 @@ E: Cannot do GCMC on atoms in atom_modify first group
 This is a restriction due to the way atoms are organized in a list to
 enable the atom_modify first command.
 
-W: Fix gcmc is being applied to the default group all
-
-This is allowed, but it will result in Monte Carlo moves
-being performed on all the atoms in the system, which is
-often not what is intended.
-
 E: Could not find specified fix gcmc group ID
 
 Self-explanatory.
-
-E: fix gcmc does currently not support full_energy option with molecules on more than 1 MPI process.
-
-UNDOCUMENTED
-
-W: Energy of old configuration in fix gcmc is > MAXENERGYTEST.
-
-This probably means that a pair of atoms are closer than the
-overlap cutoff distance for keyword overlap_cutoff.
 
 E: Fix gcmc put atom outside box
 
@@ -335,9 +293,5 @@ See the setting for tagint in the src/lmptype.h file.
 E: Too many total atoms
 
 See the setting for bigint in the src/lmptype.h file.
-
-U: Fix gcmc can not currently be used with fix rigid or fix rigid/small
-
-Self-explanatory.
 
 */

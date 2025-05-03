@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,46 +12,42 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(set,Set);
-// clang-format on
+
+CommandStyle(set,Set)
+
 #else
 
 #ifndef LMP_SET_H
 #define LMP_SET_H
 
-#include "command.h"
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class Set : public Command {
+class Set : protected Pointers {
  public:
-  Set(class LAMMPS *lmp) : Command(lmp){};
+  Set(class LAMMPS *lmp) : Pointers(lmp) {};
   void command(int, char **);
 
  private:
   char *id;
   int *select;
-  int style, ivalue, newtype, count, index_custom, icol_custom;
-  int ximage, yimage, zimage, ximageflag, yimageflag, zimageflag;
-  int cc_index;
-  bigint nsubset;
-  double dvalue, xvalue, yvalue, zvalue, wvalue, fraction;
+  int style,ivalue,newtype,count,index_custom;
+  int ximage,yimage,zimage,ximageflag,yimageflag,zimageflag;
+  double dvalue,xvalue,yvalue,zvalue,wvalue,fraction;
 
-  int varflag, varflag1, varflag2, varflag3, varflag4;
-  int ivar1, ivar2, ivar3, ivar4;
-  double *vec1, *vec2, *vec3, *vec4;
-
-  int discflag;
+  int varflag,varflag1,varflag2,varflag3,varflag4;
+  int ivar1,ivar2,ivar3,ivar4;
+  double *vec1,*vec2,*vec3,*vec4;
 
   void selection(int);
   void set(int);
   void setrandom(int);
   void topology(int);
-  void varparse(const char *, int);
+  void varparse(char *, int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -94,10 +90,6 @@ E: Invalid density in set command
 
 Density must be > 0.0.
 
-E: Density/disc option requires 2d simulation
-
-UNDOCUMENTED
-
 E: Invalid volume in set command
 
 Volume must be > 0.0.
@@ -117,18 +109,6 @@ Self-explanatory.
 E: Cannot set meso/rho for this atom style
 
 Self-explanatory.
-
-E: Cannot set edpd/temp for this atom style
-
-UNDOCUMENTED
-
-E: Cannot set edpd/cv for this atom style
-
-UNDOCUMENTED
-
-E: Cannot set cc for this atom style
-
-UNDOCUMENTED
 
 E: Cannot set smd/mass/density for this atom style
 
@@ -165,10 +145,6 @@ Group ID specified in set command does not exist.
 E: Set region ID does not exist
 
 Region ID specified in set command does not exist.
-
-W: Changing a property of atoms in rigid bodies that has no effect unless rigid bodies are rebuild
-
-UNDOCUMENTED
 
 E: Invalid mass in set command
 

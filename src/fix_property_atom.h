@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(property/atom,FixPropertyAtom);
-// clang-format on
+
+FixStyle(property/atom,FixPropertyAtom)
+
 #else
 
 #ifndef LMP_FIX_PROPERTY_ATOM_H
@@ -27,7 +27,7 @@ namespace LAMMPS_NS {
 class FixPropertyAtom : public Fix {
  public:
   FixPropertyAtom(class LAMMPS *, int, char **);
-  virtual ~FixPropertyAtom();
+  ~FixPropertyAtom();
   int setmask();
   void init();
 
@@ -38,7 +38,7 @@ class FixPropertyAtom : public Fix {
   void write_data_section_keyword(int, FILE *);
   void write_data_section(int, FILE *, int, double **, int);
 
-  virtual void grow_arrays(int);
+  void grow_arrays(int);
   void copy_arrays(int, int, int);
   int pack_border(int, int *, double *);
   int unpack_border(int, int, double *);
@@ -50,19 +50,16 @@ class FixPropertyAtom : public Fix {
   int maxsize_restart();
   double memory_usage();
 
- protected:
-  int nvalue, border;
-  int molecule_flag, q_flag, rmass_flag;    // flags for specific fields
-  int *styles;                              // style of each value, see enum
-  int *index;                               // indices into atom custom data structs
-  int *cols;                                // columns per value, for arrays
-  char *astyle;                             // atom style at instantiation
+ private:
+  int nvalue,border;
+  int molecule_flag,q_flag,rmass_flag;
+  int *style,*index;
+  char *astyle;
 
-  int values_peratom;    // # of values per atom, including multiple for arrays
-  int nmax_old;          // length of peratom arrays the last time they grew
+  int nmax_old;         // length of peratom arrays the last time they grew
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -91,21 +88,13 @@ E: Fix property/atom cannot specify q twice
 
 Self-explanatory.
 
-E: Fix property/atom rmass when atom_style already has rmass attribute
-
-UNDOCUMENTED
-
-E: Fix property/atom cannot specify rmass twice
-
-UNDOCUMENTED
-
 E: Fix property/atom vector name already exists
 
 The name for an integer or floating-point vector must be unique.
 
-W: Fix property/atom mol or charge or rmass w/out ghost communication
+W: Fix property/atom mol or charge w/out ghost communication
 
-UNDOCUMENTED
+A model typically needs these properties defined for ghost atoms.
 
 E: Atom style was redefined after using fix property/atom
 
@@ -124,9 +113,5 @@ E: Invalid atom ID in %s section of data file
 
 An atom in a section of the data file being read by fix property/atom
 has an invalid atom ID that is <= 0 or > the maximum existing atom ID.
-
-U: Fix property/atom mol or charge w/out ghost communication
-
-A model typically needs these properties defined for ghost atoms.
 
 */

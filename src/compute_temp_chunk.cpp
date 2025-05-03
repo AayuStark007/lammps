@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "compute_temp_chunk.h"
-
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
@@ -32,8 +30,8 @@ enum{TEMP,KECOM,INTERNAL};
 
 ComputeTempChunk::ComputeTempChunk(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  which(nullptr), idchunk(nullptr), id_bias(nullptr), sum(nullptr), sumall(nullptr), count(nullptr),
-  countall(nullptr), massproc(nullptr), masstotal(nullptr), vcm(nullptr), vcmall(nullptr)
+  which(NULL), idchunk(NULL), id_bias(NULL), sum(NULL), sumall(NULL), count(NULL), 
+  countall(NULL), massproc(NULL), masstotal(NULL), vcm(NULL), vcmall(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute temp/chunk command");
 
@@ -45,10 +43,12 @@ ComputeTempChunk::ComputeTempChunk(LAMMPS *lmp, int narg, char **arg) :
 
   // ID of compute chunk/atom
 
-  idchunk = utils::strdup(arg[3]);
+  int n = strlen(arg[3]) + 1;
+  idchunk = new char[n];
+  strcpy(idchunk,arg[3]);
 
   biasflag = 0;
-  ComputeTempChunk::init();
+  init();
 
   // optional per-chunk values
 
@@ -70,7 +70,7 @@ ComputeTempChunk::ComputeTempChunk(LAMMPS *lmp, int narg, char **arg) :
 
   comflag = 0;
   biasflag = 0;
-  id_bias = nullptr;
+  id_bias = NULL;
   adof = domain->dimension;
   cdof = 0.0;
 
@@ -86,17 +86,19 @@ ComputeTempChunk::ComputeTempChunk(LAMMPS *lmp, int narg, char **arg) :
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute temp/chunk command");
       biasflag = 1;
-      id_bias = utils::strdup(arg[iarg+1]);
+      int n = strlen(arg[iarg+1]) + 1;
+      id_bias = new char[n];
+      strcpy(id_bias,arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"adof") == 0) {
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute temp/chunk command");
-      adof = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      adof = force->numeric(FLERR,arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"cdof") == 0) {
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute temp/chunk command");
-      cdof = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      cdof = force->numeric(FLERR,arg[iarg+1]);
       iarg += 2;
     } else error->all(FLERR,"Illegal compute temp/chunk command");
   }
@@ -123,13 +125,13 @@ ComputeTempChunk::ComputeTempChunk(LAMMPS *lmp, int narg, char **arg) :
 
   // vector data
 
-  vector = new double[size_vector];
+  vector = new double[6];
 
   // chunk-based data
 
   nchunk = 1;
   maxchunk = 0;
-
+  
   if (nvalues)  {
     array_flag = 1;
     size_array_cols = nvalues;
@@ -340,34 +342,34 @@ void ComputeTempChunk::compute_vector()
   if (!comflag) {
     for (i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-        index = ichunk[i]-1;
-        if (index < 0) continue;
-        if (rmass) massone = rmass[i];
-        else massone = mass[type[i]];
-        t[0] += massone * v[i][0]*v[i][0];
-        t[1] += massone * v[i][1]*v[i][1];
-        t[2] += massone * v[i][2]*v[i][2];
-        t[3] += massone * v[i][0]*v[i][1];
-        t[4] += massone * v[i][0]*v[i][2];
-        t[5] += massone * v[i][1]*v[i][2];
+	index = ichunk[i]-1;
+	if (index < 0) continue;
+	if (rmass) massone = rmass[i];
+	else massone = mass[type[i]];
+	t[0] += massone * v[i][0]*v[i][0];
+	t[1] += massone * v[i][1]*v[i][1];
+	t[2] += massone * v[i][2]*v[i][2];
+	t[3] += massone * v[i][0]*v[i][1];
+	t[4] += massone * v[i][0]*v[i][2];
+	t[5] += massone * v[i][1]*v[i][2];
       }
   } else {
     double vx,vy,vz;
     for (i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-        index = ichunk[i]-1;
-        if (index < 0) continue;
-        if (rmass) massone = rmass[i];
-        else massone = mass[type[i]];
-        vx = v[i][0] - vcmall[index][0];
-        vy = v[i][1] - vcmall[index][1];
-        vz = v[i][2] - vcmall[index][2];
-        t[0] += massone * vx*vx;
-        t[1] += massone * vy*vy;
-        t[2] += massone * vz*vz;
-        t[3] += massone * vx*vy;
-        t[4] += massone * vx*vz;
-        t[5] += massone * vy*vz;
+	index = ichunk[i]-1;
+	if (index < 0) continue;
+	if (rmass) massone = rmass[i];
+	else massone = mass[type[i]];
+	vx = v[i][0] - vcmall[index][0];
+	vy = v[i][1] - vcmall[index][1];
+	vz = v[i][2] - vcmall[index][2];
+	t[0] += massone * vx*vx;
+	t[1] += massone * vy*vy;
+	t[2] += massone * vz*vz;
+	t[3] += massone * vx*vy;
+	t[4] += massone * vx*vz;
+	t[5] += massone * vy*vz;
       }
   }
 
@@ -439,7 +441,7 @@ void ComputeTempChunk::vcm_compute()
 
   int *ichunk = cchunk->ichunk;
 
-  for (i = 0; i < nchunk; i++) {
+  for (int i = 0; i < nchunk; i++) {
     vcm[i][0] = vcm[i][1] = vcm[i][2] = 0.0;
     massproc[i] = 0.0;
   }
@@ -488,7 +490,7 @@ void ComputeTempChunk::temperature(int icol)
 
   // zero local per-chunk values
 
-  for (i = 0; i < nchunk; i++) {
+  for (int i = 0; i < nchunk; i++) {
     count[i] = 0;
     sum[i] = 0.0;
   }
@@ -561,7 +563,7 @@ void ComputeTempChunk::temperature(int icol)
   double mvv2e = force->mvv2e;
   double boltz = force->boltz;
 
-  for (i = 0; i < nchunk; i++) {
+  for (int i = 0; i < nchunk; i++) {
     dof = cdof + adof*countall[i];
     if (dof > 0.0) tfactor = mvv2e / (dof * boltz);
     else tfactor = 0.0;
@@ -849,11 +851,11 @@ void ComputeTempChunk::allocate()
 double ComputeTempChunk::memory_usage()
 {
   double bytes = (bigint) maxchunk * 2 * sizeof(double);
-  bytes += (double) maxchunk * 2 * sizeof(int);
-  bytes += (double) maxchunk * nvalues * sizeof(double);
+  bytes += (bigint) maxchunk * 2 * sizeof(int);
+  bytes += (bigint) maxchunk * nvalues * sizeof(double);
   if (comflag || nvalues) {
-    bytes += (double) maxchunk * 2 * sizeof(double);
-    bytes += (double) maxchunk * 2*3 * sizeof(double);
+    bytes += (bigint) maxchunk * 2 * sizeof(double);
+    bytes += (bigint) maxchunk * 2*3 * sizeof(double);
   }
   return bytes;
 }

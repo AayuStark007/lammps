@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,23 +11,24 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
 #include "update.h"
-
-#include "style_integrate.h"  // IWYU pragma: keep
-#include "style_minimize.h"   // IWYU pragma: keep
-
-#include "comm.h"
-#include "compute.h"
 #include "integrate.h"
-#include "error.h"
-#include "fix.h"
-#include "force.h"
 #include "min.h"
-#include "modify.h"
+#include "style_integrate.h"
+#include "style_minimize.h"
 #include "neighbor.h"
+#include "neigh_list.h"
+#include "force.h"
+#include "modify.h"
+#include "fix.h"
+#include "domain.h"
+#include "region.h"
+#include "compute.h"
 #include "output.h"
-
-#include <cstring>
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -46,30 +46,27 @@ Update::Update(LAMMPS *lmp) : Pointers(lmp)
   whichflag = 0;
   firststep = laststep = 0;
   beginstep = endstep = 0;
-  restrict_output = 0;
   setupflag = 0;
-  post_integrate = 0;
   multireplica = 0;
 
-  eflag_global = vflag_global = -1;
-  eflag_atom = vflag_atom = 0;
+  restrict_output = 0;
 
-  dt_default = 1;
-  dt = 0.0;
-  unit_style = nullptr;
+  eflag_global = vflag_global = -1;
+
+  unit_style = NULL;
   set_units("lj");
 
-  integrate_style = nullptr;
-  integrate = nullptr;
-  minimize_style = nullptr;
-  minimize = nullptr;
+  integrate_style = NULL;
+  integrate = NULL;
+  minimize_style = NULL;
+  minimize = NULL;
 
   integrate_map = new IntegrateCreatorMap();
 
 #define INTEGRATE_CLASS
 #define IntegrateStyle(key,Class) \
   (*integrate_map)[#key] = &integrate_creator<Class>;
-#include "style_integrate.h"   // IWYU pragma: keep
+#include "style_integrate.h"
 #undef IntegrateStyle
 #undef INTEGRATE_CLASS
 
@@ -78,7 +75,7 @@ Update::Update(LAMMPS *lmp) : Pointers(lmp)
 #define MINIMIZE_CLASS
 #define MinimizeStyle(key,Class) \
   (*minimize_map)[#key] = &minimize_creator<Class>;
-#include "style_minimize.h"    // IWYU pragma: keep
+#include "style_minimize.h"
 #undef MinimizeStyle
 #undef MINIMIZE_CLASS
 
@@ -86,7 +83,7 @@ Update::Update(LAMMPS *lmp) : Pointers(lmp)
   create_integrate(1,&str,1);
 
   str = (char *) "cg";
-  create_minimize(1,&str,1);
+  create_minimize(1,&str);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -126,14 +123,12 @@ void Update::init()
 void Update::set_units(const char *style)
 {
   // physical constants from:
-  // https://physics.nist.gov/cuu/Constants/Table/allascii.txt
+  // http://physics.nist.gov/cuu/Constants/Table/allascii.txt
   // using thermochemical calorie = 4.184 J
-
-  double dt_old = dt;
 
   if (strcmp(style,"lj") == 0) {
     force->boltz = 1.0;
-    force->hplanck = 1.0;
+    force->hplanck = 0.18292026;  // using LJ parameters for argon
     force->mvv2e = 1.0;
     force->ftm2v = 1.0;
     force->mv2d = 1.0;
@@ -159,7 +154,7 @@ void Update::set_units(const char *style)
     force->ftm2v = 1.0 / 48.88821291 / 48.88821291;
     force->mv2d = 1.0 / 0.602214129;
     force->nktv2p = 68568.415;
-    force->qqr2e = 332.06371;     // see also force->qqr2d_lammps_real
+    force->qqr2e = 332.06371;
     force->qe2f = 23.060549;
     force->vxmu2f = 1.4393264316e4;
     force->xxt2kmu = 0.1;
@@ -251,7 +246,7 @@ void Update::set_units(const char *style)
     force->hhmrr2e = 0.0;
     force->mvh2r = 0.0;
     force->angstrom = 1.88972612;
-    force->femtosecond = 1.0;
+    force->femtosecond = 41.34137413;
     force->qelectron = 1.0;
 
     dt = 0.001;
@@ -302,14 +297,9 @@ void Update::set_units(const char *style)
   } else error->all(FLERR,"Illegal units command");
 
   delete [] unit_style;
-  unit_style = utils::strdup(style);
-
-  // check if timestep was changed from default value
-  if (!dt_default && (comm->me == 0)) {
-    error->warning(FLERR,"Changing timestep from {:.6} to {:.6} due to "
-                   "changing units to {}", dt_old, dt, unit_style);
-  }
-  dt_default = 1;
+  int n = strlen(style) + 1;
+  unit_style = new char[n];
+  strcpy(unit_style,style);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -322,20 +312,20 @@ void Update::create_integrate(int narg, char **arg, int trysuffix)
   delete integrate;
 
   int sflag;
+  new_integrate(arg[0],narg-1,&arg[1],trysuffix,sflag);
 
-  if (narg-1 > 0) {
-    new_integrate(arg[0],narg-1,&arg[1],trysuffix,sflag);
-  } else {
-    new_integrate(arg[0],0,nullptr,trysuffix,sflag);
-  }
-
-  std::string estyle = arg[0];
   if (sflag) {
-    estyle += "/";
-    if (sflag == 1) estyle += lmp->suffix;
-    else  estyle += lmp->suffix2;
+    char estyle[256];
+    if (sflag == 1) sprintf(estyle,"%s/%s",arg[0],lmp->suffix);
+    else sprintf(estyle,"%s/%s",arg[0],lmp->suffix2);
+    int n = strlen(estyle) + 1;
+    integrate_style = new char[n];
+    strcpy(integrate_style,estyle);
+  } else {
+    int n = strlen(arg[0]) + 1;
+    integrate_style = new char[n];
+    strcpy(integrate_style,arg[0]);
   }
-  integrate_style = utils::strdup(estyle);
 }
 
 /* ----------------------------------------------------------------------
@@ -348,9 +338,10 @@ void Update::new_integrate(char *style, int narg, char **arg,
   if (trysuffix && lmp->suffix_enable) {
     if (lmp->suffix) {
       sflag = 1;
-      std::string estyle = style + std::string("/") + lmp->suffix;
+      char estyle[256];
+      sprintf(estyle,"%s/%s",style,lmp->suffix);
       if (integrate_map->find(estyle) != integrate_map->end()) {
-        IntegrateCreator &integrate_creator = (*integrate_map)[estyle];
+        IntegrateCreator integrate_creator = (*integrate_map)[estyle];
         integrate = integrate_creator(lmp, narg, arg);
         return;
       }
@@ -358,9 +349,10 @@ void Update::new_integrate(char *style, int narg, char **arg,
 
     if (lmp->suffix2) {
       sflag = 2;
-      std::string estyle = style + std::string("/") + lmp->suffix2;
+      char estyle[256];
+      sprintf(estyle,"%s/%s",style,lmp->suffix2);
       if (integrate_map->find(estyle) != integrate_map->end()) {
-        IntegrateCreator &integrate_creator = (*integrate_map)[estyle];
+        IntegrateCreator integrate_creator = (*integrate_map)[estyle];
         integrate = integrate_creator(lmp, narg, arg);
         return;
       }
@@ -369,7 +361,7 @@ void Update::new_integrate(char *style, int narg, char **arg,
 
   sflag = 0;
   if (integrate_map->find(style) != integrate_map->end()) {
-    IntegrateCreator &integrate_creator = (*integrate_map)[style];
+    IntegrateCreator integrate_creator = (*integrate_map)[style];
     integrate = integrate_creator(lmp, narg, arg);
     return;
   }
@@ -389,62 +381,22 @@ Integrate *Update::integrate_creator(LAMMPS *lmp, int narg, char ** arg)
 
 /* ---------------------------------------------------------------------- */
 
-void Update::create_minimize(int narg, char **arg, int trysuffix)
+void Update::create_minimize(int narg, char **arg)
 {
-  if (narg < 1) error->all(FLERR,"Illegal run_style command");
+  if (narg != 1) error->all(FLERR,"Illegal min_style command");
 
   delete [] minimize_style;
   delete minimize;
 
-  int sflag;
-  new_minimize(arg[0],narg-1,&arg[1],trysuffix,sflag);
-
-  std::string estyle = arg[0];
-  if (sflag) {
-    estyle += "/";
-    if (sflag == 1) estyle += lmp->suffix;
-    else estyle += lmp->suffix2;
-  }
-  minimize_style = utils::strdup(estyle);
-}
-
-/* ----------------------------------------------------------------------
-   create the Minimize style, first with suffix appended
-------------------------------------------------------------------------- */
-
-void Update::new_minimize(char *style, int /* narg */, char ** /* arg */,
-                           int trysuffix, int &sflag)
-{
-  if (trysuffix && lmp->suffix_enable) {
-    if (lmp->suffix) {
-      sflag = 1;
-      std::string estyle = style + std::string("/") + lmp->suffix;
-      if (minimize_map->find(estyle) != minimize_map->end()) {
-        MinimizeCreator &minimize_creator = (*minimize_map)[estyle];
-        minimize = minimize_creator(lmp);
-        return;
-      }
-    }
-
-    if (lmp->suffix2) {
-      sflag = 2;
-      std::string estyle = style + std::string("/") + lmp->suffix2;
-      if (minimize_map->find(estyle) != minimize_map->end()) {
-        MinimizeCreator &minimize_creator = (*minimize_map)[estyle];
-        minimize = minimize_creator(lmp);
-        return;
-      }
-    }
-  }
-
-  sflag = 0;
-  if (minimize_map->find(style) != minimize_map->end()) {
-    MinimizeCreator &minimize_creator = (*minimize_map)[style];
+  if (minimize_map->find(arg[0]) != minimize_map->end()) {
+    MinimizeCreator minimize_creator = (*minimize_map)[arg[0]];
     minimize = minimize_creator(lmp);
-    return;
   }
+  else error->all(FLERR,"Illegal min_style command");
 
-  error->all(FLERR,"Illegal minimize style");
+  int n = strlen(arg[0]) + 1;
+  minimize_style = new char[n];
+  strcpy(minimize_style,arg[0]);
 }
 
 /* ----------------------------------------------------------------------
@@ -464,7 +416,7 @@ Min *Update::minimize_creator(LAMMPS *lmp)
 void Update::reset_timestep(int narg, char **arg)
 {
   if (narg != 1) error->all(FLERR,"Illegal reset_timestep command");
-  bigint newstep = utils::bnumeric(FLERR,arg[0],false,lmp);
+  bigint newstep = force->bnumeric(FLERR,arg[0]);
   reset_timestep(newstep);
 }
 
@@ -540,9 +492,9 @@ void Update::update_time()
    memory usage of update and integrate/minimize
 ------------------------------------------------------------------------- */
 
-double Update::memory_usage()
+bigint Update::memory_usage()
 {
-  double bytes = 0;
+  bigint bytes = 0;
   if (whichflag == 1) bytes += integrate->memory_usage();
   else if (whichflag == 2) bytes += minimize->memory_usage();
   return bytes;

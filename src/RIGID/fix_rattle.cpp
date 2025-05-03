@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,23 +15,33 @@
    Contributing author: Peter Wirnsberger (University of Cambridge)
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 #include "fix_rattle.h"
-
 #include "atom.h"
-#include "comm.h"
+#include "atom_vec.h"
+#include "molecule.h"
+#include "update.h"
+#include "respa.h"
+#include "modify.h"
 #include "domain.h"
-#include "error.h"
 #include "force.h"
+#include "bond.h"
+#include "angle.h"
+#include "comm.h"
+#include "group.h"
+#include "fix_respa.h"
+#include "math_const.h"
 #include "math_extra.h"
 #include "memory.h"
-#include "modify.h"
-#include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
+using namespace MathConst;
 using namespace MathExtra;
 
 // set RATTLE_DEBUG  1 to check constraints at end of timestep
@@ -61,8 +70,8 @@ FixRattle::FixRattle(LAMMPS *lmp, int narg, char **arg) :
 
   // allocate memory for unconstrained velocity update
 
-  vp = nullptr;
-  FixRattle::grow_arrays(atom->nmax);
+  vp = NULL;
+  grow_arrays(atom->nmax);
 
   // default communication mode
   // necessary for compatibility with SHAKE
@@ -71,15 +80,16 @@ FixRattle::FixRattle(LAMMPS *lmp, int narg, char **arg) :
   comm_mode = XSHAKE;
   vflag_post_force = 0;
 
-  verr_max = 0;
+  verr_max = 0;  
   derr_max = 0;
 }
 
 /* ---------------------------------------------------------------------- */
 
 FixRattle::~FixRattle()
-{
+{ 
   memory->destroy(vp);
+
 
   if (RATTLE_DEBUG) {
 
@@ -106,11 +116,11 @@ int FixRattle::setmask()
 {
   int mask = 0;
   mask |= PRE_NEIGHBOR;
-  mask |= POST_FORCE;
+  mask |= POST_FORCE; 
   mask |= POST_FORCE_RESPA;
   mask |= FINAL_INTEGRATE;
   mask |= FINAL_INTEGRATE_RESPA;
-  if (RATTLE_DEBUG) mask |= END_OF_STEP;
+  if (RATTLE_DEBUG) mask |= END_OF_STEP;          
   return mask;
 }
 
@@ -120,7 +130,7 @@ int FixRattle::setmask()
 
 void FixRattle::init() {
 
-  // initialize SHAKE first
+  // initialise SHAKE first
 
   FixShake::init();
 
@@ -166,16 +176,16 @@ void FixRattle::post_force(int vflag)
   int m;
   for (int i = 0; i < nlist; i++) {
     m = list[i];
-    if      (shake_flag[m] == 2)        vrattle2(m);
-    else if (shake_flag[m] == 3)        vrattle3(m);
-    else if (shake_flag[m] == 4)        vrattle4(m);
-    else                                vrattle3angle(m);
+    if      (shake_flag[m] == 2)        vrattle2(m);   
+    else if (shake_flag[m] == 3)        vrattle3(m);  
+    else if (shake_flag[m] == 4)        vrattle4(m);  
+    else                                vrattle3angle(m); 
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixRattle::post_force_respa(int vflag, int ilevel, int /*iloop*/)
+void FixRattle::post_force_respa(int vflag, int ilevel, int iloop)
 {
   // remember vflag for the coordinate correction in this->final_integrate
 
@@ -251,7 +261,7 @@ void FixRattle::vrattle3angle(int m)
   domain->minimum_image(r02);
   domain->minimum_image(r12);
 
-  // v01,v02,v12 = velocity differences
+  // v01,v02,v12 = velocity differences 
 
   MathExtra::sub3(vp[i1],vp[i0],vp01);
   MathExtra::sub3(vp[i2],vp[i0],vp02);
@@ -275,7 +285,7 @@ void FixRattle::vrattle3angle(int m)
   a[0][1]   =   (imass[0]           )   * MathExtra::dot3(r01,r02);
   a[0][2]   =   (-imass[1]          )   * MathExtra::dot3(r01,r12);
   a[1][0]   =   a[0][1];
-  a[1][1]   =   (imass[0] + imass[2])   * MathExtra::dot3(r02,r02);
+  a[1][1]   =   (imass[0] + imass[2])   * MathExtra::dot3(r02,r02); 
   a[1][2]   =   (imass[2]           )   * MathExtra::dot3(r02,r12);
   a[2][0]   =   a[0][2];
   a[2][1]   =   a[1][2];
@@ -294,15 +304,15 @@ void FixRattle::vrattle3angle(int m)
   // add corrections to the velocities if processor owns atom
 
   if (i0 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++)  
       v[i0][k]  -=  imass[0]*  (  l[0] * r01[k] + l[1] * r02[k] );
-  }
+  } 
   if (i1 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++)  
       v[i1][k]  -=  imass[1] * ( -l[0] * r01[k] + l[2] * r12[k] );
   }
   if (i2 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++) 
       v[i2][k] -=   imass[2] * ( -l[1] * r02[k] - l[2] * r12[k] );
   }
 }
@@ -340,17 +350,17 @@ void FixRattle::vrattle2(int m)
 
   // Lagrange multiplier: exact solution
 
-  double l01 = - MathExtra::dot3(r01,vp01) /
+  double l01 = - MathExtra::dot3(r01,vp01) / 
     (MathExtra::dot3(r01,r01) * (imass[0] + imass[1]));
 
   // add corrections to the velocities if the process owns this atom
 
   if (i0 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++)  
       v[i0][k] -= imass[0] * l01 * r01[k];
-  }
+  } 
   if (i1 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++) 
       v[i1][k] -= imass[1] * (-l01) * r01[k];
   }
 }
@@ -373,7 +383,7 @@ void FixRattle::vrattle3(int m)
 
   MathExtra::sub3(x[i1],x[i0],r01);
   MathExtra::sub3(x[i2],x[i0],r02);
-
+ 
   domain->minimum_image(r01);
   domain->minimum_image(r02);
 
@@ -411,15 +421,15 @@ void FixRattle::vrattle3(int m)
   // add corrections to the velocities if the process owns this atom
 
   if (i0 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++)  
       v[i0][k] -= imass[0] * (  l[0] * r01[k] + l[1] * r02[k] );
-  }
-  if (i1 < nlocal)
+  } 
+  if (i1 < nlocal) 
     for (int k=0; k<3; k++) {
       v[i1][k] -= imass[1] * ( -l[0] * r01[k] );
   }
   if (i2 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++) 
       v[i2][k] -= imass[2] * ( -l[1] * r02[k] );
   }
 }
@@ -494,26 +504,26 @@ void FixRattle::vrattle4(int m)
   // add corrections to the velocities if the process owns this atom
 
   if (i0 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++) 
       v[i0][k] -= imass[0] * (  l[0] * r01[k] + l[1] * r02[k] + l[2] * r03[k]);
-  }
+  } 
   if (i1 < nlocal) {
-    for (int k=0; k<3; k++)
-      v[i1][k] -= imass[1] * (-l[0] * r01[k]);
+    for (int k=0; k<3; k++) 
+      v[i1][k] -= imass[1] * (-l[0] * r01[k]); 
   }
   if (i2 < nlocal) {
-    for (int k=0; k<3; k++)
+    for (int k=0; k<3; k++) 
       v[i2][k] -= imass[2] * ( -l[1] * r02[k]);
   }
   if (i3 < nlocal) {
-    for (int k=0; k<3; k++)
-      v[i3][k] -= imass[3] * ( -l[2] * r03[k]);
+    for (int k=0; k<3; k++) 
+      v[i3][k] -= imass[3] * ( -l[2] * r03[k]);                 
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixRattle::solve2x2exactly(const double a[][2],
+void FixRattle::solve2x2exactly(const double a[][2], 
                                 const double c[], double l[])
 {
   double determ, determinv;
@@ -535,18 +545,18 @@ void FixRattle::solve2x2exactly(const double a[][2],
 
 /* ---------------------------------------------------------------------- */
 
-void FixRattle::solve3x3exactly(const double a[][3],
+void FixRattle::solve3x3exactly(const double a[][3], 
                                 const double c[], double l[])
 {
   double ai[3][3];
   double determ, determinv;
-
+  
   // calculate the determinant of the matrix
 
-  determ = a[0][0]*a[1][1]*a[2][2] + a[0][1]*a[1][2]*a[2][0] +
-    a[0][2]*a[1][0]*a[2][1] - a[0][0]*a[1][2]*a[2][1] -
+  determ = a[0][0]*a[1][1]*a[2][2] + a[0][1]*a[1][2]*a[2][0] + 
+    a[0][2]*a[1][0]*a[2][1] - a[0][0]*a[1][2]*a[2][1] - 
     a[0][1]*a[1][0]*a[2][2] - a[0][2]*a[1][1]*a[2][0];
-
+  
   // check if matrix is actually invertible
 
   if (determ == 0.0) error->one(FLERR,"Rattle determinant = 0.0");
@@ -555,7 +565,7 @@ void FixRattle::solve3x3exactly(const double a[][3],
 
   determinv = 1.0/determ;
   ai[0][0] =  determinv * (a[1][1]*a[2][2] - a[1][2]*a[2][1]);
-  ai[0][1] = -determinv * (a[0][1]*a[2][2] - a[0][2]*a[2][1]);
+  ai[0][1] = -determinv * (a[0][1]*a[2][2] - a[0][2]*a[2][1]); 
   ai[0][2] =  determinv * (a[0][1]*a[1][2] - a[0][2]*a[1][1]);
   ai[1][0] = -determinv * (a[1][0]*a[2][2] - a[1][2]*a[2][0]);
   ai[1][1] =  determinv * (a[0][0]*a[2][2] - a[0][2]*a[2][0]);
@@ -568,9 +578,9 @@ void FixRattle::solve3x3exactly(const double a[][3],
 
   for (int i=0; i<3; i++) {
     l[i] = 0;
-    for (int j=0; j<3; j++)
+    for (int j=0; j<3; j++) 
       l[i] += ai[i][j] * c[j];
-  }
+  }  
 }
 
 /* ---------------------------------------------------------------------- */
@@ -615,7 +625,7 @@ void FixRattle::update_v_half_nocons()
 
 /* ---------------------------------------------------------------------- */
 
-void FixRattle::update_v_half_nocons_respa(int /*ilevel*/)
+void FixRattle::update_v_half_nocons_respa(int ilevel)
 {
   // carry out unconstrained velocity update
 
@@ -630,7 +640,7 @@ double FixRattle::memory_usage()
 {
   int nmax = atom->nmax;
   double bytes = FixShake::memory_usage();
-  bytes += (double)nmax*3 * sizeof(double);
+  bytes += nmax*3 * sizeof(double);
   return bytes;
 }
 
@@ -676,7 +686,7 @@ int FixRattle::pack_forward_comm(int n, int *list, double *buf,
       break;
   }
   return m;
-}
+} 
 
 /* ---------------------------------------------------------------------- */
 
@@ -729,7 +739,7 @@ void FixRattle::shake_end_of_step(int vflag) {
 
 
 /* ----------------------------------------------------------------------
-  Let shake calculate new constraining forces and correct the
+  Let shake calculate new constraining forces and correct the 
   coordinates. Nothing to do for rattle here.
 ------------------------------------------------------------------------- */
 
@@ -779,7 +789,7 @@ void FixRattle::correct_velocities() {
 
 /* ----------------------------------------------------------------------
    DEBUGGING methods
-   The functions below allow you to check whether the
+   The functions below allow you to check whether the 
      coordinate and velocity constraints are satisfied at the
      end of the timestep
    only enabled if RATTLE_DEBUG is set to 1 at top of file
@@ -807,9 +817,9 @@ bool FixRattle::check_constraints(double **v, bool checkr, bool checkv)
   int i=0;
   while (i < nlist && ret) {
     m = list[i];
-    if      (shake_flag[m] == 2)     ret =   check2(v,m,checkr,checkv);
-    else if (shake_flag[m] == 3)     ret =   check3(v,m,checkr,checkv);
-    else if (shake_flag[m] == 4)     ret =   check4(v,m,checkr,checkv);
+    if      (shake_flag[m] == 2)     ret =   check2(v,m,checkr,checkv); 
+    else if (shake_flag[m] == 3)     ret =   check3(v,m,checkr,checkv); 
+    else if (shake_flag[m] == 4)     ret =   check4(v,m,checkr,checkv); 
     else                             ret =   check3angle(v,m,checkr,checkv);
     i++;
     if (!RATTLE_RAISE_ERROR)         ret = true;
@@ -825,7 +835,7 @@ bool FixRattle::check2(double **v, int m, bool checkr, bool checkv)
   double    r01[3],v01[3];
   const double tol = tolerance;
   double bond1 = bond_distance[shake_type[m][0]];
-
+ 
   tagint i0 = atom->map(shake_atom[m][0]);
   tagint i1 = atom->map(shake_atom[m][1]);
 
@@ -834,12 +844,12 @@ bool FixRattle::check2(double **v, int m, bool checkr, bool checkv)
   MathExtra::sub3(v[i1],v[i0],v01);
 
   stat = !(checkr && (fabs(sqrt(MathExtra::dot3(r01,r01)) - bond1) > tol));
-  if (!stat)
+  if (!stat)   
      error->one(FLERR,"Coordinate constraints are not satisfied "
                 "up to desired tolerance ");
 
   stat = !(checkv && (fabs(MathExtra::dot3(r01,v01)) > tol));
-  if (!stat)
+  if (!stat)   
      error->one(FLERR,"Velocity constraints are not satisfied "
                 "up to desired tolerance ");
   return stat;
@@ -855,14 +865,14 @@ bool FixRattle::check3(double **v, int m, bool checkr, bool checkv)
   const double tol = tolerance;
   double bond1 = bond_distance[shake_type[m][0]];
   double bond2 = bond_distance[shake_type[m][1]];
-
+ 
   i0 = atom->map(shake_atom[m][0]);
   i1 = atom->map(shake_atom[m][1]);
   i2 = atom->map(shake_atom[m][2]);
 
   MathExtra::sub3(x[i1],x[i0],r01);
   MathExtra::sub3(x[i2],x[i0],r02);
-
+ 
   domain->minimum_image(r01);
   domain->minimum_image(r02);
 
@@ -871,13 +881,13 @@ bool FixRattle::check3(double **v, int m, bool checkr, bool checkv)
 
   stat = !(checkr && (fabs(sqrt(MathExtra::dot3(r01,r01)) - bond1) > tol ||
                       fabs(sqrt(MathExtra::dot3(r02,r02))-bond2) > tol));
-  if (!stat)
+  if (!stat)   
      error->one(FLERR,"Coordinate constraints are not satisfied "
                 "up to desired tolerance ");
 
-  stat = !(checkv && (fabs(MathExtra::dot3(r01,v01)) > tol ||
+  stat = !(checkv && (fabs(MathExtra::dot3(r01,v01)) > tol || 
                       fabs(MathExtra::dot3(r02,v02)) > tol));
-  if (!stat)
+  if (!stat)   
      error->one(FLERR,"Velocity constraints are not satisfied "
                 "up to desired tolerance ");
   return stat;
@@ -911,17 +921,17 @@ bool FixRattle::check4(double **v, int m, bool checkr, bool checkv)
   MathExtra::sub3(v[i2],v[i0],v02);
   MathExtra::sub3(v[i3],v[i0],v03);
 
-  stat = !(checkr && (fabs(sqrt(MathExtra::dot3(r01,r01)) - bond1) > tol ||
-                      fabs(sqrt(MathExtra::dot3(r02,r02))-bond2) > tol ||
+  stat = !(checkr && (fabs(sqrt(MathExtra::dot3(r01,r01)) - bond1) > tol || 
+                      fabs(sqrt(MathExtra::dot3(r02,r02))-bond2) > tol || 
                       fabs(sqrt(MathExtra::dot3(r03,r03))-bond3) > tol));
-  if (!stat)
+  if (!stat)   
      error->one(FLERR,"Coordinate constraints are not satisfied "
                 "up to desired tolerance ");
 
-  stat = !(checkv && (fabs(MathExtra::dot3(r01,v01)) > tol ||
-                      fabs(MathExtra::dot3(r02,v02)) > tol ||
+  stat = !(checkv && (fabs(MathExtra::dot3(r01,v01)) > tol || 
+                      fabs(MathExtra::dot3(r02,v02)) > tol || 
                       fabs(MathExtra::dot3(r03,v03)) > tol));
-  if (!stat)
+  if (!stat)   
      error->one(FLERR,"Velocity constraints are not satisfied "
                 "up to desired tolerance ");
   return stat;
@@ -961,8 +971,8 @@ bool FixRattle::check3angle(double **v, int m, bool checkr, bool checkv)
   double db12 = fabs(sqrt(MathExtra::dot3(r12,r12))-bond12);
 
 
-  stat = !(checkr && (db1 > tol ||
-                      db2 > tol ||
+  stat = !(checkr && (db1 > tol || 
+                      db2 > tol || 
                       db12 > tol));
 
   if (derr_max < db1/bond1)    derr_max = db1/bond1;
@@ -970,7 +980,7 @@ bool FixRattle::check3angle(double **v, int m, bool checkr, bool checkv)
   if (derr_max < db12/bond12)  derr_max = db12/bond12;
 
 
-  if (!stat && RATTLE_RAISE_ERROR)
+  if (!stat && RATTLE_RAISE_ERROR)   
      error->one(FLERR,"Coordinate constraints are not satisfied "
                 "up to desired tolerance ");
 
@@ -983,12 +993,12 @@ bool FixRattle::check3angle(double **v, int m, bool checkr, bool checkv)
   if (verr_max < dv12)   verr_max = dv12;
 
 
-  stat = !(checkv && (dv1 > tol ||
-                      dv2 > tol ||
+  stat = !(checkv && (dv1 > tol || 
+                      dv2 > tol || 
                       dv12> tol));
 
 
-  if (!stat && RATTLE_RAISE_ERROR)
+  if (!stat && RATTLE_RAISE_ERROR)   
      error->one(FLERR,"Velocity constraints are not satisfied "
                 "up to desired tolerance!");
 

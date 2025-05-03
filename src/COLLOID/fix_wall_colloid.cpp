@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,12 +15,14 @@
    Contributing authors: Jeremy Lechman (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <string.h>
 #include "fix_wall_colloid.h"
-
 #include "atom.h"
+#include "atom_vec.h"
+#include "update.h"
+#include "respa.h"
 #include "error.h"
-
-#include <cmath>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -80,7 +81,6 @@ void FixWallColloid::wall_particle(int m, int which, double coord)
   double r3,rinv3,r2inv3,r4inv3;
   double rad,rad2,rad4,rad8,diam,new_coeff2;
   double eoffset;
-  double vn;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -151,12 +151,6 @@ void FixWallColloid::wall_particle(int m, int which, double coord)
       ewall[0] -= eoffset;
 
       ewall[m+1] += fwall;
-
-      if (evflag) {
-        if (side < 0) vn = -fwall*delta;
-        else vn = fwall*delta;
-        v_tally(dim,i,vn);
-      }
     }
 
   if (onflag) error->one(FLERR,"Particle on or inside fix wall surface");

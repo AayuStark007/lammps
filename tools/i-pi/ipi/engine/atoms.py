@@ -51,7 +51,7 @@ class Atom(dobject):
    """
 
    def __init__(self, system, index):
-      """Initializes Atom.
+      """Initialises Atom.
 
       Args:
          system: An Atoms object containing the required atom.
@@ -116,11 +116,11 @@ class Atoms(dobject):
 
 
    def __init__(self, natoms, _prebind=None):
-      """Initializes Atoms.
+      """Initialises Atoms.
 
       Each replica and the centroid coordinate are all held as Atoms objects,
       and so slices of the global position and momentum arrays must be used in
-      the initialization so that they always agree with each other.
+      the initialisation so that they always agree with each other.
 
       Args:
          natoms: An integer giving the number of atoms.

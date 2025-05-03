@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,20 +15,19 @@
    Contributing author: Naveen Michaud-Agrawal (Johns Hopkins U)
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "fix_recenter.h"
-
 #include "atom.h"
-#include "comm.h"
-#include "domain.h"
-#include "error.h"
 #include "group.h"
+#include "update.h"
+#include "domain.h"
 #include "lattice.h"
 #include "modify.h"
+#include "comm.h"
 #include "respa.h"
-#include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "error.h"
+#include "force.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -58,13 +56,13 @@ FixRecenter::FixRecenter(LAMMPS *lmp, int narg, char **arg) :
 
   if (strcmp(arg[3],"NULL") == 0) xflag = 0;
   else if (strcmp(arg[3],"INIT") == 0) xinitflag = 1;
-  else xcom = utils::numeric(FLERR,arg[3],false,lmp);
+  else xcom = force->numeric(FLERR,arg[3]);
   if (strcmp(arg[4],"NULL") == 0) yflag = 0;
   else if (strcmp(arg[4],"INIT") == 0) yinitflag = 1;
-  else ycom = utils::numeric(FLERR,arg[4],false,lmp);
+  else ycom = force->numeric(FLERR,arg[4]);
   if (strcmp(arg[5],"NULL") == 0) zflag = 0;
   else if (strcmp(arg[5],"INIT") == 0) zinitflag = 1;
-  else zcom = utils::numeric(FLERR,arg[5],false,lmp);
+  else zcom = force->numeric(FLERR,arg[5]);
 
   // optional args
 
@@ -145,13 +143,13 @@ void FixRecenter::init()
     zinit = xcm[2];
   }
 
-  if (utils::strmatch(update->integrate_style,"^respa"))
+  if (strstr(update->integrate_style,"respa"))
     nlevels_respa = ((Respa *) update->integrate)->nlevels;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixRecenter::initial_integrate(int /*vflag*/)
+void FixRecenter::initial_integrate(int vflag)
 {
   // target COM
   // bounding box around domain works for both orthogonal and triclinic
@@ -213,7 +211,7 @@ void FixRecenter::initial_integrate(int /*vflag*/)
 
 /* ---------------------------------------------------------------------- */
 
-void FixRecenter::initial_integrate_respa(int vflag, int ilevel, int /*iloop*/)
+void FixRecenter::initial_integrate_respa(int vflag, int ilevel, int iloop)
 {
   // outermost level - operate recenter
   // all other levels - nothing

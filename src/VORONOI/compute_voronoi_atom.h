@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,21 +12,16 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(voronoi/atom,ComputeVoronoi);
-// clang-format on
+
+ComputeStyle(voronoi/atom,ComputeVoronoi)
+
 #else
 
 #ifndef LMP_COMPUTE_VORONOI_H
 #define LMP_COMPUTE_VORONOI_H
 
 #include "compute.h"
-
-namespace voro {
-class container;
-class container_poly;
-class voronoicell_neighbor;
-}    // namespace voro
+#include "voro++.hh"
 
 namespace LAMMPS_NS {
 
@@ -50,7 +45,7 @@ class ComputeVoronoi : public Compute {
   void buildCells();
   void checkOccupation();
   void loopCells();
-  void processCell(voro::voronoicell_neighbor &, int);
+  void processCell(voro::voronoicell_neighbor&, int);
 
   int nmax, rmax, maxedge, sgroupbit;
   char *radstr;
@@ -66,7 +61,7 @@ class ComputeVoronoi : public Compute {
   double **faces;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -86,14 +81,6 @@ Self-explanatory.
 E: Illegal compute voronoi/atom command (occupation and (surface or edges))
 
 Self-explanatory.
-
-E: Compute voronoi/atom occupation requires an atom map, see atom_modify
-
-UNDOCUMENTED
-
-E: Compute voronoi/atom occupation requires atom IDs
-
-UNDOCUMENTED
 
 E: Variable name for voronoi radius does not exist
 

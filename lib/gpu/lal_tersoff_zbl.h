@@ -32,7 +32,7 @@ class TersoffZBL : public BaseThree<numtyp, acctyp> {
     * \param gpu_split fraction of particles handled by device
     *
     * Returns:
-    * -  0 if successful
+    * -  0 if successfull
     * - -1 if fix gpu not found
     * - -3 if there is an out of memory error
     * - -4 if the GPU library was not compiled for GPU
@@ -48,6 +48,21 @@ class TersoffZBL : public BaseThree<numtyp, acctyp> {
            const double* powern, const double* Z_i, const double* Z_j,
            const double* ZBLcut, const double* ZBLexpscale, const double global_e,
            const double global_a_0, const double global_epsilon_0, const double* cutsq);
+
+  /// Pair loop with host neighboring
+  void compute(const int f_ago, const int inum_full, const int nall,
+               const int nlist, double **host_x, int *host_type,
+               int *ilist, int *numj, int **firstneigh, const bool eflag,
+               const bool vflag, const bool eatom, const bool vatom,
+               int &host_start, const double cpu_time, bool &success);
+
+  /// Pair loop with device neighboring
+  int ** compute(const int ago, const int inum_full,
+                 const int nall, double **host_x, int *host_type, double *sublo,
+                 double *subhi, tagint *tag, int **nspecial,
+                 tagint **special, const bool eflag, const bool vflag,
+                 const bool eatom, const bool vatom, int &host_start,
+                 int **ilist, int **numj, const double cpu_time, bool &success);
 
   /// Clear all host and device data
   /** \note This is called at the beginning of the init() routine **/
@@ -65,7 +80,7 @@ class TersoffZBL : public BaseThree<numtyp, acctyp> {
   bool shared_types;
 
   /// Number of atom types
-  int _ntypes;
+  int _lj_types;
 
   /// ts1.x = lam1, ts1.y = lam2,  ts1.z = lam3, ts1.w = powermint
   UCL_D_Vec<numtyp4> ts1;
@@ -80,7 +95,7 @@ class TersoffZBL : public BaseThree<numtyp, acctyp> {
   /// ts6.x = Z_i, ts6.y = Z_j, ts6.z = ZBLcut, ts6.w = ZBLexpscale
   UCL_D_Vec<numtyp4> ts6;
 
-  numtyp _cutsq_max;
+  UCL_D_Vec<numtyp> cutsq;
 
   UCL_D_Vec<int> elem2param;
   UCL_D_Vec<int> map;
@@ -91,13 +106,15 @@ class TersoffZBL : public BaseThree<numtyp, acctyp> {
   /// zetaij.w = zetaij
   UCL_D_Vec<acctyp4>   _zetaij;
 
-  UCL_Kernel k_zeta, k_zeta_noev, *k_zeta_selt;
+  UCL_Kernel k_zeta;
+  UCL_Texture ts1_tex, ts2_tex, ts3_tex, ts4_tex, ts5_tex, ts6_tex;
 
+  int _max_nbors;
   numtyp _global_e,_global_a_0,_global_epsilon_0;
 
  private:
   bool _allocated;
-  int loop(const int eflag, const int vflag, const int evatom, bool &success);
+  void loop(const bool _eflag, const bool _vflag, const int evatom);
 };
 
 }

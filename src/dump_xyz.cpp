@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "dump_xyz.h"
-#include <cstring>
 #include "atom.h"
+#include "group.h"
 #include "error.h"
 #include "memory.h"
 #include "update.h"
@@ -27,7 +27,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 DumpXYZ::DumpXYZ(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg),
-  typenames(nullptr)
+  typenames(NULL)
 {
   if (narg != 5) error->all(FLERR,"Illegal dump xyz command");
   if (binary || multiproc) error->all(FLERR,"Invalid dump xyz filename");
@@ -41,10 +41,13 @@ DumpXYZ::DumpXYZ(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg),
 
   if (format_default) delete [] format_default;
 
-  format_default = utils::strdup("%s %g %g %g");
+  char *str = (char *) "%s %g %g %g";
+  int n = strlen(str) + 1;
+  format_default = new char[n];
+  strcpy(format_default,str);
 
   ntypes = atom->ntypes;
-  typenames = nullptr;
+  typenames = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -52,13 +55,13 @@ DumpXYZ::DumpXYZ(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg),
 DumpXYZ::~DumpXYZ()
 {
   delete[] format_default;
-  format_default = nullptr;
+  format_default = NULL;
 
   if (typenames) {
     for (int i = 1; i <= ntypes; i++)
       delete [] typenames[i];
     delete [] typenames;
-    typenames = nullptr;
+    typenames = NULL;
   }
 }
 
@@ -69,16 +72,19 @@ void DumpXYZ::init_style()
   // format = copy of default or user-specified line format
 
   delete [] format;
+  char *str;
+  if (format_line_user) str = format_line_user;
+  else str = format_default;
 
-  if (format_line_user)
-    format = utils::strdup(fmt::format("{}\n", format_line_user));
-  else
-    format = utils::strdup(fmt::format("{}\n", format_default));
+  int n = strlen(str) + 2;
+  format = new char[n];
+  strcpy(format,str);
+  strcat(format,"\n");
 
   // initialize typenames array to be backward compatible by default
   // a 32-bit int can be maximally 10 digits plus sign
 
-  if (typenames == nullptr) {
+  if (typenames == NULL) {
     typenames = new char*[ntypes+1];
     for (int itype = 1; itype <= ntypes; itype++) {
       typenames[itype] = new char[12];
@@ -109,12 +115,14 @@ int DumpXYZ::modify_param(int narg, char **arg)
         delete [] typenames[i];
 
       delete [] typenames;
-      typenames = nullptr;
+      typenames = NULL;
     }
 
     typenames = new char*[ntypes+1];
     for (int itype = 1; itype <= ntypes; itype++) {
-      typenames[itype] = utils::strdup(arg[itype]);
+      int n = strlen(arg[itype]) + 1;
+      typenames[itype] = new char[n];
+      strcpy(typenames[itype],arg[itype]);
     }
 
     return ntypes+1;

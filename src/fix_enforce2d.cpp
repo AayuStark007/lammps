@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +11,14 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "fix_enforce2d.h"
-
 #include "atom.h"
+#include "update.h"
 #include "domain.h"
-#include "error.h"
 #include "modify.h"
 #include "respa.h"
-#include "update.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -28,7 +27,7 @@ using namespace FixConst;
 
 FixEnforce2D::FixEnforce2D(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  flist(nullptr)
+  flist(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal fix enforce2d command");
 
@@ -39,8 +38,6 @@ FixEnforce2D::FixEnforce2D(LAMMPS *lmp, int narg, char **arg) :
 
 FixEnforce2D::~FixEnforce2D()
 {
-  if (copymode) return;
-
   delete [] flist;
 }
 
@@ -69,19 +66,12 @@ void FixEnforce2D::init()
     if (modify->fix[i]->enforce2d_flag) nfixlist++;
 
   if (nfixlist) {
-    int myindex = -1;
     delete [] flist;
     flist = new Fix*[nfixlist];
     nfixlist = 0;
     for (int i = 0; i < modify->nfix; i++) {
-      if (modify->fix[i]->enforce2d_flag) {
-        if (myindex < 0)
-          flist[nfixlist++] = modify->fix[i];
-        else
-          error->all(FLERR,"Fix enforce2d must be defined after fix {}",
-                                       modify->fix[i]->style);
-      }
-      if (modify->fix[i] == this) myindex = i;
+      if (modify->fix[i]->enforce2d_flag) 
+        flist[nfixlist++] = modify->fix[i];
     }
   }
 }
@@ -90,7 +80,7 @@ void FixEnforce2D::init()
 
 void FixEnforce2D::setup(int vflag)
 {
-  if (utils::strmatch(update->integrate_style,"^verlet"))
+  if (strstr(update->integrate_style,"verlet"))
     post_force(vflag);
   else {
     int nlevels_respa = ((Respa *) update->integrate)->nlevels;
@@ -111,7 +101,7 @@ void FixEnforce2D::min_setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixEnforce2D::post_force(int /*vflag*/)
+void FixEnforce2D::post_force(int vflag)
 {
   double **v = atom->v;
   double **f = atom->f;
@@ -163,7 +153,7 @@ void FixEnforce2D::post_force(int /*vflag*/)
 
 /* ---------------------------------------------------------------------- */
 
-void FixEnforce2D::post_force_respa(int vflag, int /*ilevel*/, int /*iloop*/)
+void FixEnforce2D::post_force_respa(int vflag, int ilevel, int iloop)
 {
   post_force(vflag);
 }

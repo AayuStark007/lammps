@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <string.h>
 #include "compute_temp_sphere.h"
-
-#include <cstring>
 #include "atom.h"
+#include "atom_vec.h"
 #include "update.h"
 #include "force.h"
 #include "domain.h"
 #include "modify.h"
+#include "comm.h"
 #include "group.h"
 #include "error.h"
 
@@ -33,7 +34,7 @@ enum{ROTATE,ALL};
 
 ComputeTempSphere::ComputeTempSphere(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  id_bias(nullptr)
+  id_bias(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute temp/sphere command");
 
@@ -52,7 +53,9 @@ ComputeTempSphere::ComputeTempSphere(LAMMPS *lmp, int narg, char **arg) :
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute temp/sphere command");
       tempbias = 1;
-      id_bias = utils::strdup(arg[iarg+1]);
+      int n = strlen(arg[iarg+1]) + 1;
+      id_bias = new char[n];
+      strcpy(id_bias,arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"dof") == 0) {
       if (iarg+2 > narg)
@@ -64,12 +67,7 @@ ComputeTempSphere::ComputeTempSphere(LAMMPS *lmp, int narg, char **arg) :
     } else error->all(FLERR,"Illegal compute temp/sphere command");
   }
 
-  // when computing only the rotational temperature,
-  // do not remove DOFs for translation as set by default
-
-  if (mode == ROTATE) extra_dof = 0;
-
-  vector = new double[size_vector];
+  vector = new double[6];
 
   // error checks
 
@@ -136,8 +134,8 @@ void ComputeTempSphere::dof_compute()
   // user should correct this via compute_modify if needed
 
   double *radius = atom->radius;
-  const int *mask = atom->mask;
-  const int nlocal = atom->nlocal;
+  int *mask = atom->mask;
+  int nlocal = atom->nlocal;
 
   count = 0;
   if (domain->dimension == 3) {
@@ -171,6 +169,9 @@ void ComputeTempSphere::dof_compute()
     if (mode == ALL) dof -= tbias->dof_remove(-1) * natoms_temp;
 
   } else if (tempbias == 2) {
+    int *mask = atom->mask;
+    int nlocal = atom->nlocal;
+
     tbias->dof_remove_pre();
 
     count = 0;
@@ -276,7 +277,7 @@ void ComputeTempSphere::compute_vector()
   // point particles will not contribute rotation due to radius = 0
 
   double massone,inertiaone,t[6];
-  for (auto &ti : t) ti = 0.0;
+  for (int i = 0; i < 6; i++) t[i] = 0.0;
 
   if (mode == ALL) {
     for (int i = 0; i < nlocal; i++)
@@ -326,15 +327,6 @@ void ComputeTempSphere::remove_bias(int i, double *v)
 }
 
 /* ----------------------------------------------------------------------
-   remove velocity bias from atom I to leave thermal velocity
-------------------------------------------------------------------------- */
-
-void ComputeTempSphere::remove_bias_thr(int i, double *v, double *b)
-{
-  tbias->remove_bias_thr(i,v,b);
-}
-
-/* ----------------------------------------------------------------------
    add back in velocity bias to atom I removed by remove_bias()
    assume remove_bias() was previously called
 ------------------------------------------------------------------------- */
@@ -342,14 +334,4 @@ void ComputeTempSphere::remove_bias_thr(int i, double *v, double *b)
 void ComputeTempSphere::restore_bias(int i, double *v)
 {
   tbias->restore_bias(i,v);
-}
-
-/* ----------------------------------------------------------------------
-   add back in velocity bias to atom I removed by remove_bias_thr()
-   assume remove_bias_thr() was previously called with the same buffer b
-------------------------------------------------------------------------- */
-
-void ComputeTempSphere::restore_bias_thr(int i, double *v, double *b)
-{
-  tbias->restore_bias_thr(i,v,b);
 }

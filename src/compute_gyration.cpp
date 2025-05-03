@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
 #include "compute_gyration.h"
-
 #include "update.h"
 #include "atom.h"
 #include "group.h"
@@ -34,7 +33,7 @@ ComputeGyration::ComputeGyration(LAMMPS *lmp, int narg, char **arg) :
   extscalar = 0;
   extvector = 0;
 
-  vector = new double[size_vector];
+  vector = new double[6];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -110,7 +109,7 @@ void ComputeGyration::compute_vector()
     }
   MPI_Allreduce(rg,vector,6,MPI_DOUBLE,MPI_SUM,world);
 
-  if (masstotal > 0.0)
+  if (masstotal > 0.0) 
     for (int i = 0; i < 6; i++)
       vector[i] /= masstotal;
 }

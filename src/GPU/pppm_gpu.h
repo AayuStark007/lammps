@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef KSPACE_CLASS
-// clang-format off
-KSpaceStyle(pppm/gpu,PPPMGPU);
-// clang-format on
+
+KSpaceStyle(pppm/gpu,PPPMGPU)
+
 #else
 
 #ifndef LMP_PPPM_GPU_H
@@ -26,7 +26,7 @@ namespace LAMMPS_NS {
 
 class PPPMGPU : public PPPM {
  public:
-  PPPMGPU(class LAMMPS *);
+  PPPMGPU(class LAMMPS *, int, char **);
   virtual ~PPPMGPU();
   void init();
   void setup();
@@ -35,27 +35,26 @@ class PPPMGPU : public PPPM {
   int timing_3d(int, double &);
   double memory_usage();
 
-  virtual void compute_group_group(int, int, int);
-
  protected:
   FFT_SCALAR ***density_brick_gpu, ***vd_brick;
   bool kspace_split, im_real_space;
   int old_nlocal;
   double poisson_time;
 
-  void brick2fft_gpu();
+  void brick2fft();
   virtual void poisson_ik();
 
-  void pack_forward_grid(int, void *, int, int *);
-  void unpack_forward_grid(int, void *, int, int *);
-  void pack_reverse_grid(int, void *, int, int *);
-  void unpack_reverse_grid(int, void *, int, int *);
+  void pack_forward(int, FFT_SCALAR *, int, int *);
+  void unpack_forward(int, FFT_SCALAR *, int, int *);
+  void pack_reverse(int, FFT_SCALAR *, int, int *);
+  void unpack_reverse(int, FFT_SCALAR *, int, int *);
 
-  FFT_SCALAR ***create_3d_offset(int, int, int, int, int, int, const char *, FFT_SCALAR *, int);
+  FFT_SCALAR ***create_3d_offset(int, int, int, int, int, int, const char *,
+                                 FFT_SCALAR *, int);
   void destroy_3d_offset(FFT_SCALAR ***, int, int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -100,13 +99,5 @@ every 1 check yes".  Second, it may mean that an atom has moved far
 outside a processor's sub-domain or even the entire simulation box.
 This indicates bad physics, e.g. due to highly overlapping atoms, too
 large a timestep, etc.
-
-E: Cannot (yet) use K-space slab correction with compute group/group for triclinic systems
-
-UNDOCUMENTED
-
-E: Cannot (yet) use kspace_modify diff ad with compute group/group
-
-UNDOCUMENTED
 
 */

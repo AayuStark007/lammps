@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -17,45 +16,48 @@
                          Alexander Stukowski
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <float.h>
+#include <stdlib.h>
+#include <string.h>
 #include "fix_atom_swap.h"
-
-#include "angle.h"
 #include "atom.h"
-#include "bond.h"
+#include "atom_vec.h"
+#include "atom_vec_hybrid.h"
+#include "update.h"
+#include "modify.h"
+#include "fix.h"
 #include "comm.h"
 #include "compute.h"
-#include "dihedral.h"
-#include "domain.h"
-#include "error.h"
-#include "fix.h"
-#include "force.h"
 #include "group.h"
+#include "domain.h"
+#include "region.h"
+#include "random_park.h"
+#include "force.h"
+#include "pair.h"
+#include "bond.h"
+#include "angle.h"
+#include "dihedral.h"
 #include "improper.h"
 #include "kspace.h"
+#include "math_const.h"
 #include "memory.h"
-#include "modify.h"
+#include "error.h"
+#include "thermo.h"
+#include "output.h"
 #include "neighbor.h"
-#include "pair.h"
-#include "random_park.h"
-#include "region.h"
-#include "update.h"
+#include <iostream>
 
-#include <cmath>
-#include <cctype>
-#include <cfloat>
-#include <cstring>
-
+using namespace std;
 using namespace LAMMPS_NS;
 using namespace FixConst;
+using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
 FixAtomSwap::FixAtomSwap(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  idregion(nullptr), type_list(nullptr), mu(nullptr), qtype(nullptr),
-  sqrt_mass_ratio(nullptr), local_swap_iatom_list(nullptr),
-  local_swap_jatom_list(nullptr), local_swap_atom_list(nullptr),
-  random_equal(nullptr), random_unequal(nullptr), c_pe(nullptr)
+  idregion(NULL), type_list(NULL), mu(NULL), qtype(NULL), sqrt_mass_ratio(NULL), local_swap_iatom_list(NULL), local_swap_jatom_list(NULL), local_swap_atom_list(NULL), random_equal(NULL), random_unequal(NULL), c_pe(NULL)
 {
   if (narg < 10) error->all(FLERR,"Illegal fix atom/swap command");
 
@@ -67,13 +69,13 @@ FixAtomSwap::FixAtomSwap(LAMMPS *lmp, int narg, char **arg) :
   extvector = 0;
   restart_global = 1;
   time_depend = 1;
-
+  
   // required args
 
-  nevery = utils::inumeric(FLERR,arg[3],false,lmp);
-  ncycles = utils::inumeric(FLERR,arg[4],false,lmp);
-  seed = utils::inumeric(FLERR,arg[5],false,lmp);
-  double temperature = utils::numeric(FLERR,arg[6],false,lmp);
+  nevery = force->inumeric(FLERR,arg[3]);
+  ncycles = force->inumeric(FLERR,arg[4]);
+  seed = force->inumeric(FLERR,arg[5]);
+  double temperature = force->numeric(FLERR,arg[6]);
   beta = 1.0/(force->boltz*temperature);
 
   if (nevery <= 0) error->all(FLERR,"Illegal fix atom/swap command");
@@ -107,30 +109,15 @@ FixAtomSwap::FixAtomSwap(LAMMPS *lmp, int narg, char **arg) :
   nswap_successes = 0.0;
 
   atom_swap_nmax = 0;
-  local_swap_atom_list = nullptr;
-  local_swap_iatom_list = nullptr;
-  local_swap_jatom_list = nullptr;
+  local_swap_atom_list = NULL;
+  local_swap_iatom_list = NULL;
+  local_swap_jatom_list = NULL;
 
   // set comm size needed by this Fix
 
   if (atom->q_flag) comm_forward = 2;
   else comm_forward = 1;
 
-}
-
-/* ---------------------------------------------------------------------- */
-
-FixAtomSwap::~FixAtomSwap()
-{
-  memory->destroy(type_list);
-  memory->destroy(mu);
-  memory->destroy(qtype);
-  memory->destroy(sqrt_mass_ratio);
-  memory->destroy(local_swap_iatom_list);
-  memory->destroy(local_swap_jatom_list);
-  if (regionflag) delete [] idregion;
-  delete random_equal;
-  delete random_unequal;
 }
 
 /* ----------------------------------------------------------------------
@@ -155,7 +142,9 @@ void FixAtomSwap::options(int narg, char **arg)
       iregion = domain->find_region(arg[iarg+1]);
       if (iregion == -1)
         error->all(FLERR,"Region ID for fix atom/swap does not exist");
-      idregion = utils::strdup(arg[iarg+1]);
+      int n = strlen(arg[iarg+1]) + 1;
+      idregion = new char[n];
+      strcpy(idregion,arg[iarg+1]);
       regionflag = 1;
       iarg += 2;
     } else if (strcmp(arg[iarg],"ke") == 0) {
@@ -175,9 +164,9 @@ void FixAtomSwap::options(int narg, char **arg)
       iarg++;
       while (iarg < narg) {
         if (isalpha(arg[iarg][0])) break;
-        if (nswaptypes >= atom->ntypes) error->all(FLERR,"Illegal fix atom/swap command");
-        type_list[nswaptypes] = utils::numeric(FLERR,arg[iarg],false,lmp);
-        nswaptypes++;
+	if (nswaptypes >= atom->ntypes) error->all(FLERR,"Illegal fix atom/swap command");
+        type_list[nswaptypes] = force->numeric(FLERR,arg[iarg]);
+	nswaptypes++;
         iarg++;
       }
     } else if (strcmp(arg[iarg],"mu") == 0) {
@@ -186,12 +175,25 @@ void FixAtomSwap::options(int narg, char **arg)
       while (iarg < narg) {
         if (isalpha(arg[iarg][0])) break;
         nmutypes++;
-        if (nmutypes > atom->ntypes) error->all(FLERR,"Illegal fix atom/swap command");
-        mu[nmutypes] = utils::numeric(FLERR,arg[iarg],false,lmp);
+	if (nmutypes > atom->ntypes) error->all(FLERR,"Illegal fix atom/swap command");
+        mu[nmutypes] = force->numeric(FLERR,arg[iarg]);
         iarg++;
       }
     } else error->all(FLERR,"Illegal fix atom/swap command");
   }
+}
+
+/* ---------------------------------------------------------------------- */
+
+FixAtomSwap::~FixAtomSwap()
+{
+  memory->destroy(type_list);
+  memory->destroy(mu);
+  memory->destroy(qtype);
+  memory->destroy(sqrt_mass_ratio);
+  if (regionflag) delete [] idregion;
+  delete random_equal;
+  delete random_unequal;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -241,14 +243,14 @@ void FixAtomSwap::init()
       first = 1;
       for (int i = 0; i < atom->nlocal; i++) {
         if (atom->mask[i] & groupbit) {
-          if (type[i] == type_list[iswaptype]) {
-            if (first) {
-              qtype[iswaptype] = atom->q[i];
-              first = 0;
-            } else if (qtype[iswaptype] != atom->q[i])
-              error->one(FLERR,"All atoms of a swapped type must have the same charge.");
-          }
-        }
+	  if (type[i] == type_list[iswaptype]) {
+	    if (first) {
+	      qtype[iswaptype] = atom->q[i];
+	      first = 0;
+	    } else if (qtype[iswaptype] != atom->q[i])
+	      error->one(FLERR,"All atoms of a swapped type must have the same charge.");
+	  }
+	}
       }
       MPI_Allreduce(&first,&firstall,1,MPI_INT,MPI_MIN,world);
       if (firstall) error->all(FLERR,"At least one atom of each swapped type must be present to define charges.");
@@ -311,7 +313,7 @@ void FixAtomSwap::pre_exchange()
   comm->borders();
   if (domain->triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
   if (modify->n_pre_neighbor) modify->pre_neighbor();
-  neighbor->build(1);
+  neighbor->build();
 
   energy_stored = energy_full();
 
@@ -361,7 +363,7 @@ int FixAtomSwap::attempt_semi_grand()
     comm->borders();
     if (domain->triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
     if (modify->n_pre_neighbor) modify->pre_neighbor();
-    neighbor->build(1);
+    neighbor->build();
   } else {
     comm->forward_comm_fix(this);
   }
@@ -372,7 +374,7 @@ int FixAtomSwap::attempt_semi_grand()
   int success = 0;
   if (i >= 0)
     if (random_unequal->uniform() <
-      exp(beta*(energy_before - energy_after
+      exp(-beta*(energy_after - energy_before
             + mu[jtype] - mu[itype]))) success = 1;
 
   int success_all = 0;
@@ -403,7 +405,7 @@ int FixAtomSwap::attempt_semi_grand()
       comm->borders();
       if (domain->triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
       if (modify->n_pre_neighbor) modify->pre_neighbor();
-      neighbor->build(1);
+      neighbor->build();
     } else {
       comm->forward_comm_fix(this);
     }
@@ -442,7 +444,7 @@ int FixAtomSwap::attempt_swap()
     comm->borders();
     if (domain->triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
     if (modify->n_pre_neighbor) modify->pre_neighbor();
-    neighbor->build(1);
+    neighbor->build();
   } else {
     comm->forward_comm_fix(this);
   }
@@ -484,7 +486,7 @@ int FixAtomSwap::attempt_swap()
       comm->borders();
       if (domain->triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
       if (modify->n_pre_neighbor) modify->pre_neighbor();
-      neighbor->build(1);
+      neighbor->build();
     } else {
       comm->forward_comm_fix(this);
     }
@@ -506,7 +508,7 @@ double FixAtomSwap::energy_full()
 
   if (force->pair) force->pair->compute(eflag,vflag);
 
-  if (atom->molecular != Atom::ATOMIC) {
+  if (atom->molecular) {
     if (force->bond) force->bond->compute(eflag,vflag);
     if (force->angle) force->angle->compute(eflag,vflag);
     if (force->dihedral) force->dihedral->compute(eflag,vflag);
@@ -516,6 +518,7 @@ double FixAtomSwap::energy_full()
   if (force->kspace) force->kspace->compute(eflag,vflag);
 
   if (modify->n_post_force) modify->post_force(vflag);
+  if (modify->n_end_of_step) modify->end_of_step();
 
   update->eflag_global = update->ntimestep;
   double total_energy = c_pe->compute_scalar();
@@ -594,11 +597,11 @@ void FixAtomSwap::update_semi_grand_atoms_list()
     for (int i = 0; i < nlocal; i++) {
       if (domain->regions[iregion]->match(x[i][0],x[i][1],x[i][2]) == 1) {
         if (atom->mask[i] & groupbit) {
-          int itype = atom->type[i];
-          int iswaptype;
-          for (iswaptype = 0; iswaptype < nswaptypes; iswaptype++)
-            if (itype == type_list[iswaptype]) break;
-          if (iswaptype == nswaptypes) continue;
+	  int itype = atom->type[i];
+	  int iswaptype;
+	  for (iswaptype = 0; iswaptype < nswaptypes; iswaptype++)
+	    if (itype == type_list[iswaptype]) break;
+	  if (iswaptype == nswaptypes) continue;
           local_swap_atom_list[nswap_local] = i;
           nswap_local++;
         }
@@ -608,11 +611,11 @@ void FixAtomSwap::update_semi_grand_atoms_list()
   } else {
     for (int i = 0; i < nlocal; i++) {
       if (atom->mask[i] & groupbit) {
-          int itype = atom->type[i];
-          int iswaptype;
-          for (iswaptype = 0; iswaptype < nswaptypes; iswaptype++)
-            if (itype == type_list[iswaptype]) break;
-          if (iswaptype == nswaptypes) continue;
+	  int itype = atom->type[i];
+	  int iswaptype;
+	  for (iswaptype = 0; iswaptype < nswaptypes; iswaptype++)
+	    if (itype == type_list[iswaptype]) break;
+	  if (iswaptype == nswaptypes) continue;
         local_swap_atom_list[nswap_local] = i;
         nswap_local++;
       }
@@ -689,7 +692,7 @@ void FixAtomSwap::update_swap_atoms_list()
 
 /* ---------------------------------------------------------------------- */
 
-int FixAtomSwap::pack_forward_comm(int n, int *list, double *buf, int /*pbc_flag*/, int * /*pbc*/)
+int FixAtomSwap::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
 {
   int i,j,m;
 
@@ -754,7 +757,7 @@ double FixAtomSwap::compute_vector(int n)
 
 double FixAtomSwap::memory_usage()
 {
-  double bytes = (double)atom_swap_nmax * sizeof(int);
+  double bytes = atom_swap_nmax * sizeof(int);
   return bytes;
 }
 
@@ -765,13 +768,10 @@ double FixAtomSwap::memory_usage()
 void FixAtomSwap::write_restart(FILE *fp)
 {
   int n = 0;
-  double list[6];
+  double list[4];
   list[n++] = random_equal->state();
   list[n++] = random_unequal->state();
-  list[n++] = ubuf(next_reneighbor).d;
-  list[n++] = nswap_attempts;
-  list[n++] = nswap_successes;
-  list[n++] = ubuf(update->ntimestep).d;
+  list[n++] = next_reneighbor;
 
   if (comm->me == 0) {
     int size = n * sizeof(double);
@@ -795,12 +795,5 @@ void FixAtomSwap::restart(char *buf)
   seed = static_cast<int> (list[n++]);
   random_unequal->reset(seed);
 
-  next_reneighbor = (bigint) ubuf(list[n++]).i;
-
-  nswap_attempts = static_cast<int>(list[n++]);
-  nswap_successes = static_cast<int>(list[n++]);
-
-  bigint ntimestep_restart = (bigint) ubuf(list[n++]).i;
-  if (ntimestep_restart != update->ntimestep)
-    error->all(FLERR,"Must not reset timestep when restarting fix atom/swap");
+  next_reneighbor = static_cast<int> (list[n++]);
 }

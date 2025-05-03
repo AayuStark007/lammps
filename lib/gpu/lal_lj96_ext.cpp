@@ -15,7 +15,7 @@
 
 #include <iostream>
 #include <cassert>
-#include <cmath>
+#include <math.h>
 
 #include "lal_lj96.h"
 
@@ -55,7 +55,7 @@ int lj96_gpu_init(const int ntypes, double **cutsq, double **host_lj1,
   int init_ok=0;
   if (world_me==0)
     init_ok=LJ96MF.init(ntypes, cutsq, host_lj1, host_lj2, host_lj3,
-                        host_lj4, offset, special_lj, inum, nall, max_nbors,
+                        host_lj4, offset, special_lj, inum, nall, 300,
                         maxspecial, cell_size, gpu_split, screen);
 
   LJ96MF.device->world_barrier();
@@ -73,7 +73,7 @@ int lj96_gpu_init(const int ntypes, double **cutsq, double **host_lj1,
     }
     if (gpu_rank==i && world_me!=0)
       init_ok=LJ96MF.init(ntypes, cutsq, host_lj1, host_lj2, host_lj3, host_lj4,
-                          offset, special_lj, inum,  nall, max_nbors, maxspecial,
+                          offset, special_lj, inum,  nall, 300, maxspecial,
                           cell_size, gpu_split, screen);
 
     LJ96MF.device->gpu_barrier();

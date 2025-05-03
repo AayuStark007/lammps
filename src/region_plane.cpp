@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,11 +11,12 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "region_plane.h"
-
 #include "error.h"
-
-#include <cmath>
+#include "force.h"
 
 using namespace LAMMPS_NS;
 
@@ -27,12 +27,12 @@ RegPlane::RegPlane(LAMMPS *lmp, int narg, char **arg) :
 {
   options(narg-8,&arg[8]);
 
-  xp = xscale*utils::numeric(FLERR,arg[2],false,lmp);
-  yp = yscale*utils::numeric(FLERR,arg[3],false,lmp);
-  zp = zscale*utils::numeric(FLERR,arg[4],false,lmp);
-  normal[0] = xscale*utils::numeric(FLERR,arg[5],false,lmp);
-  normal[1] = yscale*utils::numeric(FLERR,arg[6],false,lmp);
-  normal[2] = zscale*utils::numeric(FLERR,arg[7],false,lmp);
+  xp = xscale*force->numeric(FLERR,arg[2]);
+  yp = yscale*force->numeric(FLERR,arg[3]);
+  zp = zscale*force->numeric(FLERR,arg[4]);
+  normal[0] = xscale*force->numeric(FLERR,arg[5]);
+  normal[1] = yscale*force->numeric(FLERR,arg[6]);
+  normal[2] = zscale*force->numeric(FLERR,arg[7]);
 
   // enforce unit normal
 

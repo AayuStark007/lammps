@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(peri/eps,PairPeriEPS);
-// clang-format on
+
+PairStyle(peri/eps,PairPeriEPS)
+
 #else
 
 #ifndef LMP_PAIR_PERI_EPS_H
@@ -53,7 +53,7 @@ class PairPeriEPS : public Pair {
   double **bulkmodulus;
   double **shearmodulus;
   double **s00, **alpha;
-  double **cut, **m_yieldstress;    //NEW: **m_yieldstress
+  double **cut, **m_yieldstress;   //NEW: **m_yieldstress
 
   double *s0_new;
   int nmax;
@@ -61,7 +61,7 @@ class PairPeriEPS : public Pair {
   void allocate();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

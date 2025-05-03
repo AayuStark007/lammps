@@ -1,88 +1,113 @@
-#I have to leave these here for tribits
-KOKKOS_INCLUDE_DIRECTORIES(
-  ${CMAKE_CURRENT_BINARY_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${KOKKOS_TOP_BUILD_DIR}
-)
 
-INSTALL (DIRECTORY
-  "${CMAKE_CURRENT_SOURCE_DIR}/"
-  DESTINATION ${KOKKOS_HEADER_DIR}
-  FILES_MATCHING
-  PATTERN "*.hpp"
-  PATTERN "*.h"
-)
+TRIBITS_ADD_OPTION_AND_DEFINE(
+  Kokkos_ENABLE_Serial
+  KOKKOS_HAVE_SERIAL
+  "Whether to enable the Kokkos::Serial device.  This device executes \"parallel\" kernels sequentially on a single CPU thread.  It is enabled by default.  If you disable this device, please enable at least one other CPU device, such as Kokkos::OpenMP or Kokkos::Threads."
+  ON
+  )
 
-SET(KOKKOS_CORE_SRCS)
-APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/impl/*.cpp)
-SET(KOKKOS_CORE_HEADERS)
-APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/*.hpp)
-APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/impl/*.hpp)
+ASSERT_DEFINED(${PROJECT_NAME}_ENABLE_CXX11)
+ASSERT_DEFINED(${PACKAGE_NAME}_ENABLE_CUDA)
 
-IF (KOKKOS_ENABLE_CUDA)
-  APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/Cuda/*.cpp)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/Cuda/*.hpp)
-ENDIF()
+# Kokkos_ENABLE_CXX11_DISPATCH_LAMBDA governs whether Kokkos allows
+# use of lambdas at the outer level of parallel dispatch (that is, as
+# the argument to an outer parallel_for, parallel_reduce, or
+# parallel_scan).  This works with non-CUDA execution spaces if C++11
+# is enabled.  It does not currently work with public releases of
+# CUDA.  If that changes, please change the default here to ON if CUDA
+# and C++11 are ON.
+IF (${PROJECT_NAME}_ENABLE_CXX11)
+  IF (${PACKAGE_NAME}_ENABLE_CUDA)
+    SET(Kokkos_ENABLE_CXX11_DISPATCH_LAMBDA_DEFAULT OFF)
+  ELSE ()
+    SET(Kokkos_ENABLE_CXX11_DISPATCH_LAMBDA_DEFAULT ON)
+  ENDIF ()
+ELSE ()
+  SET(Kokkos_ENABLE_CXX11_DISPATCH_LAMBDA_DEFAULT OFF)
+ENDIF ()
 
-IF (KOKKOS_ENABLE_OPENMP)
-  APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/OpenMP/*.cpp)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/OpenMP/*.hpp)
-ENDIF()
+TRIBITS_ADD_OPTION_AND_DEFINE(
+  Kokkos_ENABLE_CXX11_DISPATCH_LAMBDA
+  KOKKOS_HAVE_CXX11_DISPATCH_LAMBDA
+  "Whether Kokkos allows use of lambdas at the outer level of parallel dispatch (that is, as the argument to an outer parallel_for, parallel_reduce, or parallel_scan).  This requires C++11.  It also does not currently work with public releases of CUDA.  As a result, even if C++11 is enabled, this will be OFF by default if CUDA is enabled.  If this option is ON, the macro KOKKOS_HAVE_CXX11_DISPATCH_LAMBDA will be defined.  For compatibility with Kokkos' Makefile build system, it is also possible to define that macro on the command line."
+  ${Kokkos_ENABLE_CXX11_DISPATCH_LAMBDA_DEFAULT}
+  )
 
-IF (KOKKOS_ENABLE_OPENMPTARGET)
-  APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/OpenMPTarget/*.cpp)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/OpenMPTarget/*.hpp)
-ENDIF()
+TRIBITS_CONFIGURE_FILE(${PACKAGE_NAME}_config.h)
 
-IF (KOKKOS_ENABLE_PTHREAD)
-  APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/Threads/*.cpp)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/Threads/*.hpp)
-ENDIF()
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR})
 
-IF (KOKKOS_ENABLE_HIP)
-  APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/HIP/*.cpp)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/HIP/*.hpp)
-ENDIF()
+#-----------------------------------------------------------------------------
 
-IF (KOKKOS_ENABLE_HPX)
-  APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/HPX/*.cpp)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/HPX/*.hpp)
-ENDIF()
+SET(TRILINOS_INCDIR ${CMAKE_INSTALL_PREFIX}/${${PROJECT_NAME}_INSTALL_INCLUDE_DIR})
 
-IF (NOT KOKKOS_ENABLE_MEMKIND)
-  LIST(REMOVE_ITEM KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/impl/Kokkos_HBWSpace.cpp)
-ENDIF()
+#-----------------------------------------------------------------------------
 
-IF (KOKKOS_ENABLE_SERIAL)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/Serial/*.hpp)
-ELSE()
-  LIST(REMOVE_ITEM KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/impl/Kokkos_Serial.cpp)
-  LIST(REMOVE_ITEM KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/impl/Kokkos_Serial_task.cpp)
-ENDIF()
+SET(HEADERS_PUBLIC "")
+SET(HEADERS_PRIVATE "")
+SET(SOURCES "")
 
-IF (KOKKOS_ENABLE_SYCL)
-  APPEND_GLOB(KOKKOS_CORE_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/SYCL/*.cpp)
-  APPEND_GLOB(KOKKOS_CORE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/SYCL/*.hpp)
-ENDIF()
+FILE(GLOB HEADERS_PUBLIC Kokkos*.hpp)
+LIST( APPEND HEADERS_PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/${PACKAGE_NAME}_config.h )
 
-KOKKOS_ADD_LIBRARY(
-  kokkoscore
-  SOURCES ${KOKKOS_CORE_SRCS}
-  HEADERS ${KOKKOS_CORE_HEADERS}
-  ADD_BUILD_OPTIONS # core should be given all the necessary compiler/linker flags
-)
+#-----------------------------------------------------------------------------
 
-KOKKOS_LIB_INCLUDE_DIRECTORIES(kokkoscore
-  ${KOKKOS_TOP_BUILD_DIR}
-  ${CMAKE_CURRENT_BINARY_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}
-)
+FILE(GLOB HEADERS_IMPL impl/*.hpp)
+FILE(GLOB SOURCES_IMPL impl/*.cpp)
 
-KOKKOS_LINK_TPL(kokkoscore PUBLIC HWLOC)
-KOKKOS_LINK_TPL(kokkoscore PUBLIC MEMKIND)
-KOKKOS_LINK_TPL(kokkoscore PUBLIC CUDA)
-KOKKOS_LINK_TPL(kokkoscore PUBLIC HPX)
-KOKKOS_LINK_TPL(kokkoscore PUBLIC LIBDL)
-KOKKOS_LINK_TPL(kokkoscore PUBLIC LIBRT)
-KOKKOS_LINK_TPL(kokkoscore PUBLIC PTHREAD)
-KOKKOS_LINK_TPL(kokkoscore PUBLIC ROCM)
+LIST(APPEND HEADERS_PRIVATE ${HEADERS_IMPL} )
+LIST(APPEND SOURCES         ${SOURCES_IMPL} )
+
+INSTALL(FILES ${HEADERS_IMPL} DESTINATION ${TRILINOS_INCDIR}/impl/)
+
+#-----------------------------------------------------------------------------
+
+FILE(GLOB HEADERS_THREADS Threads/*.hpp)
+FILE(GLOB SOURCES_THREADS Threads/*.cpp)
+
+LIST(APPEND HEADERS_PRIVATE ${HEADERS_THREADS} )
+LIST(APPEND SOURCES         ${SOURCES_THREADS} )
+
+INSTALL(FILES ${HEADERS_THREADS} DESTINATION ${TRILINOS_INCDIR}/Threads/)
+
+#-----------------------------------------------------------------------------
+
+FILE(GLOB HEADERS_OPENMP OpenMP/*.hpp)
+FILE(GLOB SOURCES_OPENMP OpenMP/*.cpp)
+
+LIST(APPEND HEADERS_PRIVATE ${HEADERS_OPENMP} )
+LIST(APPEND SOURCES         ${SOURCES_OPENMP} )
+
+INSTALL(FILES ${HEADERS_OPENMP} DESTINATION ${TRILINOS_INCDIR}/OpenMP/)
+
+#-----------------------------------------------------------------------------
+
+FILE(GLOB HEADERS_CUDA Cuda/*.hpp)
+FILE(GLOB SOURCES_CUDA Cuda/*.cpp)
+
+LIST(APPEND HEADERS_PRIVATE ${HEADERS_CUDA} )
+LIST(APPEND SOURCES         ${SOURCES_CUDA} )
+
+INSTALL(FILES ${HEADERS_CUDA} DESTINATION ${TRILINOS_INCDIR}/Cuda/)
+
+#-----------------------------------------------------------------------------
+FILE(GLOB HEADERS_QTHREAD Qthread/*.hpp)
+FILE(GLOB SOURCES_QTHREAD Qthread/*.cpp)
+
+LIST(APPEND HEADERS_PRIVATE ${HEADERS_QTHREAD} )
+LIST(APPEND SOURCES         ${SOURCES_QTHREAD} )
+
+INSTALL(FILES ${HEADERS_QTHREAD} DESTINATION ${TRILINOS_INCDIR}/Qthread/)
+
+#-----------------------------------------------------------------------------
+
+TRIBITS_ADD_LIBRARY(
+    kokkoscore
+    HEADERS ${HEADERS_PUBLIC}
+    NOINSTALLHEADERS ${HEADERS_PRIVATE}
+    SOURCES ${SOURCES}
+    DEPLIBS
+    )
+
+

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,25 +12,25 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(run,Run);
-// clang-format on
+
+CommandStyle(run,Run)
+
 #else
 
 #ifndef LMP_RUN_H
 #define LMP_RUN_H
 
-#include "command.h"
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class Run : public Command {
+class Run : protected Pointers {
  public:
   Run(class LAMMPS *);
   void command(int, char **);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -69,12 +69,8 @@ E: Run command stop value is before end of run
 
 Self-explanatory.
 
-E: Run flag 'pre no' not compatible with r-RESPA
-
-UNDOCUMENTED
-
 E: Too many timesteps
 
-The cumulative timesteps must fit in a 64-bit integer.
+The cummulative timesteps must fit in a 64-bit integer.
 
 */

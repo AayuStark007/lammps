@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -17,20 +16,20 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_tfmc.h"
-
+#include <mpi.h>
+#include <string.h>
+#include <math.h>
+#include <float.h>
 #include "atom.h"
+#include "force.h"
+#include "update.h"
+#include "group.h"
+#include "random_mars.h"
 #include "comm.h"
 #include "domain.h"
-#include "error.h"
-#include "force.h"
-#include "group.h"
 #include "memory.h"
 #include "modify.h"
-#include "random_mars.h"
-
-#include <cfloat>
-#include <cmath>
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -39,16 +38,16 @@ using namespace FixConst;
 
 FixTFMC::FixTFMC(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  xd(nullptr), rotflag(0), random_num(nullptr)
+  xd(NULL), rotflag(0), random_num(NULL)
 {
   if (narg < 6) error->all(FLERR,"Illegal fix tfmc command");
 
   // although we are not doing MD, we would like to use tfMC as an MD "drop in"
   time_integrate = 1;
 
-  d_max = utils::numeric(FLERR,arg[3],false,lmp);
-  T_set = utils::numeric(FLERR,arg[4],false,lmp);
-  seed = utils::inumeric(FLERR,arg[5],false,lmp);
+  d_max = force->numeric(FLERR,arg[3]);
+  T_set = force->numeric(FLERR,arg[4]);
+  seed = force->inumeric(FLERR,arg[5]);
 
   if (d_max <= 0) error->all(FLERR,"Fix tfmc displacement length must be > 0");
   if (T_set <= 0) error->all(FLERR,"Fix tfmc temperature must be > 0");
@@ -58,16 +57,15 @@ FixTFMC::FixTFMC(LAMMPS *lmp, int narg, char **arg) :
 
   comflag = 0;
   rotflag = 0;
-  xflag = yflag = zflag = 0;
 
   int iarg = 6;
   while (iarg < narg) {
     if (strcmp(arg[iarg],"com") == 0) {
       if (iarg+4 > narg) error->all(FLERR,"Illegal fix tfmc command");
       comflag = 1;
-      xflag = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-      yflag = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
-      zflag = utils::inumeric(FLERR,arg[iarg+3],false,lmp);
+      xflag = force->inumeric(FLERR,arg[iarg+1]);
+      yflag = force->inumeric(FLERR,arg[iarg+2]);
+      zflag = force->inumeric(FLERR,arg[iarg+3]);
       iarg += 4;
     } else if (strcmp(arg[iarg],"rot") == 0) {
       if (iarg+1 > narg) error->all(FLERR,"Illegal fix tfmc command");
@@ -86,7 +84,7 @@ FixTFMC::FixTFMC(LAMMPS *lmp, int narg, char **arg) :
     comflag = 0;
 
   if (rotflag) {
-    xd = nullptr;
+    xd = NULL;
     nmax = -1;
   }
 
@@ -100,7 +98,7 @@ FixTFMC::~FixTFMC()
   delete random_num;
   if (rotflag) {
     memory->destroy(xd);
-    xd = nullptr;
+    xd = NULL;
     nmax = -1;
   }
 }
@@ -160,7 +158,7 @@ void FixTFMC::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixTFMC::initial_integrate(int /*vflag*/)
+void FixTFMC::initial_integrate(int vflag)
 {
   double boltz = force->boltz;
   double **x = atom->x;
@@ -237,7 +235,7 @@ void FixTFMC::initial_integrate(int /*vflag*/)
       xcm_dall[1] /= masstotal;
       xcm_dall[2] /= masstotal;
     } else xcm_dall[0] = xcm_dall[1] = xcm_dall[2] = 0.0;
-
+    
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
         if (xflag) x[i][0] -= xcm_dall[0];
@@ -257,11 +255,11 @@ void FixTFMC::initial_integrate(int /*vflag*/)
     group->xcm(igroup,masstotal,cm);
 
     // to zero rotations, we can employ the same principles the
-        // velocity command uses to zero the angular momentum. of course,
-        // there is no (conserved) momentum in MC, but we can substitute
-        // "velocities" by a displacement vector and proceed from there.
-        // this of course requires "forking" group->angmom(), which is
-        // what we do here.
+	// velocity command uses to zero the angular momentum. of course,
+	// there is no (conserved) momentum in MC, but we can substitute
+	// "velocities" by a displacement vector and proceed from there.
+	// this of course requires "forking" group->angmom(), which is
+	// what we do here.
 
     double p[3];
     p[0] = p[1] = p[2] = 0.0;

@@ -57,8 +57,8 @@ ifeq ($(COMPILER),gnu)
   CPP         = g++ # C++ Compiler
   CC          = gcc # C compiler
   AR          = ar
-  DBUG        = -O2 -g -Wall #-DDEBUG -DNANCHECK -Wall -pedantic #-ansi
-  OPT         = #-O3 -g -Wall
+  DBUG        = -O2 # -g -DDEBUG -DNANCHECK -Wall -pedantic #-ansi
+  OPT         = #-O3
 endif
 
 ifeq ($(COMPILER),mpi)
@@ -111,12 +111,7 @@ OBJ_DIR = $(HOBJ_DIR)
 THIS_OBJ =  $(OBJ_DIR)/asphere_vis.o $(GRPHICS_LIB) $(MATH_LIB) $(ALL_LIB)
 EXECS = $(BIN_DIR)/asphere_vis
 
-all: paths $(EXECS)
-
-paths: $(HOBJ_DIR) $(BIN_DIR)
-
-$(HOBJ_DIR) $(BIN_DIR):
-	mkdir $@
+all: $(EXECS)
 
 libraries:
 	cd $(ALL_DIR); make; cd $(MATH_DIR); make; cd $(GRID_DIR); make; \

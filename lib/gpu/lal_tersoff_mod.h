@@ -32,7 +32,7 @@ class TersoffMod : public BaseThree<numtyp, acctyp> {
     * \param gpu_split fraction of particles handled by device
     *
     * Returns:
-    * -  0 if successful
+    * -  0 if successfull
     * - -1 if fix gpu not found
     * - -3 if there is an out of memory error
     * - -4 if the GPU library was not compiled for GPU
@@ -46,6 +46,21 @@ class TersoffMod : public BaseThree<numtyp, acctyp> {
            const double* c3, const double* c4, const double* c5,
            const double* h, const double* beta, const double* powern,
            const double* powern_del, const double* ca1, const double* cutsq);
+
+  /// Pair loop with host neighboring
+  void compute(const int f_ago, const int inum_full, const int nall,
+               const int nlist, double **host_x, int *host_type,
+               int *ilist, int *numj, int **firstneigh, const bool eflag,
+               const bool vflag, const bool eatom, const bool vatom,
+               int &host_start, const double cpu_time, bool &success);
+
+  /// Pair loop with device neighboring
+  int ** compute(const int ago, const int inum_full,
+                 const int nall, double **host_x, int *host_type, double *sublo,
+                 double *subhi, tagint *tag, int **nspecial,
+                 tagint **special, const bool eflag, const bool vflag,
+                 const bool eatom, const bool vatom, int &host_start,
+                 int **ilist, int **numj, const double cpu_time, bool &success);
 
   /// Clear all host and device data
   /** \note This is called at the beginning of the init() routine **/
@@ -63,7 +78,7 @@ class TersoffMod : public BaseThree<numtyp, acctyp> {
   bool shared_types;
 
   /// Number of atom types
-  int _ntypes;
+  int _lj_types;
 
   /// ts1.x = lam1, ts1.y = lam2,  ts1.z = lam3, ts1.w = powermint
   UCL_D_Vec<numtyp4> ts1;
@@ -76,7 +91,7 @@ class TersoffMod : public BaseThree<numtyp, acctyp> {
   /// ts5.x = c5, ts5.y = h
   UCL_D_Vec<numtyp4> ts5;
 
-  numtyp _cutsq_max;
+  UCL_D_Vec<numtyp> cutsq;
 
   UCL_D_Vec<int> elem2param;
   UCL_D_Vec<int> map;
@@ -87,11 +102,14 @@ class TersoffMod : public BaseThree<numtyp, acctyp> {
   /// zetaij.w = zetaij
   UCL_D_Vec<acctyp4>   _zetaij;
 
-  UCL_Kernel k_zeta, k_zeta_noev, *k_zeta_selt;
+  UCL_Kernel k_zeta;
+  UCL_Texture ts1_tex, ts2_tex, ts3_tex, ts4_tex, ts5_tex;
+
+  int _max_nbors;
 
  private:
   bool _allocated;
-  int loop(const int eflag, const int vflag, const int evatom, bool &success);
+  void loop(const bool _eflag, const bool _vflag, const int evatom);
 };
 
 }

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(pressure,ComputePressure);
-// clang-format on
+
+ComputeStyle(pressure,ComputePressure)
+
 #else
 
 #ifndef LMP_COMPUTE_PRESSURE_H
@@ -28,32 +28,26 @@ class ComputePressure : public Compute {
  public:
   ComputePressure(class LAMMPS *, int, char **);
   virtual ~ComputePressure();
-  virtual void init();
-  virtual double compute_scalar();
-  virtual void compute_vector();
+  void init();
+  double compute_scalar();
+  void compute_vector();
   void reset_extra_compute_fix(const char *);
 
  protected:
-  double boltz, nktv2p, inv_volume;
-  int nvirial, dimension;
+  double boltz,nktv2p,inv_volume;
+  int nvirial,dimension;
   double **vptr;
   double *kspace_virial;
   Compute *temperature;
   char *id_temp;
-  double virial[6];    // ordering: xx,yy,zz,xy,xz,yz
-  int pairhybridflag;
-  class Pair *pairhybrid;
-  int keflag, pairflag, bondflag, angleflag, dihedralflag, improperflag;
-  int fixflag, kspaceflag;
+  double virial[6];
+  int keflag,pairflag,bondflag,angleflag,dihedralflag,improperflag;
+  int fixflag,kspaceflag;
 
   void virial_compute(int, int);
-
- private:
-  char *pstyle;
-  int nsub;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

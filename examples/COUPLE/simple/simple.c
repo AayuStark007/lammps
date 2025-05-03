@@ -19,11 +19,10 @@
            in.lammps = LAMMPS input script
    See README for compilation instructions */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <mpi.h>
-#define LAMMPS_LIB_MPI
+#include "stdio.h"
+#include "stdlib.h"
+#include "string.h"
+#include "mpi.h"
 #include "library.h"        /* this is a LAMMPS include file */
 
 int main(int narg, char **arg)
@@ -73,7 +72,7 @@ int main(int narg, char **arg)
      all LAMMPS procs call lammps_command() on the line */
 
   void *lmp = NULL;
-  if (lammps == 1) lmp = lammps_open(0,NULL,comm_lammps,NULL);
+  if (lammps == 1) lammps_open(0,NULL,comm_lammps,&lmp);
 
   int n;
   char line[1024];
@@ -125,10 +124,10 @@ int main(int narg, char **arg)
 
   /* use commands_string() and commands_list() to invoke more commands */
 
-  const char *strtwo = "run 10\nrun 20";
+  char *strtwo = "run 10\nrun 20";
   if (lammps == 1) lammps_commands_string(lmp,strtwo);
 
-  const char *cmds[2];
+  char *cmds[2];
   cmds[0] = "run 10";
   cmds[1] = "run 20";
   if (lammps == 1) lammps_commands_list(lmp,2,cmds);
@@ -146,7 +145,7 @@ int main(int narg, char **arg)
     for (i = 0; i < natoms; i++) type[i] = 1;
 
     lammps_command(lmp,"delete_atoms group all");
-    lammps_create_atoms(lmp,natoms,NULL,type,x,v,NULL,0);
+    lammps_create_atoms(lmp,natoms,NULL,type,x,v);
     lammps_command(lmp,"run 10");
   }
 

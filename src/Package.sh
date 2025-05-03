@@ -34,13 +34,6 @@ if (test $2 = "status") then
     echo "Installed  NO: package $1"
   fi
 
-# installed, list only if installed
-
-elif (test $2 = "installed") then
-  if (test $installed = 1) then
-    echo "Installed YES: package $1"
-  fi
-
 # update, only if installed
 # perform a re-install, but only if the package is already installed
 
@@ -91,7 +84,7 @@ elif (test $2 = "diff") then
         echo "************************************************"
         echo "diff -u $1/$file src/$file "
         echo "************************************************"
-        diff -u $file  ../$file
+	diff -u $file  ../$file 
       fi
     done
   fi

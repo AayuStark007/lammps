@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(temp/berendsen,FixTempBerendsen);
-// clang-format on
+
+FixStyle(temp/berendsen,FixTempBerendsen)
+
 #else
 
 #ifndef LMP_FIX_TEMP_BERENDSEN_H
@@ -34,15 +34,13 @@ class FixTempBerendsen : public Fix {
   int modify_param(int, char **);
   void reset_target(double);
   double compute_scalar();
-  void write_restart(FILE *);
-  void restart(char *buf);
   virtual void *extract(const char *, int &);
 
  private:
   int which;
-  double t_start, t_stop, t_period, t_target;
+  double t_start,t_stop,t_period,t_target;
   double energy;
-  int tstyle, tvar;
+  int tstyle,tvar;
   char *tstr;
 
   char *id_temp;
@@ -50,7 +48,7 @@ class FixTempBerendsen : public Fix {
   int tflag;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -78,10 +76,6 @@ Only equal-style variables can be used.
 E: Temperature ID for fix temp/berendsen does not exist
 
 Self-explanatory.
-
-W: Cannot thermostat atoms in rigid bodies
-
-UNDOCUMENTED
 
 E: Computed temperature for fix temp/berendsen cannot be 0.0
 

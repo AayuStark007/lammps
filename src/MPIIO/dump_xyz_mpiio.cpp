@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,16 +15,24 @@
    Contributing author: Paul Coffman (IBM)
 ------------------------------------------------------------------------- */
 
-#include "omp_compat.h"
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "dump_xyz_mpiio.h"
-#include <cmath>
-
-#include <cstring>
+#include "atom.h"
+#include "force.h"
 #include "domain.h"
+#include "region.h"
+#include "group.h"
+#include "input.h"
+#include "variable.h"
 #include "update.h"
+#include "modify.h"
 #include "compute.h"
+#include "fix.h"
 #include "memory.h"
 #include "error.h"
+#include <stdlib.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -47,6 +54,7 @@ enum{ID,MOL,TYPE,ELEMENT,MASS,
      TQX,TQY,TQZ,SPIN,ERADIUS,ERVEL,ERFORCE,
      COMPUTE,FIX,VARIABLE};
 enum{LT,LE,GT,GE,EQ,NEQ};
+enum{INT,DOUBLE,STRING};    // same as in DumpCFG
 
 /* ---------------------------------------------------------------------- */
 
@@ -91,19 +99,6 @@ void DumpXYZMPIIO::openfile()
       sprintf(filecurrent,pad,filestar,update->ntimestep,ptr+1);
     }
     *ptr = '*';
-    if (maxfiles > 0) {
-      if (numfiles < maxfiles) {
-        nameslist[numfiles] = new char[strlen(filecurrent)+1];
-        strcpy(nameslist[numfiles],filecurrent);
-        ++numfiles;
-      } else {
-        remove(nameslist[fileidx]);
-        delete[] nameslist[fileidx];
-        nameslist[fileidx] = new char[strlen(filecurrent)+1];
-        strcpy(nameslist[fileidx],filecurrent);
-        fileidx = (fileidx + 1) % maxfiles;
-      }
-    }
   }
 
   if (append_flag) { // append open
@@ -199,7 +194,7 @@ void DumpXYZMPIIO::write()
   }
 
   if (sort_flag && sortcol == 0) pack(ids);
-  else pack(nullptr);
+  else pack(NULL);
   if (sort_flag) sort();
 
   // determine how much data needs to be written for setting the file size and prepocess it prior to writing
@@ -240,7 +235,7 @@ void DumpXYZMPIIO::init_style()
   // initialize typenames array to be backward compatible by default
   // a 32-bit int can be maximally 10 digits plus sign
 
-  if (typenames == nullptr) {
+  if (typenames == NULL) {
     typenames = new char*[ntypes+1];
     for (int itype = 1; itype <= ntypes; itype++) {
       typenames[itype] = new char[12];
@@ -352,7 +347,7 @@ int DumpXYZMPIIO::convert_string_omp(int n, double *mybuf)
     mpifh_buffer_line_per_thread[i] = (char *) malloc(DUMP_BUF_CHUNK_SIZE * sizeof(char));
     mpifh_buffer_line_per_thread[i][0] = '\0';
 
-#pragma omp parallel LMP_DEFAULT_NONE LMP_SHARED(bufOffset, bufRange, bufLength, mpifhStringCountPerThread, mpifh_buffer_line_per_thread, mybuf)
+#pragma omp parallel default(none) shared(bufOffset, bufRange, bufLength, mpifhStringCountPerThread, mpifh_buffer_line_per_thread, mybuf)
     {
       int tid = omp_get_thread_num();
       int m=0;
@@ -383,7 +378,7 @@ int DumpXYZMPIIO::convert_string_omp(int n, double *mybuf)
     if (mpifhStringCount > 0) {
       if (mpifhStringCount > maxsbuf) {
         if (mpifhStringCount > MAXSMALLINT) return -1;
-        maxsbuf = mpifhStringCount+1;
+        maxsbuf = mpifhStringCount;
         memory->grow(sbuf,maxsbuf,"dump:sbuf");
       }
       sbuf[0] = '\0';

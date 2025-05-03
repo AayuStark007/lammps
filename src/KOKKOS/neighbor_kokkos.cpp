@@ -1,7 +1,6 @@
-// clang-format off
-/* ----------------------------------------------------------------------
+;/* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -13,39 +12,42 @@
 ------------------------------------------------------------------------- */
 
 #include "neighbor_kokkos.h"
-
-#include "angle.h"
-#include "atom_kokkos.h"
-#include "atom_masks.h"
-#include "bond.h"
-#include "comm.h"
-#include "dihedral.h"
-#include "error.h"
-#include "fix.h"
-#include "force.h"
-#include "improper.h"
-#include "kokkos.h"
-#include "memory_kokkos.h"
-#include "neigh_request.h"
+#include "atom.h"
 #include "pair.h"
-#include "style_nbin.h"
-#include "style_npair.h"
-#include "style_nstencil.h"
-#include "style_ntopo.h"
+#include "fix.h"
+#include "neigh_request.h"
+#include "memory.h"
 #include "update.h"
+#include "atom_masks.h"
+#include "error.h"
+#include "kokkos.h"
+#include "force.h"
+#include "bond.h"
+#include "angle.h"
+#include "dihedral.h"
+#include "improper.h"
 
 using namespace LAMMPS_NS;
+
+enum{NSQ,BIN,MULTI};     // also in neigh_list.cpp
 
 /* ---------------------------------------------------------------------- */
 
 NeighborKokkos::NeighborKokkos(LAMMPS *lmp) : Neighbor(lmp),
   neighbond_host(lmp),neighbond_device(lmp)
 {
+  atoms_per_bin = 16;
+
+  nlist_host = 0;
+  lists_host = NULL;
+  pair_build_host = NULL;
+  stencil_create_host = NULL;
+  nlist_device = 0;
+  lists_device = NULL;
+  pair_build_device = NULL;
+  stencil_create_device = NULL;
+
   device_flag = 0;
-  bondlist = nullptr;
-  anglelist = nullptr;
-  dihedrallist = nullptr;
-  improperlist = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -53,24 +55,31 @@ NeighborKokkos::NeighborKokkos(LAMMPS *lmp) : Neighbor(lmp),
 NeighborKokkos::~NeighborKokkos()
 {
   if (!copymode) {
-    memoryKK->destroy_kokkos(k_cutneighsq,cutneighsq);
-    cutneighsq = nullptr;
+    memory->destroy_kokkos(k_cutneighsq,cutneighsq);
+    cutneighsq = NULL;
 
-    memoryKK->destroy_kokkos(k_ex_type,ex_type);
-    memoryKK->destroy_kokkos(k_ex1_type,ex1_type);
-    memoryKK->destroy_kokkos(k_ex2_type,ex2_type);
-    memoryKK->destroy_kokkos(k_ex1_group,ex1_group);
-    memoryKK->destroy_kokkos(k_ex2_group,ex2_group);
-    memoryKK->destroy_kokkos(k_ex_mol_group,ex_mol_group);
-    memoryKK->destroy_kokkos(k_ex1_bit,ex1_bit);
-    memoryKK->destroy_kokkos(k_ex2_bit,ex2_bit);
-    memoryKK->destroy_kokkos(k_ex_mol_bit,ex_mol_bit);
-    memoryKK->destroy_kokkos(k_ex_mol_intra,ex_mol_intra);
+    for (int i = 0; i < nlist_host; i++) delete lists_host[i];
+    delete [] lists_host;
+    for (int i = 0; i < nlist_device; i++) delete lists_device[i];
+    delete [] lists_device;
 
-    memoryKK->destroy_kokkos(k_bondlist,bondlist);
-    memoryKK->destroy_kokkos(k_anglelist,anglelist);
-    memoryKK->destroy_kokkos(k_dihedrallist,dihedrallist);
-    memoryKK->destroy_kokkos(k_improperlist,improperlist);
+    delete [] pair_build_device;
+    delete [] pair_build_host;
+
+    memory->destroy_kokkos(k_ex_type,ex_type);
+    memory->destroy_kokkos(k_ex1_type,ex1_type);
+    memory->destroy_kokkos(k_ex2_type,ex2_type);
+    memory->destroy_kokkos(k_ex1_group,ex1_group);
+    memory->destroy_kokkos(k_ex2_group,ex2_group);
+    memory->destroy_kokkos(k_ex_mol_group,ex_mol_group);
+    memory->destroy_kokkos(k_ex1_bit,ex1_bit);
+    memory->destroy_kokkos(k_ex2_bit,ex2_bit);
+    memory->destroy_kokkos(k_ex_mol_bit,ex_mol_bit);
+
+    memory->destroy_kokkos(k_bondlist,bondlist);
+    memory->destroy_kokkos(k_anglelist,anglelist);
+    memory->destroy_kokkos(k_dihedrallist,dihedrallist);
+    memory->destroy_kokkos(k_improperlist,improperlist);
   }
 }
 
@@ -80,40 +89,177 @@ void NeighborKokkos::init()
 {
   atomKK = (AtomKokkos *) atom;
   Neighbor::init();
-
-  // 1st time allocation of xhold
-
-  if (dist_check)
-      xhold = DAT::tdual_x_array("neigh:xhold",maxhold);
 }
 
 /* ---------------------------------------------------------------------- */
 
 void NeighborKokkos::init_cutneighsq_kokkos(int n)
 {
-  memoryKK->create_kokkos(k_cutneighsq,cutneighsq,n+1,n+1,"neigh:cutneighsq");
+  memory->create_kokkos(k_cutneighsq,cutneighsq,n+1,n+1,"neigh:cutneighsq");
   k_cutneighsq.modify<LMPHostType>();
 }
 
 /* ---------------------------------------------------------------------- */
 
-void NeighborKokkos::create_kokkos_list(int i)
+int NeighborKokkos::init_lists_kokkos()
 {
-  if (style != Neighbor::BIN)
+  int i;
+
+  for (i = 0; i < nlist_host; i++) delete lists_host[i];
+  delete [] lists_host;
+  delete [] pair_build_host;
+  delete [] stencil_create_host;
+  nlist_host = 0;
+
+  for (i = 0; i < nlist_device; i++) delete lists_device[i];
+  delete [] lists_device;
+  delete [] pair_build_device;
+  delete [] stencil_create_device;
+  nlist_device = 0;
+
+  nlist = 0;
+  for (i = 0; i < nrequest; i++) {
+    if (requests[i]->kokkos_device) nlist_device++;
+    else if (requests[i]->kokkos_host) nlist_host++;
+    else nlist++;
+  }
+
+  lists_host = new NeighListKokkos<LMPHostType>*[nrequest];
+  pair_build_host = new PairPtrHost[nrequest];
+  stencil_create_host = new StencilPtrHost[nrequest];
+  for (i = 0; i < nrequest; i++) {
+    lists_host[i] = NULL;
+    pair_build_host[i] = NULL;
+    stencil_create_host[i] = NULL;
+  }
+
+  for (i = 0; i < nrequest; i++) {
+    if (!requests[i]->kokkos_host) continue;
+    lists_host[i] = new NeighListKokkos<LMPHostType>(lmp);
+    lists_host[i]->index = i;
+    lists_host[i]->dnum = requests[i]->dnum;
+    if (requests[i]->pair) {
+      Pair *pair = (Pair *) requests[i]->requestor;
+      pair->init_list(requests[i]->id,lists_host[i]);
+    }
+    if (requests[i]->fix) {
+      Fix *fix = (Fix *) requests[i]->requestor;
+      fix->init_list(requests[i]->id,lists_host[i]);
+    }
+  }
+
+  lists_device = new NeighListKokkos<LMPDeviceType>*[nrequest];
+  pair_build_device = new PairPtrDevice[nrequest];
+  stencil_create_device = new StencilPtrDevice[nrequest];
+  for (i = 0; i < nrequest; i++) {
+    lists_device[i] = NULL;
+    pair_build_device[i] = NULL;
+    stencil_create_device[i] = NULL;
+  }
+
+  for (i = 0; i < nrequest; i++) {
+    if (!requests[i]->kokkos_device) continue;
+    lists_device[i] = new NeighListKokkos<LMPDeviceType>(lmp);
+    lists_device[i]->index = i;
+    lists_device[i]->dnum = requests[i]->dnum;
+    if (requests[i]->pair) {
+      Pair *pair = (Pair *) requests[i]->requestor;
+      pair->init_list(requests[i]->id,lists_device[i]);
+    }
+    if (requests[i]->fix) {
+      Fix *fix = (Fix *) requests[i]->requestor;
+      fix->init_list(requests[i]->id,lists_device[i]);
+    }
+  }
+
+  // 1st time allocation of xhold
+
+  if (dist_check)
+      xhold = DAT::tdual_x_array("neigh:xhold",maxhold);
+
+  // return # of non-Kokkos lists
+
+  return nlist;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void NeighborKokkos::init_list_flags1_kokkos(int i)
+{
+  if (style != BIN)
     error->all(FLERR,"KOKKOS package only supports 'bin' neighbor lists");
 
-  if (requests[i]->kokkos_device) {
-    lists[i] = new NeighListKokkos<LMPDeviceType>(lmp);
-    device_flag = 1;
-  } else if (requests[i]->kokkos_host)
-    lists[i] = new NeighListKokkos<LMPHostType>(lmp);
+  if (lists_host[i]) {
+    lists_host[i]->buildflag = 1;
+    if (pair_build_host[i] == NULL) lists_host[i]->buildflag = 0;
+    if (requests[i]->occasional) lists_host[i]->buildflag = 0;
+
+    lists_host[i]->growflag = 1;
+    if (requests[i]->copy) lists_host[i]->growflag = 0;
+
+    lists_host[i]->stencilflag = 1;
+    if (style == NSQ) lists_host[i]->stencilflag = 0;
+    if (stencil_create[i] == NULL) lists_host[i]->stencilflag = 0;
+
+    lists_host[i]->ghostflag = 0;
+    if (requests[i]->ghost) lists_host[i]->ghostflag = 1;
+    if (requests[i]->ghost && !requests[i]->occasional) anyghostlist = 1;
+  }
+
+  if (lists_device[i]) {
+    lists_device[i]->buildflag = 1;
+    if (pair_build_device[i] == NULL) lists_device[i]->buildflag = 0;
+    if (requests[i]->occasional) lists_device[i]->buildflag = 0;
+
+    lists_device[i]->growflag = 1;
+    if (requests[i]->copy) lists_device[i]->growflag = 0;
+
+    lists_device[i]->stencilflag = 1;
+    if (style == NSQ) lists_device[i]->stencilflag = 0;
+    if (stencil_create[i] == NULL) lists_device[i]->stencilflag = 0;
+
+    lists_device[i]->ghostflag = 0;
+    if (requests[i]->ghost) lists_device[i]->ghostflag = 1;
+    if (requests[i]->ghost && !requests[i]->occasional) anyghostlist = 1;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void NeighborKokkos::init_list_flags2_kokkos(int i)
+{
+  if (lists_host[i]) {
+    if (lists_host[i]->buildflag) blist[nblist++] = i;
+    if (lists_host[i]->growflag && requests[i]->occasional == 0)
+      glist[nglist++] = i;
+    if (lists_host[i]->stencilflag && requests[i]->occasional == 0)
+      slist[nslist++] = i;
+  }
+
+  if (lists_device[i]) {
+    if (lists_device[i]->buildflag) blist[nblist++] = i;
+    if (lists_device[i]->growflag && requests[i]->occasional == 0)
+      glist[nglist++] = i;
+    if (lists_device[i]->stencilflag && requests[i]->occasional == 0)
+      slist[nslist++] = i;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void NeighborKokkos::init_list_grow_kokkos(int i)
+{
+  if (lists_host[i]!=NULL && lists_host[i]->growflag)
+    lists_host[i]->grow(maxatom);
+  if (lists_device[i]!=NULL && lists_device[i]->growflag)
+    lists_device[i]->grow(maxatom);
 }
 
 /* ---------------------------------------------------------------------- */
 
 void NeighborKokkos::init_ex_type_kokkos(int n)
 {
-  memoryKK->create_kokkos(k_ex_type,ex_type,n+1,n+1,"neigh:ex_type");
+  memory->create_kokkos(k_ex_type,ex_type,n+1,n+1,"neigh:ex_type");
   k_ex_type.modify<LMPHostType>();
 }
 
@@ -121,9 +267,9 @@ void NeighborKokkos::init_ex_type_kokkos(int n)
 
 void NeighborKokkos::init_ex_bit_kokkos()
 {
-  memoryKK->create_kokkos(k_ex1_bit, ex1_bit, nex_group, "neigh:ex1_bit");
+  memory->create_kokkos(k_ex1_bit, ex1_bit, nex_group, "neigh:ex1_bit");
   k_ex1_bit.modify<LMPHostType>();
-  memoryKK->create_kokkos(k_ex2_bit, ex2_bit, nex_group, "neigh:ex2_bit");
+  memory->create_kokkos(k_ex2_bit, ex2_bit, nex_group, "neigh:ex2_bit");
   k_ex2_bit.modify<LMPHostType>();
 }
 
@@ -131,16 +277,51 @@ void NeighborKokkos::init_ex_bit_kokkos()
 
 void NeighborKokkos::init_ex_mol_bit_kokkos()
 {
-  memoryKK->create_kokkos(k_ex_mol_bit, ex_mol_bit, nex_mol, "neigh:ex_mol_bit");
+  memory->create_kokkos(k_ex_mol_bit, ex_mol_bit, nex_mol, "neigh:ex_mol_bit");
   k_ex_mol_bit.modify<LMPHostType>();
 }
 
 /* ---------------------------------------------------------------------- */
 
-void NeighborKokkos::grow_ex_mol_intra_kokkos()
+void NeighborKokkos::choose_build(int index, NeighRequest *rq)
 {
-  memoryKK->grow_kokkos(k_ex_mol_intra, ex_mol_intra, maxex_mol, "neigh:ex_mol_intra");
-  k_ex_mol_intra.modify<LMPHostType>();
+  if (rq->kokkos_host != 0) {
+    PairPtrHost pb = NULL;
+    if (rq->ghost) {
+      if (rq->full) {
+        if (rq->full_cluster) pb = &NeighborKokkos::full_bin_cluster_kokkos<LMPHostType>;
+        else pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,0,1>;
+      }
+      else if (rq->half) pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,1,1>;
+    } else {
+      if (rq->full) {
+        if (rq->full_cluster) pb = &NeighborKokkos::full_bin_cluster_kokkos<LMPHostType>;
+        else pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,0,0>;
+      }
+      else if (rq->half) pb = &NeighborKokkos::full_bin_kokkos<LMPHostType,1,0>;
+    }
+    pair_build_host[index] = pb;
+  }
+  if (rq->kokkos_device != 0) {
+    PairPtrDevice pb = NULL;
+    if (rq->ghost) {
+      if (rq->full) {
+        if (rq->full_cluster) pb = &NeighborKokkos::full_bin_cluster_kokkos<LMPDeviceType>;
+        else pb = &NeighborKokkos::full_bin_kokkos<LMPDeviceType,0,1>;
+      }
+      else if (rq->half) pb = &NeighborKokkos::full_bin_kokkos<LMPDeviceType,1,1>;
+    } else {
+      if (rq->full) {
+        if (rq->full_cluster) pb = &NeighborKokkos::full_bin_cluster_kokkos<LMPDeviceType>;
+        else pb = &NeighborKokkos::full_bin_kokkos<LMPDeviceType,0,0>;
+      }
+      else if (rq->half) pb = &NeighborKokkos::full_bin_kokkos<LMPDeviceType,1,0>;
+    }
+    pair_build_device[index] = pb;
+    return;
+  }
+
+  Neighbor::choose_build(index,rq);
 }
 
 /* ----------------------------------------------------------------------
@@ -156,16 +337,18 @@ void NeighborKokkos::grow_ex_mol_intra_kokkos()
 
 int NeighborKokkos::check_distance()
 {
-  if (device_flag)
-    return check_distance_kokkos<LMPDeviceType>();
+  if (nlist_device)
+    check_distance_kokkos<LMPDeviceType>();
   else
-    return check_distance_kokkos<LMPHostType>();
+    check_distance_kokkos<LMPHostType>();
 }
 
 template<class DeviceType>
 int NeighborKokkos::check_distance_kokkos()
 {
-  double delx,dely,delz;
+  typedef DeviceType device_type;
+
+  double delx,dely,delz,rsq;
   double delta,delta1,delta2;
 
   if (boxcheck) {
@@ -205,6 +388,7 @@ int NeighborKokkos::check_distance_kokkos()
   int flag = 0;
   copymode = 1;
   Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType, TagNeighborCheckDistance<DeviceType> >(0,nlocal),*this,flag);
+  DeviceType::fence();
   copymode = 0;
 
   int flagall;
@@ -216,6 +400,7 @@ int NeighborKokkos::check_distance_kokkos()
 template<class DeviceType>
 KOKKOS_INLINE_FUNCTION
 void NeighborKokkos::operator()(TagNeighborCheckDistance<DeviceType>, const int &i, int &flag) const {
+  typedef DeviceType device_type;
   const X_FLOAT delx = x.view<DeviceType>()(i,0) - xhold.view<DeviceType>()(i,0);
   const X_FLOAT dely = x.view<DeviceType>()(i,1) - xhold.view<DeviceType>()(i,1);
   const X_FLOAT delz = x.view<DeviceType>()(i,2) - xhold.view<DeviceType>()(i,2);
@@ -226,13 +411,13 @@ void NeighborKokkos::operator()(TagNeighborCheckDistance<DeviceType>, const int 
 /* ----------------------------------------------------------------------
    build perpetuals neighbor lists
    called at setup and every few timesteps during run or minimization
-   topology lists also built if topoflag = 1, CUDA calls with topoflag = 0
+   topology lists also built if topoflag = 1, USER-CUDA calls with topoflag = 0
 ------------------------------------------------------------------------- */
 
 
 void NeighborKokkos::build(int topoflag)
 {
-  if (device_flag)
+  if (nlist_device)
     build_kokkos<LMPDeviceType>(topoflag);
   else
     build_kokkos<LMPHostType>(topoflag);
@@ -241,33 +426,29 @@ void NeighborKokkos::build(int topoflag)
 template<class DeviceType>
 void NeighborKokkos::build_kokkos(int topoflag)
 {
-  int i,m;
+  typedef DeviceType device_type;
+
+  int i;
 
   ago = 0;
   ncalls++;
   lastcall = update->ntimestep;
-
-  int nlocal = atom->nlocal;
-  int nall = nlocal + atom->nghost;
-
-  // check that using special bond flags will not overflow neigh lists
-
-  if (nall > NEIGHMASK)
-    error->one(FLERR,"Too many local+ghost atoms for neighbor list");
 
   // store current atom positions and box size if needed
 
   if (dist_check) {
     atomKK->sync(ExecutionSpaceFromDevice<DeviceType>::space,X_MASK);
     x = atomKK->k_x;
+    int nlocal = atom->nlocal;
     if (includegroup) nlocal = atom->nfirst;
-    int maxhold_kokkos = xhold.view<DeviceType>().extent(0);
+    int maxhold_kokkos = xhold.view<DeviceType>().dimension_0();
     if (atom->nmax > maxhold || maxhold_kokkos < maxhold) {
       maxhold = atom->nmax;
       xhold = DAT::tdual_x_array("neigh:xhold",maxhold);
     }
     copymode = 1;
     Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagNeighborXhold<DeviceType> >(0,nlocal),*this);
+    DeviceType::fence();
     copymode = 0;
     xhold.modify<DeviceType>();
     if (boxcheck) {
@@ -290,39 +471,60 @@ void NeighborKokkos::build_kokkos(int topoflag)
     }
   }
 
-  // bin atoms for all NBin instances
-  // not just NBin associated with perpetual lists
-  // b/c cannot wait to bin occasional lists in build_one() call
-  // if bin then, atoms may have moved outside of proc domain & bin extent,
-  //   leading to errors or even a crash
+  // if any lists store neighbors of ghosts:
+  //   invoke grow() if nlocal+nghost exceeds previous list size
+  // else only invoke grow() if nlocal exceeds previous list size
+  // only for lists with growflag set and which are perpetual (glist)
 
-  if (style != Neighbor::NSQ) {
-    for (int i = 0; i < nbin; i++) {
-      if (!neigh_bin[i]->kokkos) atomKK->sync(Host,ALL_MASK);
-      neigh_bin[i]->bin_atoms_setup(nall);
-      neigh_bin[i]->bin_atoms();
+  if (anyghostlist && atom->nmax > maxatom) {
+    maxatom = atom->nmax;
+    for (i = 0; i < nglist; i++)
+      if (lists[glist[i]]) lists[glist[i]]->grow(maxatom);
+      else init_list_grow_kokkos(glist[i]);
+  } else if (atom->nmax > maxatom) {
+    maxatom = atom->nmax;
+    for (i = 0; i < nglist; i++)
+      if (lists[glist[i]]) lists[glist[i]]->grow(maxatom);
+      else init_list_grow_kokkos(glist[i]);
+  }
+
+  // extend atom bin list if necessary
+
+  if (style != NSQ && atom->nmax > maxbin) {
+    maxbin = atom->nmax;
+    memory->destroy(bins);
+    memory->create(bins,maxbin,"bins");
+  }
+
+  // check that using special bond flags will not overflow neigh lists
+
+  if (atom->nlocal+atom->nghost > NEIGHMASK)
+    error->one(FLERR,"Too many local+ghost atoms for neighbor list");
+
+  // invoke building of pair and molecular topology neighbor lists
+  // only for pairwise lists with buildflag set
+  // blist is for standard neigh lists, otherwise is a Kokkos list
+
+  for (i = 0; i < nblist; i++) {
+    if (lists[blist[i]]) {
+      atomKK->sync(Host,ALL_MASK);
+      (this->*pair_build[blist[i]])(lists[blist[i]]);
+    } else {
+      if (lists_host[blist[i]])
+        (this->*pair_build_host[blist[i]])(lists_host[blist[i]]);
+      else if (lists_device[blist[i]])
+        (this->*pair_build_device[blist[i]])(lists_device[blist[i]]);
     }
   }
 
-  // build pairwise lists for all perpetual NPair/NeighList
-  // grow() with nlocal/nall args so that only realloc if have to
-
-  for (i = 0; i < npair_perpetual; i++) {
-    m = plist[i];
-    if (!lists[m]->kokkos) atomKK->sync(Host,ALL_MASK);
-    if (!lists[m]->copy) lists[m]->grow(nlocal,nall);
-    neigh_pair[m]->build_setup();
-    neigh_pair[m]->build(lists[m]);
-  }
-
-  // build topology lists for bonds/angles/etc
-
-  if ((atom->molecular != Atom::ATOMIC) && topoflag) build_topology();
+  if (atom->molecular && topoflag)
+    build_topology_kokkos();
 }
 
 template<class DeviceType>
 KOKKOS_INLINE_FUNCTION
 void NeighborKokkos::operator()(TagNeighborXhold<DeviceType>, const int &i) const {
+  typedef DeviceType device_type;
   xhold.view<DeviceType>()(i,0) = x.view<DeviceType>()(i,0);
   xhold.view<DeviceType>()(i,1) = x.view<DeviceType>()(i,1);
   xhold.view<DeviceType>()(i,2) = x.view<DeviceType>()(i,2);
@@ -330,45 +532,51 @@ void NeighborKokkos::operator()(TagNeighborXhold<DeviceType>, const int &i) cons
 
 /* ---------------------------------------------------------------------- */
 
-void NeighborKokkos::modify_ex_type_grow_kokkos() {
-  memoryKK->grow_kokkos(k_ex1_type,ex1_type,maxex_type,"neigh:ex1_type");
-  k_ex1_type.modify<LMPHostType>();
-  memoryKK->grow_kokkos(k_ex2_type,ex2_type,maxex_type,"neigh:ex2_type");
-  k_ex2_type.modify<LMPHostType>();
-}
+void NeighborKokkos::setup_bins_kokkos(int i)
+{
+  if (lists_host[slist[i]]) {
+    lists_host[slist[i]]->stencil_allocate(smax,style);
+    (this->*stencil_create[slist[i]])(lists_host[slist[i]],sx,sy,sz);
+  } else if (lists_device[slist[i]]) {
+    lists_device[slist[i]]->stencil_allocate(smax,style);
+    (this->*stencil_create[slist[i]])(lists_device[slist[i]],sx,sy,sz);
+  }
 
-/* ---------------------------------------------------------------------- */
-void NeighborKokkos::modify_ex_group_grow_kokkos() {
-  memoryKK->grow_kokkos(k_ex1_group,ex1_group,maxex_group,"neigh:ex1_group");
-  k_ex1_group.modify<LMPHostType>();
-  memoryKK->grow_kokkos(k_ex2_group,ex2_group,maxex_group,"neigh:ex2_group");
-  k_ex2_group.modify<LMPHostType>();
-}
+  //if (i < nslist-1) return; // this won't work if a non-kokkos neighbor list is last
 
-/* ---------------------------------------------------------------------- */
-void NeighborKokkos::modify_mol_group_grow_kokkos() {
-  memoryKK->grow_kokkos(k_ex_mol_group,ex_mol_group,maxex_mol,"neigh:ex_mol_group");
-  k_ex_mol_group.modify<LMPHostType>();
-}
-
-/* ---------------------------------------------------------------------- */
-void NeighborKokkos::modify_mol_intra_grow_kokkos() {
-  memoryKK->grow_kokkos(k_ex_mol_intra,ex_mol_intra,maxex_mol,"neigh:ex_mol_intra");
-  k_ex_mol_intra.modify<LMPHostType>();
-}
-
-/* ---------------------------------------------------------------------- */
-void NeighborKokkos::set_binsize_kokkos() {
-  if (!binsizeflag && lmp->kokkos->ngpus > 0) {
-    binsize_user = cutneighmax;
-    binsizeflag = 1;
+  if (maxhead > k_bins.d_view.dimension_0()) {
+    k_bins = DAT::tdual_int_2d("Neighbor::d_bins",maxhead,atoms_per_bin);
+    k_bincount = DAT::tdual_int_1d("Neighbor::d_bincount",maxhead);
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void NeighborKokkos::init_topology() {
-  if (device_flag) {
+void NeighborKokkos::modify_ex_type_grow_kokkos(){
+  memory->grow_kokkos(k_ex1_type,ex1_type,maxex_type,"neigh:ex1_type");
+  k_ex1_type.modify<LMPHostType>();
+  memory->grow_kokkos(k_ex2_type,ex2_type,maxex_type,"neigh:ex2_type");
+  k_ex2_type.modify<LMPHostType>();
+}
+
+/* ---------------------------------------------------------------------- */
+void NeighborKokkos::modify_ex_group_grow_kokkos(){
+  memory->grow_kokkos(k_ex1_group,ex1_group,maxex_group,"neigh:ex1_group");
+  k_ex1_group.modify<LMPHostType>();
+  memory->grow_kokkos(k_ex2_group,ex2_group,maxex_group,"neigh:ex2_group");
+  k_ex2_group.modify<LMPHostType>();
+}
+
+/* ---------------------------------------------------------------------- */
+void NeighborKokkos::modify_mol_group_grow_kokkos(){
+  memory->grow_kokkos(k_ex_mol_group,ex_mol_group,maxex_mol,"neigh:ex_mol_group");
+  k_ex_mol_group.modify<LMPHostType>();
+}
+
+/* ---------------------------------------------------------------------- */
+
+void NeighborKokkos::init_topology_kokkos() {
+  if (nlist_device) {
     neighbond_device.init_topology_kk();
   } else {
     neighbond_host.init_topology_kk();
@@ -377,11 +585,11 @@ void NeighborKokkos::init_topology() {
 
 /* ----------------------------------------------------------------------
    build all topology neighbor lists every few timesteps
-   normally built with pair lists, but CUDA separates them
+   normally built with pair lists, but USER-CUDA separates them
 ------------------------------------------------------------------------- */
 
-void NeighborKokkos::build_topology() {
-  if (device_flag) {
+void NeighborKokkos::build_topology_kokkos() {
+  if (nlist_device) {
     neighbond_device.build_topology_kk();
 
     k_bondlist = neighbond_device.k_bondlist;
@@ -389,8 +597,18 @@ void NeighborKokkos::build_topology() {
     k_dihedrallist = neighbond_device.k_dihedrallist;
     k_improperlist = neighbond_device.k_improperlist;
 
-    // Transfer topology neighbor lists to Host for non-Kokkos styles
+    k_bondlist.sync<LMPDeviceType>();
+    k_anglelist.sync<LMPDeviceType>();
+    k_dihedrallist.sync<LMPDeviceType>();
+    k_improperlist.sync<LMPDeviceType>();
 
+    k_bondlist.modify<LMPDeviceType>();
+    k_anglelist.modify<LMPDeviceType>();
+    k_dihedrallist.modify<LMPDeviceType>();
+    k_improperlist.modify<LMPDeviceType>();
+
+    // Transfer topology neighbor lists to Host for non-Kokkos styles
+ 
     if (force->bond && force->bond->execution_space == Host)
       k_bondlist.sync<LMPHostType>();
     if (force->angle && force->angle->execution_space == Host)
@@ -407,5 +625,19 @@ void NeighborKokkos::build_topology() {
     k_anglelist = neighbond_host.k_anglelist;
     k_dihedrallist = neighbond_host.k_dihedrallist;
     k_improperlist = neighbond_host.k_improperlist;
+
+    k_bondlist.sync<LMPHostType>();
+    k_anglelist.sync<LMPHostType>();
+    k_dihedrallist.sync<LMPHostType>();
+    k_improperlist.sync<LMPHostType>();
+
+    k_bondlist.modify<LMPHostType>();
+    k_anglelist.modify<LMPHostType>();
+    k_dihedrallist.modify<LMPHostType>();
+    k_improperlist.modify<LMPHostType>();
   }
 }
+
+// include to trigger instantiation of templated functions
+
+#include "neigh_full_kokkos.h"

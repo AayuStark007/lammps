@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(nve/sphere,FixNVESphere);
-// clang-format on
+
+FixStyle(nve/sphere,FixNVESphere)
+
 #else
 
 #ifndef LMP_FIX_NVE_SPHERE_H
@@ -33,12 +33,11 @@ class FixNVESphere : public FixNVE {
   virtual void final_integrate();
 
  protected:
-  double inertia;
   int extra;
   int dlm;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -51,10 +50,6 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Fix nve/sphere disc requires 2d simulation
-
-UNDOCUMENTED
-
 E: Fix nve/sphere requires atom style sphere
 
 Self-explanatory.
@@ -66,9 +61,10 @@ An atom style with this attribute is needed.
 E: Fix nve/sphere requires extended particles
 
 This fix can only be used for particles of a finite size.
-
-U: Fix nve/sphere dlm must be used with update dipole
-
+ 
+E: Fix nve/sphere dlm must be used with update dipole
+ 
 The DLM algorithm can only be used in conjunction with update dipole.
+
 
 */

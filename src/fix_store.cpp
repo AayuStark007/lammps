@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +11,14 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "fix_store.h"
-
 #include "atom.h"
 #include "comm.h"
-#include "error.h"
+#include "force.h"
 #include "memory.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -29,7 +28,7 @@ enum{UNKNOWN,GLOBAL,PERATOM};
 /* ---------------------------------------------------------------------- */
 
 FixStore::FixStore(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg),
-vstore(nullptr), astore(nullptr), rbuf(nullptr)
+vstore(NULL), astore(NULL), rbuf(NULL)
 {
   if (narg != 6) error->all(FLERR,"Illegal fix store command");
 
@@ -43,7 +42,7 @@ vstore(nullptr), astore(nullptr), rbuf(nullptr)
 
   disable = 0;
   nvalues = vecflag = 0;
-  flavor = UNKNOWN;
+  flavor = UNKNOWN; 
 
   if (strcmp(arg[3],"global") == 0) flavor = GLOBAL;
   else if (strcmp(arg[3],"peratom") == 0) flavor = PERATOM;
@@ -54,24 +53,24 @@ vstore(nullptr), astore(nullptr), rbuf(nullptr)
 
   if (flavor == GLOBAL) {
     restart_global = 1;
-    nrow = utils::inumeric(FLERR,arg[4],false,lmp);
-    ncol = utils::inumeric(FLERR,arg[5],false,lmp);
+    nrow = force->inumeric(FLERR,arg[4]);
+    ncol = force->inumeric(FLERR,arg[5]);
     if (nrow <= 0 || ncol <= 0)
       error->all(FLERR,"Illegal fix store command");
     vecflag = 0;
     if (ncol == 1) vecflag = 1;
   }
   if (flavor == PERATOM) {
-    restart_peratom = utils::inumeric(FLERR,arg[4],false,lmp);
-    nvalues = utils::inumeric(FLERR,arg[5],false,lmp);
-    if ((restart_peratom < 0) || (restart_peratom > 1) || (nvalues <= 0))
+    restart_peratom = force->inumeric(FLERR,arg[4]);
+    nvalues = force->inumeric(FLERR,arg[5]);
+    if (restart_peratom < 0 or restart_peratom > 1 || nvalues <= 0)
       error->all(FLERR,"Illegal fix store command");
     vecflag = 0;
     if (nvalues == 1) vecflag = 1;
   }
 
-  vstore = nullptr;
-  astore = nullptr;
+  vstore = NULL;
+  astore = NULL;
 
   // allocate vector or array and restart buffer rbuf
   // for PERATOM, register with Atom class
@@ -82,10 +81,10 @@ vstore(nullptr), astore(nullptr), rbuf(nullptr)
     memory->create(rbuf,nrow*ncol+2,"fix/store:rbuf");
   }
   if (flavor == PERATOM) {
-    FixStore::grow_arrays(atom->nmax);
-    atom->add_callback(Atom::GROW);
-    if (restart_peratom) atom->add_callback(Atom::RESTART);
-    rbuf = nullptr;
+    grow_arrays(atom->nmax);
+    atom->add_callback(0);
+    if (restart_peratom) atom->add_callback(1);
+    rbuf = NULL;
   }
 
   // zero the storage
@@ -107,7 +106,6 @@ vstore(nullptr), astore(nullptr), rbuf(nullptr)
       for (int i = 0; i < nlocal; i++)
         for (int j = 0; j < nvalues; j++)
           astore[i][j] = 0.0;
-    maxexchange = nvalues;
   }
 }
 
@@ -118,8 +116,8 @@ FixStore::~FixStore()
   // unregister callbacks to this fix from Atom class
 
   if (flavor == PERATOM) {
-    atom->delete_callback(id,Atom::GROW);
-    if (restart_peratom) atom->delete_callback(id,Atom::RESTART);
+    atom->delete_callback(id,0);
+    if (restart_peratom) atom->delete_callback(id,1);
   }
 
   memory->destroy(vstore);
@@ -146,8 +144,8 @@ void FixStore::reset_global(int nrow_caller, int ncol_caller)
   memory->destroy(vstore);
   memory->destroy(astore);
   memory->destroy(rbuf);
-  vstore = nullptr;
-  astore = nullptr;
+  vstore = NULL;
+  astore = NULL;
 
   vecflag = 0;
   if (ncol_caller == 1) vecflag = 1;
@@ -156,6 +154,9 @@ void FixStore::reset_global(int nrow_caller, int ncol_caller)
   if (vecflag) memory->create(vstore,nrow,"fix/store:vstore");
   else memory->create(astore,nrow,ncol,"fix/store:astore");
   memory->create(rbuf,nrow*ncol+2,"fix/store:rbuf");
+
+
+  printf("AAA HOW GET HERE\n");
 }
 
 /* ----------------------------------------------------------------------
@@ -168,8 +169,8 @@ void FixStore::write_restart(FILE *fp)
 
   rbuf[0] = nrow;
   rbuf[1] = ncol;
-  if (vecflag) memcpy(&rbuf[2],vstore,sizeof(double)*nrow);
-  else memcpy(&rbuf[2],&astore[0][0],sizeof(double)*nrow*ncol);
+  if (vecflag) memcpy(&rbuf[2],vstore,nrow*sizeof(double));
+  else memcpy(&rbuf[2],&astore[0][0],nrow*ncol*sizeof(double));
 
   int n = nrow*ncol + 2;
   if (comm->me == 0) {
@@ -200,8 +201,8 @@ void FixStore::restart(char *buf)
     memory->destroy(vstore);
     memory->destroy(astore);
     memory->destroy(rbuf);
-    vstore = nullptr;
-    astore = nullptr;
+    vstore = NULL;
+    astore = NULL;
 
     vecflag = 0;
     if (ncol_restart == 1) vecflag = 1;
@@ -231,7 +232,7 @@ void FixStore::grow_arrays(int nmax)
    copy values within local atom-based array
 ------------------------------------------------------------------------- */
 
-void FixStore::copy_arrays(int i, int j, int /*delflag*/)
+void FixStore::copy_arrays(int i, int j, int delflag)
 {
   if (disable) return;
 
@@ -282,7 +283,6 @@ int FixStore::pack_restart(int i, double *buf)
     return 1;
   }
 
-  // pack buf[0] this way because other fixes unpack it
   buf[0] = nvalues+1;
   if (vecflag) buf[1] = vstore[i];
   else
@@ -302,7 +302,6 @@ void FixStore::unpack_restart(int nlocal, int nth)
   double **extra = atom->extra;
 
   // skip to Nth set of extra values
-  // unpack the Nth first values this way because other fixes pack them
 
   int m = 0;
   for (int i = 0; i < nth; i++) m += static_cast<int> (extra[nlocal][m]);
@@ -328,7 +327,7 @@ int FixStore::maxsize_restart()
    size of atom nlocal's restart data
 ------------------------------------------------------------------------- */
 
-int FixStore::size_restart(int /*nlocal*/)
+int FixStore::size_restart(int nlocal)
 {
   if (disable) return 1;
   return nvalues+1;
@@ -341,7 +340,7 @@ int FixStore::size_restart(int /*nlocal*/)
 double FixStore::memory_usage()
 {
   double bytes = 0.0;
-  if (flavor == GLOBAL) bytes += (double)nrow*ncol * sizeof(double);
-  if (flavor == PERATOM) bytes += (double)atom->nmax*nvalues * sizeof(double);
+  if (flavor == GLOBAL) bytes += nrow*ncol * sizeof(double);
+  if (flavor == PERATOM) bytes += atom->nmax*nvalues * sizeof(double);
   return bytes;
 }

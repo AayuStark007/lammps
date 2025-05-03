@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,9 +15,9 @@
    Contributing authors: Mike Parks (SNL), Ezwanur Rahman, J.T. Foster (UTSA)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
 #include "fix_peri_neigh.h"
-
-#include <cmath>
+#include "pair_peri_pmb.h"
 #include "pair_peri_lps.h"
 #include "pair_peri_ves.h"
 #include "pair_peri_eps.h"
@@ -26,6 +25,7 @@
 #include "domain.h"
 #include "force.h"
 #include "comm.h"
+#include "update.h"
 #include "neighbor.h"
 #include "neigh_list.h"
 #include "neigh_request.h"
@@ -57,19 +57,19 @@ FixPeriNeigh::FixPeriNeigh(LAMMPS *lmp,int narg, char **arg) :
   // set maxpartner = 1 as placeholder
 
   maxpartner = 1;
-  npartner = nullptr;
-  partner = nullptr;
-  deviatorextention = nullptr;
-  deviatorBackextention = nullptr;
-  deviatorPlasticextension = nullptr;
-  lambdaValue = nullptr;
-  r0 = nullptr;
-  vinter = nullptr;
-  wvolume = nullptr;
+  npartner = NULL;
+  partner = NULL;
+  deviatorextention = NULL;
+  deviatorBackextention = NULL;
+  deviatorPlasticextension = NULL;
+  lambdaValue = NULL;
+  r0 = NULL;
+  vinter = NULL;
+  wvolume = NULL;
 
   grow_arrays(atom->nmax);
-  atom->add_callback(Atom::GROW);
-  atom->add_callback(Atom::RESTART);
+  atom->add_callback(0);
+  atom->add_callback(1);
 
   // initialize npartner to 0 so atom migration is OK the 1st time
 
@@ -87,8 +87,8 @@ FixPeriNeigh::~FixPeriNeigh()
 {
   // unregister this fix so atom class doesn't invoke it any more
 
-  atom->delete_callback(id,Atom::GROW);
-  atom->delete_callback(id,Atom::RESTART);
+  atom->delete_callback(id,0);
+  atom->delete_callback(id,1);
 
   // delete locally stored arrays
 
@@ -140,7 +140,7 @@ void FixPeriNeigh::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixPeriNeigh::init_list(int /*id*/, NeighList *ptr)
+void FixPeriNeigh::init_list(int id, NeighList *ptr)
 {
   list = ptr;
 }
@@ -159,7 +159,7 @@ void FixPeriNeigh::min_setup(int vflag)
    must be done in setup (not init) since fix init comes before neigh init
 ------------------------------------------------------------------------- */
 
-void FixPeriNeigh::setup(int /*vflag*/)
+void FixPeriNeigh::setup(int vflag)
 {
   int i,j,ii,jj,itype,jtype,inum,jnum;
   double xtmp,ytmp,ztmp,delx,dely,delz,rsq;
@@ -229,13 +229,13 @@ void FixPeriNeigh::setup(int /*vflag*/)
   memory->destroy(r0);
   memory->destroy(npartner);
 
-  npartner = nullptr;
-  partner = nullptr;
-  deviatorextention = nullptr;
-  deviatorBackextention = nullptr;
-  deviatorPlasticextension = nullptr;
-  lambdaValue = nullptr;
-  r0 = nullptr;
+  npartner = NULL;
+  partner = NULL;
+  deviatorextention = NULL;
+  deviatorBackextention = NULL;
+  deviatorPlasticextension = NULL;
+  lambdaValue = NULL;
+  r0 = NULL;
   grow_arrays(atom->nmax);
 
   // create partner list and r0 values from neighbor list
@@ -302,15 +302,9 @@ void FixPeriNeigh::setup(int /*vflag*/)
   double **x0 = atom->x0;
   double half_lc = 0.5*(domain->lattice->xlattice);
   double vfrac_scale;
-  PairPeriLPS *pairlps = nullptr;
-  PairPeriVES *pairves = nullptr;
-  PairPeriEPS *paireps = nullptr;
-  if (isLPS)
-    pairlps = static_cast<PairPeriLPS*>(anypair);
-  else if (isVES)
-    pairves = static_cast<PairPeriVES*>(anypair);
-  else if (isEPS)
-    paireps = static_cast<PairPeriEPS*>(anypair);
+  PairPeriLPS *pairlps = static_cast<PairPeriLPS*>(anypair);
+  PairPeriVES *pairves = static_cast<PairPeriVES*>(anypair);
+  PairPeriEPS *paireps = static_cast<PairPeriEPS*>(anypair);
 
   for (i = 0; i < nlocal; i++) {
     double xtmp0 = x0[i][0];
@@ -400,18 +394,18 @@ double FixPeriNeigh::memory_usage()
 {
   int nmax = atom->nmax;
   int bytes = nmax * sizeof(int);
-  bytes += (double)nmax*maxpartner * sizeof(tagint);
-  bytes += (double)nmax*maxpartner * sizeof(double);
+  bytes += nmax*maxpartner * sizeof(tagint);
+  bytes += nmax*maxpartner * sizeof(double);
   if (isVES) {
-    bytes += (double)nmax*maxpartner * sizeof(double);
-    bytes += (double)nmax*maxpartner * sizeof(double);
+    bytes += nmax*maxpartner * sizeof(double);
+    bytes += nmax*maxpartner * sizeof(double);
   }
   if (isEPS) {
-    bytes += (double)nmax*maxpartner * sizeof(double);
-    bytes += (double)nmax * sizeof(double);
+    bytes += nmax*maxpartner * sizeof(double);
+    bytes += nmax * sizeof(double);
   }
-  bytes += (double)nmax * sizeof(double);
-  bytes += (double)nmax * sizeof(double);
+  bytes += nmax * sizeof(double);
+  bytes += nmax * sizeof(double);
   return bytes;
 }
 
@@ -441,7 +435,7 @@ void FixPeriNeigh::grow_arrays(int nmax)
    copy values within local atom-based arrays
 ------------------------------------------------------------------------- */
 
-void FixPeriNeigh::copy_arrays(int i, int j, int /*delflag*/)
+void FixPeriNeigh::copy_arrays(int i, int j, int delflag)
 {
   npartner[j] = npartner[i];
   for (int m = 0; m < npartner[j]; m++) {
@@ -514,7 +508,7 @@ int FixPeriNeigh::unpack_exchange(int nlocal, double *buf)
 /* ---------------------------------------------------------------------- */
 
 int FixPeriNeigh::pack_forward_comm(int n, int *list, double *buf,
-                                    int /*pbc_flag*/, int * /*pbc*/)
+                                    int pbc_flag, int *pbc)
 {
   int i,j,m;
 
@@ -580,7 +574,6 @@ void FixPeriNeigh::restart(char *buf)
 int FixPeriNeigh::pack_restart(int i, double *buf)
 {
   int m = 0;
-  // pack buf[0] this way b/c other fixes unpack it
   if (isVES) buf[m++] = 4*npartner[i] + 4;
   else if (isEPS) buf[m++] = 3*npartner[i] + 5;
   else buf[m++] = 2*npartner[i] + 4;
@@ -610,7 +603,6 @@ void FixPeriNeigh::unpack_restart(int nlocal, int nth)
   double **extra = atom->extra;
 
   // skip to Nth set of extra values
-  // unpack the Nth first values this way b/c other fixes pack them
 
   int m = 0;
   for (int i = 0; i < nth; i++) m += static_cast<int> (extra[nlocal][m]);

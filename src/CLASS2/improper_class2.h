@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef IMPROPER_CLASS
-// clang-format off
-ImproperStyle(class2,ImproperClass2);
-// clang-format on
+
+ImproperStyle(class2,ImproperClass2)
+
 #else
 
 #ifndef LMP_IMPROPER_CLASS2_H
 #define LMP_IMPROPER_CLASS2_H
 
+#include <stdio.h>
 #include "improper.h"
 
 namespace LAMMPS_NS {
@@ -29,15 +30,15 @@ class ImproperClass2 : public Improper {
   ImproperClass2(class LAMMPS *);
   virtual ~ImproperClass2();
   virtual void compute(int, int);
-  virtual void coeff(int, char **);
+  void coeff(int, char **);
   void write_restart(FILE *);
-  virtual void read_restart(FILE *);
+  void read_restart(FILE *);
   void write_data(FILE *);
 
  protected:
-  double *k0, *chi0;
-  double *aa_k1, *aa_k2, *aa_k3, *aa_theta0_1, *aa_theta0_2, *aa_theta0_3;
-  int *setflag_i, *setflag_aa;
+  double *k0,*chi0;
+  double *aa_k1,*aa_k2,*aa_k3,*aa_theta0_1,*aa_theta0_2,*aa_theta0_3;
+  int *setflag_i,*setflag_aa;
 
   void allocate();
   void angleangle(int, int);
@@ -45,7 +46,7 @@ class ImproperClass2 : public Improper {
   double dot(double *, double *);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

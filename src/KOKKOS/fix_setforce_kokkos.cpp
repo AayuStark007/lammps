@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,21 +11,21 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
 #include "fix_setforce_kokkos.h"
-
 #include "atom_kokkos.h"
 #include "update.h"
 #include "modify.h"
 #include "domain.h"
 #include "region.h"
+#include "respa.h"
 #include "input.h"
 #include "variable.h"
-#include "memory_kokkos.h"
+#include "memory.h"
 #include "error.h"
+#include "force.h"
 #include "atom_masks.h"
-#include "kokkos_base.h"
-
-#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -46,8 +45,7 @@ FixSetForceKokkos<DeviceType>::FixSetForceKokkos(LAMMPS *lmp, int narg, char **a
   datamask_modify = EMPTY_MASK;
 
   memory->destroy(sforce);
-  memoryKK->create_kokkos(k_sforce,sforce,maxatom,3,"setforce:sforce");
-  d_sforce = k_sforce.view<DeviceType>();
+  memory->create_kokkos(k_sforce,sforce,maxatom,3,"setforce:sforce");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -57,8 +55,8 @@ FixSetForceKokkos<DeviceType>::~FixSetForceKokkos()
 {
   if (copymode) return;
 
-  memoryKK->destroy_kokkos(k_sforce,sforce);
-  sforce = nullptr;
+  memory->destroy_kokkos(k_sforce,sforce);
+  sforce = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -68,14 +66,14 @@ void FixSetForceKokkos<DeviceType>::init()
 {
   FixSetForce::init();
 
-  if (utils::strmatch(update->integrate_style,"^respa"))
+  if (strstr(update->integrate_style,"respa"))
     error->all(FLERR,"Cannot (yet) use respa with Kokkos");
 }
 
 /* ---------------------------------------------------------------------- */
 
 template<class DeviceType>
-void FixSetForceKokkos<DeviceType>::post_force(int /*vflag*/)
+void FixSetForceKokkos<DeviceType>::post_force(int vflag)
 {
   atomKK->sync(execution_space, X_MASK | F_MASK | MASK_MASK);
 
@@ -87,24 +85,20 @@ void FixSetForceKokkos<DeviceType>::post_force(int /*vflag*/)
 
   // update region if necessary
 
-  region = nullptr;
+  region = NULL;
   if (iregion >= 0) {
     region = domain->regions[iregion];
     region->prematch();
-    DAT::tdual_int_1d k_match = DAT::tdual_int_1d("setforce:k_match",nlocal);
-    KokkosBase* regionKKBase = dynamic_cast<KokkosBase*>(region);
-    regionKKBase->match_all_kokkos(groupbit,k_match);
-    k_match.template sync<DeviceType>();
-    d_match = k_match.template view<DeviceType>();
+    d_match = DAT::t_int_1d("setforce:d_match",nlocal);
+    region->match_all_kokkos(groupbit,d_match);
   }
 
   // reallocate sforce array if necessary
 
   if (varflag == ATOM && atom->nmax > maxatom) {
     maxatom = atom->nmax;
-    memoryKK->destroy_kokkos(k_sforce,sforce);
-    memoryKK->create_kokkos(k_sforce,sforce,maxatom,3,"setforce:sforce");
-    d_sforce = k_sforce.view<DeviceType>();
+    memory->destroy_kokkos(k_sforce,sforce);
+    memory->create_kokkos(k_sforce,sforce,maxatom,3,"setforce:sforce");
   }
 
   foriginal[0] = foriginal[1] = foriginal[2] = 0.0;
@@ -114,6 +108,7 @@ void FixSetForceKokkos<DeviceType>::post_force(int /*vflag*/)
   if (varflag == CONSTANT) {
     copymode = 1;
     Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType, TagFixSetForceConstant>(0,nlocal),*this,foriginal_kk);
+    DeviceType::fence();
     copymode = 0;
 
   // variable force, wrap with clear/add
@@ -143,6 +138,7 @@ void FixSetForceKokkos<DeviceType>::post_force(int /*vflag*/)
 
     copymode = 1;
     Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType, TagFixSetForceNonConstant>(0,nlocal),*this,foriginal_kk);
+    DeviceType::fence();
     copymode = 0;
   }
 
@@ -186,7 +182,7 @@ void FixSetForceKokkos<DeviceType>::operator()(TagFixSetForceNonConstant, const 
 
 namespace LAMMPS_NS {
 template class FixSetForceKokkos<LMPDeviceType>;
-#ifdef LMP_KOKKOS_GPU
+#ifdef KOKKOS_HAVE_CUDA
 template class FixSetForceKokkos<LMPHostType>;
 #endif
 }

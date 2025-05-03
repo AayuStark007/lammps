@@ -1,12 +1,5 @@
 // -*- c++ -*-
 
-// This file is part of the Collective Variables module (Colvars).
-// The original version of Colvars and its updates are located at:
-// https://github.com/Colvars/colvars
-// Please update all Colvars source files before making any changes.
-// If you wish to distribute your changes, please submit them to the
-// Colvars repository at GitHub.
-
 #ifndef COLVARBIAS_META_H
 #define COLVARBIAS_META_H
 
@@ -19,10 +12,7 @@
 #include "colvargrid.h"
 
 /// Metadynamics bias (implementation of \link colvarbias \endlink)
-class colvarbias_meta
-  : public virtual colvarbias,
-    public virtual colvarbias_ti
-{
+class colvarbias_meta : public colvarbias {
 
 public:
 
@@ -38,47 +28,24 @@ public:
   Communication comm;
 
   colvarbias_meta(char const *key);
-  virtual ~colvarbias_meta();
-
   virtual int init(std::string const &conf);
-  virtual int init_replicas_params(std::string const &conf);
-  virtual int init_well_tempered_params(std::string const &conf);
-  virtual int init_ebmeta_params(std::string const &conf);
-
-  virtual int clear_state_data();
-
+  virtual ~colvarbias_meta();
   virtual int update();
-  virtual int update_grid_params();
-  virtual int update_bias();
-  virtual int update_grid_data();
-  virtual int replica_share();
-
-  virtual int calc_energy(std::vector<colvarvalue> const *values);
-  virtual int calc_forces(std::vector<colvarvalue> const *values);
-
-  virtual std::string const get_state_params() const;
-  virtual int set_state_params(std::string const &state_conf);
-  virtual std::ostream & write_state_data(std::ostream &os);
-  virtual std::istream & read_state_data(std::istream &os);
-
+  virtual std::istream & read_restart(std::istream &is);
+  virtual std::ostream & write_restart(std::ostream &os);
   virtual int setup_output();
-  virtual int write_output_files();
   virtual void write_pmf();
-  virtual int write_state_to_replicas();
 
   class hill;
   typedef std::list<hill>::iterator hill_iter;
 
 protected:
 
-  /// Width of a hill in number of grid points
+  /// \brief width of a hill
   ///
   /// The local width of each collective variable, multiplied by this
   /// number, provides the hill width along that direction
-  cvm::real hill_width;
-
-  /// The sigma parameters of the Gaussian hills
-  std::vector<cvm::real> colvar_sigmas;
+  cvm::real  hill_width;
 
   /// \brief Number of simulation steps between two hills
   size_t     new_hill_freq;
@@ -86,10 +53,7 @@ protected:
   /// Write the hill logfile
   bool           b_hills_traj;
   /// Logfile of hill management (creation and deletion)
-  std::ostream  *hills_traj_os;
-
-  /// Name of the hill logfile
-  std::string const hills_traj_file_name() const;
+  cvm::ofstream  hills_traj_os;
 
   /// \brief List of hills used on this bias (total); if a grid is
   /// employed, these don't need to be updated at every time step
@@ -113,30 +77,37 @@ protected:
   /// Read a hill from a file
   std::istream & read_hill(std::istream &is);
 
+  /// \brief step present in a state file
+  ///
+  /// When using grids and reading state files containing them
+  /// (multiple replicas), this is used to check whether a hill is
+  /// newer or older than the grids
+  size_t                   state_file_step;
+
   /// \brief Add a new hill; if a .hills trajectory is written,
   /// write it there; if there is more than one replica, communicate
   /// it to the others
-  std::list<hill>::const_iterator add_hill(hill const &h);
+  virtual std::list<hill>::const_iterator create_hill(hill const &h);
 
   /// \brief Remove a previously saved hill (returns an iterator for
   /// the next hill in the list)
-  std::list<hill>::const_iterator delete_hill(hill_iter &h);
+  virtual std::list<hill>::const_iterator delete_hill(hill_iter &h);
 
   /// \brief Calculate the values of the hills, incrementing
   /// bias_energy
   virtual void calc_hills(hill_iter  h_first,
-                          hill_iter  h_last,
-                          cvm::real &energy,
-                          std::vector<colvarvalue> const *values);
+                           hill_iter  h_last,
+                           cvm::real &energy,
+                           std::vector<colvarvalue> const &values = std::vector<colvarvalue> (0));
 
   /// \brief Calculate the forces acting on the i-th colvar,
   /// incrementing colvar_forces[i]; must be called after calc_hills
   /// each time the values of the colvars are changed
   virtual void calc_hills_force(size_t const &i,
-                                hill_iter h_first,
-                                hill_iter h_last,
-                                std::vector<colvarvalue> &forces,
-                                std::vector<colvarvalue> const *values);
+                                 hill_iter h_first,
+                                 hill_iter h_last,
+                                 std::vector<colvarvalue> &forces,
+                                 std::vector<colvarvalue> const &values = std::vector<colvarvalue> (0));
 
 
   /// Height of new hills
@@ -155,11 +126,9 @@ protected:
   /// \brief How often the hills should be projected onto the grids
   size_t     grids_freq;
 
-  /// Keep hills in the restart file (e.g. to accurately rebin later)
+  /// \brief Whether to keep the hills in the restart file (e.g. to do
+  /// meaningful accurate rebinning afterwards)
   bool       keep_hills;
-
-  /// value of keepHills saved in the most recent restart file
-  bool restart_keep_hills;
 
   /// \brief Dump the free energy surface (.pmf file) every restartFrequency
   bool       dump_fes;
@@ -178,14 +147,12 @@ protected:
   /// \brief Biasing temperature in well-tempered metadynamics
   cvm::real  bias_temperature;
 
-  /// Ensemble-biased metadynamics (EBmeta) flag
+  // EBmeta parameters
   bool       ebmeta;
-
-  /// Target distribution for EBmeta
   colvar_grid_scalar* target_dist;
-
-  /// Number of equilibration steps for EBmeta
-  cvm::step_number ebmeta_equil_steps;
+  std::string target_dist_file;
+  cvm::real target_dist_volume;
+  size_t ebmeta_equil_steps;
 
 
   /// \brief Try to read the restart information by allocating new
@@ -219,11 +186,8 @@ protected:
   /// \brief Read new data from replicas' files
   virtual void read_replica_files();
 
-  /// Write full state information to be read by other replicas
-  virtual int write_replica_state_file();
-
-  /// Call this after write_replica_state_file()
-  virtual int reopen_replica_buffer_file();
+  /// \brief Write data to other replicas
+  virtual void write_replica_state_file();
 
   /// \brief Additional, "mirror" metadynamics biases, to collect info
   /// from the other replicas
@@ -258,8 +222,11 @@ protected:
   /// This file becomes empty after replica_state_file is rewritten
   std::string            replica_hills_file;
 
+  /// \brief Output stream corresponding to replica_hills_file
+  cvm::ofstream          replica_hills_os;
+
   /// Position within replica_hills_file (when reading it)
-  std::streampos         replica_hills_file_pos;
+  int                    replica_hills_file_pos;
 
 };
 
@@ -271,9 +238,6 @@ class colvarbias_meta::hill {
 
 protected:
 
-  /// Time step at which this hill was added
-  cvm::step_number it;
-
   /// Value of the hill function (ranges between 0 and 1)
   cvm::real hill_value;
 
@@ -283,35 +247,83 @@ protected:
   /// Maximum height in energy of the hill
   cvm::real W;
 
-  /// Centers of the hill in the collective variable space
-  std::vector<colvarvalue> centers;
+  /// Center of the hill in the collective variable space
+  std::vector<colvarvalue>  centers;
 
-  /// Half-widths of the hill in the collective variable space
-  std::vector<cvm::real> sigmas;
-
-  /// Identity of the replica who added this hill
-  std::string replica;
+  /// Widths of the hill in the collective variable space
+  std::vector<cvm::real>    widths;
 
 public:
 
   friend class colvarbias_meta;
 
-  /// Constructor of a hill object
-  /// \param it Step number at which the hill was added
-  /// \param W Weight of the hill (energy units)
-  /// \param cv_values Array of collective variable values
-  /// \param cv_sigmas Array of collective variable values
-  /// \param replica ID of the replica that creates the hill (optional)
-  hill(cvm::step_number it, cvm::real W,
-       std::vector<colvarvalue> const &cv_values,
-       std::vector<cvm::real> const &cv_sigmas,
-       std::string const &replica = "");
+  /// Time step at which this hill was added
+  size_t      it;
+
+  /// Identity of the replica who added this hill (only in multiple replica simulations)
+  std::string replica;
+
+  /// \brief Runtime constructor: data are read directly from
+  /// collective variables \param weight Weight of the hill \param
+  /// cv Pointer to the array of collective variables involved \param
+  /// replica (optional) Identity of the replica which creates the
+  /// hill
+  inline hill(cvm::real             const &W_in,
+               std::vector<colvar *>       &cv,
+               cvm::real             const &hill_width,
+               std::string           const &replica_in = "")
+    : sW(1.0),
+      W(W_in),
+      centers(cv.size()),
+      widths(cv.size()),
+      it(cvm::step_absolute()),
+      replica(replica_in)
+  {
+    for (size_t i = 0; i < cv.size(); i++) {
+      centers[i].type(cv[i]->value());
+      centers[i] = cv[i]->value();
+      widths[i] = cv[i]->width * hill_width;
+    }
+    if (cvm::debug())
+      cvm::log("New hill, applied to "+cvm::to_str(cv.size())+
+                " collective variables, with centers "+
+                cvm::to_str(centers)+", widths "+
+                cvm::to_str(widths)+" and weight "+
+                cvm::to_str(W)+".\n");
+  }
+
+  /// \brief General constructor: all data are explicitly passed as
+  /// arguments (used for instance when reading hills saved on a
+  /// file) \param it Time step of creation of the hill \param
+  /// weight Weight of the hill \param centers Center of the hill
+  /// \param widths Width of the hill around centers \param replica
+  /// (optional) Identity of the replica which creates the hill
+  inline hill(size_t                    const &it_in,
+               cvm::real                 const &W_in,
+               std::vector<colvarvalue>  const &centers_in,
+               std::vector<cvm::real>    const &widths_in,
+               std::string               const &replica_in = "")
+    : sW(1.0),
+      W(W_in),
+      centers(centers_in),
+      widths(widths_in),
+      it(it_in),
+      replica(replica_in)
+  {}
 
   /// Copy constructor
-  hill(colvarbias_meta::hill const &h);
+  inline hill(colvarbias_meta::hill const &h)
+    : sW(1.0),
+      W(h.W),
+      centers(h.centers),
+      widths(h.widths),
+      it(h.it),
+      replica(h.replica)
+  {}
 
   /// Destructor
-  ~hill();
+  inline ~hill()
+  {}
 
   /// Get the energy
   inline cvm::real energy()
@@ -400,7 +412,8 @@ public:
   std::string output_traj();
 
   /// Write the hill to an output stream
-  friend std::ostream & operator << (std::ostream &os, hill const &h);
+  inline friend std::ostream & operator << (std::ostream &os,
+                                            hill const &h);
 
 };
 

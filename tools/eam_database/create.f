@@ -73,9 +73,8 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
          rhoin(ntypes)=rhol(ntypes)*rhoe(ntypes)
          rhoout(ntypes)=rhoh(ntypes)*rhoe(ntypes)
       else
-         do i=1,27
-           read(10,*)vtmp
-         end do
+         do 1 i=1,27
+1        read(10,*)vtmp
          goto 11
       endif
       close(10)
@@ -95,29 +94,28 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
       rst=0.5
       dr=rc/(nr-1.0)
       fmax=-1.0
-      do i1=1,ntypes
-         do i2=1,i1
-         if ( i1 .eq. i2) then
-            do i=1,nr
-               r=(i-1.0)*dr
-               if (r .lt. rst) r=rst
-               call prof(i1,r,fvalue)
-               if (fmax .lt. fvalue) fmax=fvalue
-               rhor(i,i1)=fvalue
-               call pair(i1,i2,r,psi)
-               z2r(i,i1,i2)=r*psi
-            end do
-         else
-            do i=1,nr
-               r=(i-1.0)*dr
-               if (r .lt. rst) r=rst
-               call pair(i1,i2,r,psi)
-               z2r(i,i1,i2)=r*psi
-               z2r(i,i2,i1)=z2r(i,i1,i2)
-            end do
-         endif
-         end do
-      end do
+      do 3 i1=1,ntypes
+      do 3 i2=1,i1
+      if ( i1 .eq. i2) then
+         do 4 i=1,nr
+            r=(i-1.0)*dr
+            if (r .lt. rst) r=rst
+            call prof(i1,r,fvalue)
+            if (fmax .lt. fvalue) fmax=fvalue
+            rhor(i,i1)=fvalue
+            call pair(i1,i2,r,psi)
+            z2r(i,i1,i2)=r*psi
+4        continue
+      else
+         do 5 i=1,nr
+            r=(i-1.0)*dr
+            if (r .lt. rst) r=rst
+            call pair(i1,i2,r,psi)
+            z2r(i,i1,i2)=r*psi
+            z2r(i,i2,i1)=z2r(i,i1,i2)
+5        continue
+      endif
+3     continue
       rhom=fmax
       if (rhom .lt. 2.0*rhoemax) rhom=2.0*rhoemax
       if (rhom .lt. 100.0) rhom=100.0
@@ -241,11 +239,10 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 10    continue
 11    format(i5,2g15.5,a8)
 12    format(5e24.16)
-      do i1=1,ntypes
-         do i2=1,i1
-            write(1,12)(z2r(i,i1,i2),i=1,nr)
-         end do
-      end do
+      do 13 i1=1,ntypes
+      do 13 i2=1,i1
+      write(1,12)(z2r(i,i1,i2),i=1,nr)
+13    continue
       close(1)
       return
       end

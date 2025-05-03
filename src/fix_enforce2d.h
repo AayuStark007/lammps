@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(enforce2d,FixEnforce2D);
-// clang-format on
+
+FixStyle(enforce2d,FixEnforce2D)
+
 #else
 
 #ifndef LMP_FIX_ENFORCE2D_H
@@ -36,12 +36,12 @@ class FixEnforce2D : public Fix {
   void post_force_respa(int, int, int);
   void min_post_force(int);
 
- protected:
+ private:
   int nfixlist;
   class Fix **flist;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -57,9 +57,5 @@ command-line option when running LAMMPS to see the offending line.
 E: Cannot use fix enforce2d with 3d simulation
 
 Self-explanatory.
-
-E: Fix enforce2d must be defined after fix %s
-
-UNDOCUMENTED
 
 */

@@ -2,14 +2,14 @@
 *
 *  =========== DOCUMENTATION ===========
 *
-* Online html documentation available at
-*            http://www.netlib.org/lapack/explore-html/
+* Online html documentation available at 
+*            http://www.netlib.org/lapack/explore-html/ 
 *
 *  Definition:
 *  ===========
 *
 *       SUBROUTINE DSCAL(N,DA,DX,INCX)
-*
+* 
 *       .. Scalar Arguments ..
 *       DOUBLE PRECISION DA
 *       INTEGER INCX,N
@@ -17,7 +17,7 @@
 *       .. Array Arguments ..
 *       DOUBLE PRECISION DX(*)
 *       ..
-*
+*  
 *
 *> \par Purpose:
 *  =============
@@ -25,44 +25,18 @@
 *> \verbatim
 *>
 *>    DSCAL scales a vector by a constant.
-*>    uses unrolled loops for increment equal to 1.
-*> \endverbatim
-*
-*  Arguments:
-*  ==========
-*
-*> \param[in] N
-*> \verbatim
-*>          N is INTEGER
-*>         number of elements in input vector(s)
-*> \endverbatim
-*>
-*> \param[in] DA
-*> \verbatim
-*>          DA is DOUBLE PRECISION
-*>           On entry, DA specifies the scalar alpha.
-*> \endverbatim
-*>
-*> \param[in,out] DX
-*> \verbatim
-*>          DX is DOUBLE PRECISION array, dimension ( 1 + ( N - 1 )*abs( INCX ) )
-*> \endverbatim
-*>
-*> \param[in] INCX
-*> \verbatim
-*>          INCX is INTEGER
-*>         storage spacing between elements of DX
+*>    uses unrolled loops for increment equal to one.
 *> \endverbatim
 *
 *  Authors:
 *  ========
 *
-*> \author Univ. of Tennessee
-*> \author Univ. of California Berkeley
-*> \author Univ. of Colorado Denver
-*> \author NAG Ltd.
+*> \author Univ. of Tennessee 
+*> \author Univ. of California Berkeley 
+*> \author Univ. of Colorado Denver 
+*> \author NAG Ltd. 
 *
-*> \date December 2016
+*> \date November 2011
 *
 *> \ingroup double_blas_level1
 *
@@ -79,10 +53,10 @@
 *  =====================================================================
       SUBROUTINE DSCAL(N,DA,DX,INCX)
 *
-*  -- Reference BLAS level1 routine (version 3.7.0) --
+*  -- Reference BLAS level1 routine (version 3.4.0) --
 *  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
 *  -- Univ. of California Berkeley, Univ. of Colorado Denver and NAG Ltd..--
-*     December 2016
+*     November 2011
 *
 *     .. Scalar Arguments ..
       DOUBLE PRECISION DA

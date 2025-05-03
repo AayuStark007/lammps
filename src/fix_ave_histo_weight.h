@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(ave/histo/weight,FixAveHistoWeight);
-// clang-format on
+
+FixStyle(ave/histo/weight,FixAveHistoWeight)
+
 #else
 
 #ifndef LMP_FIX_AVE_HISTO_WEIGHT_H
 #define LMP_FIX_AVE_HISTO_WEIGHT_H
 
+#include <stdio.h>
 #include "fix_ave_histo.h"
 
 namespace LAMMPS_NS {
@@ -36,7 +37,7 @@ class FixAveHistoWeight : public FixAveHisto {
   void bin_atoms_weights(double *, int, double *, int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -57,10 +58,6 @@ E: Invalid timestep reset for fix ave/histo
 
 Resetting the timestep has invalidated the sequence of timesteps this
 fix needs to process.
-
-E: Fix ave/histo/weight option not yet supported
-
-UNDOCUMENTED
 
 E: Error writing out histogram data
 

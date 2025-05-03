@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,28 +12,28 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(delete_atoms,DeleteAtoms);
-// clang-format on
+
+CommandStyle(delete_atoms,DeleteAtoms)
+
 #else
 
 #ifndef LMP_DELETE_ATOMS_H
 #define LMP_DELETE_ATOMS_H
 
-#include "command.h"
+#include "pointers.h"
 #include <map>
 
 namespace LAMMPS_NS {
 
-class DeleteAtoms : public Command {
+class DeleteAtoms : protected Pointers {
  public:
   DeleteAtoms(class LAMMPS *);
   void command(int, char **);
 
  private:
   int *dlist;
-  int allflag, compress_flag, bond_flag, mol_flag;
-  std::map<tagint, int> *hash;
+  int allflag,compress_flag,bond_flag,mol_flag;
+  std::map<tagint,int> *hash;
 
   void delete_group(int, char **);
   void delete_region(int, char **);
@@ -45,15 +45,19 @@ class DeleteAtoms : public Command {
   void recount_topology();
   void options(int, char **);
 
-  inline int sbmask(int j) const { return j >> SBBITS & 3; }
+  inline int sbmask(int j) {
+    return j >> SBBITS & 3;
+  }
 
+  // static variable for ring communication callback to access class data
   // callback functions for ring communication
 
-  static void bondring(int, char *, void *);
-  static void molring(int, char *, void *);
+  static DeleteAtoms *cptr;
+  static void bondring(int, char *);
+  static void molring(int, char *);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -75,14 +79,6 @@ E: Cannot use delete_atoms unless atoms have IDs
 
 Your atoms do not have IDs, so the delete_atoms command cannot be
 used.
-
-W: Attempting to delete atoms in rigid bodies
-
-UNDOCUMENTED
-
-W: Ignoring 'compress yes' for molecular system
-
-UNDOCUMENTED
 
 E: Could not find delete_atoms group ID
 

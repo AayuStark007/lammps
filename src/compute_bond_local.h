@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(bond/local,ComputeBondLocal);
-// clang-format on
+
+ComputeStyle(bond/local,ComputeBondLocal)
+
 #else
 
 #ifndef LMP_COMPUTE_BOND_LOCAL_H
@@ -35,23 +35,18 @@ class ComputeBondLocal : public Compute {
   double memory_usage();
 
  private:
-  int nvalues, nvar, ncount, setflag;
-
-  int singleflag, velflag, ghostvelflag, initflag;
-  int dvar;
-  int *bstyle, *vvar;
-  char *dstr;
-  char **vstr;
+  int nvalues;
+  int ncount;
+  int *bstyle;
+  int singleflag,velflag,ghostvelflag,initflag;
 
   int nmax;
-  double *vlocal;
-  double **alocal;
 
   int compute_bonds(int);
   void reallocate(int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -75,9 +70,5 @@ Self-explanatory.
 E: No bond style is defined for compute bond/local
 
 Self-explanatory.
-
-E: Sanity check on 3 energy components failed
-
-UNDOCUMENTED
 
 */

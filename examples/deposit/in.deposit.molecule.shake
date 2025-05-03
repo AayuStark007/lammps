@@ -21,12 +21,12 @@ bond_coeff      1 5.0 1.0
 
 neigh_modify	delay 0
 
-group		addatoms empty
+group		addatoms type 2
 region          mobile block 0 5 0 5 2 INF
 group		mobile region mobile
 
-compute	add addatoms temp
-compute_modify	add dynamic/dof yes extra/dof 0
+compute		add addatoms temp
+compute_modify	add dynamic yes extra 0
 
 fix		1 addatoms nve
 fix		2 mobile langevin 0.1 0.1 0.1 587283

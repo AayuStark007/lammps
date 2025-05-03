@@ -1,5 +1,5 @@
 #!/usr/bin/env python -i
-# preceding line should have path for Python on your machine
+# preceeding line should have path for Python on your machine
 
 # viz_vmd.py
 # Purpose: viz running LAMMPS simulation via VMD
@@ -24,10 +24,10 @@ nfreq = int(sys.argv[2])
 nsteps = int(sys.argv[3])
 
 me = 0
-# uncomment this if running in parallel via mpi4py
-#from mpi4py import MPI
-#me = MPI.COMM_WORLD.Get_rank()
-#nprocs = MPI.COMM_WORLD.Get_size()
+# uncomment if running in parallel via Pypar
+#import pypar
+#me = pypar.rank()
+#nprocs = pypar.size()
 
 from lammps import lammps
 lmp = lammps()
@@ -87,5 +87,6 @@ if me == 0:
   #v.enter()
   #v.stop()
 
-# uncomment if running in parallel via mpi4py
+# uncomment if running in parallel via Pypar
 #print("Proc %d out of %d procs has" % (me,nprocs), lmp)
+#pypar.finalize()

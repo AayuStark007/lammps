@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,12 +11,12 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "fix_freeze.h"
-
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "modify.h"
+#include "comm.h"
 #include "respa.h"
 #include "error.h"
 
@@ -70,7 +69,7 @@ void FixFreeze::init()
 
 void FixFreeze::setup(int vflag)
 {
-  if (utils::strmatch(update->integrate_style,"^verlet"))
+  if (strstr(update->integrate_style,"verlet"))
     post_force(vflag);
   else {
     int nlevels_respa = ((Respa *) update->integrate)->nlevels;
@@ -84,7 +83,7 @@ void FixFreeze::setup(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixFreeze::post_force(int /*vflag*/)
+void FixFreeze::post_force(int vflag)
 {
   double **f = atom->f;
   double **torque = atom->torque;
@@ -111,7 +110,7 @@ void FixFreeze::post_force(int /*vflag*/)
 
 /* ---------------------------------------------------------------------- */
 
-void FixFreeze::post_force_respa(int vflag, int /*ilevel*/, int /*iloop*/)
+void FixFreeze::post_force_respa(int vflag, int ilevel, int iloop)
 {
   post_force(vflag);
 }

@@ -1,7 +1,6 @@
-// clang-format off
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -26,19 +25,15 @@ class CommKokkos : public CommBrick {
 
   bool exchange_comm_classic;
   bool forward_comm_classic;
-  bool forward_pair_comm_classic;
-  bool forward_fix_comm_classic;
-  bool reverse_comm_classic;
   bool exchange_comm_on_host;
   bool forward_comm_on_host;
-  bool reverse_comm_on_host;
 
   CommKokkos(class LAMMPS *);
   ~CommKokkos();
   void init();
 
   void forward_comm(int dummy = 0);    // forward comm of atom coords
-  void reverse_comm();                 // reverse comm of atom coords
+  void reverse_comm();              // reverse comm of atom coords
   void exchange();                     // move atoms to new procs
   void borders();                      // setup list of atoms to comm
 
@@ -51,39 +46,18 @@ class CommKokkos : public CommBrick {
   void forward_comm_dump(class Dump *);    // forward comm from a Dump
   void reverse_comm_dump(class Dump *);    // reverse comm from a Dump
 
-  void forward_comm_array(int, double **);            // forward comm of array
-
   template<class DeviceType> void forward_comm_device(int dummy);
-  template<class DeviceType> void reverse_comm_device();
   template<class DeviceType> void forward_comm_pair_device(Pair *pair);
-  template<class DeviceType> void forward_comm_fix_device(Fix *fix, int size=0);
   template<class DeviceType> void exchange_device();
   template<class DeviceType> void borders_device();
 
  protected:
   DAT::tdual_int_2d k_sendlist;
-  DAT::tdual_int_scalar k_total_send;
   DAT::tdual_xfloat_2d k_buf_send,k_buf_recv;
-  DAT::tdual_int_2d k_exchange_lists;
   DAT::tdual_int_1d k_exchange_sendlist,k_exchange_copylist,k_sendflag;
-  DAT::tdual_int_scalar k_count;
+  DAT::tdual_int_1d k_count;
   //double *buf_send;                 // send buffer for all comm
   //double *buf_recv;                 // recv buffer for all comm
-
-  DAT::tdual_int_2d k_swap;
-  DAT::tdual_int_2d k_swap2;
-  DAT::tdual_int_2d k_pbc;
-  DAT::tdual_int_1d k_pbc_flag;
-  DAT::tdual_int_1d k_g2l;
-  DAT::tdual_int_1d k_firstrecv;
-  DAT::tdual_int_1d k_sendnum_scan;
-  int totalsend;
-
-  int max_buf_pair,max_buf_fix;
-  DAT::tdual_xfloat_1d k_buf_send_pair, k_buf_send_fix;
-  DAT::tdual_xfloat_1d k_buf_recv_pair, k_buf_recv_fix;
-  void grow_buf_pair(int);
-  void grow_buf_fix(int);
 
   void grow_send(int, int);
   void grow_recv(int);
@@ -91,7 +65,6 @@ class CommKokkos : public CommBrick {
   void grow_recv_kokkos(int, ExecutionSpace space = Host);
   void grow_list(int, int);
   void grow_swap(int);
-  void copy_swap_info();
 };
 
 }
@@ -104,14 +77,9 @@ E: Ghost velocity forward comm not yet implemented with Kokkos
 
 This is a current restriction.
 
-W: Fixes cannot yet send data in Kokkos communication, switching to classic communication
+W: Fixes cannot send data in Kokkos communication, switching to classic communication
 
-This is a current restriction with Kokkos.
-
-W: Required border comm not yet implemented in Kokkos communication, switching to classic communication
-
-There are various limitations in the communication options supported
-by Kokkos.
+This is current restriction with Kokkos.
 
 E: Required border comm not yet implemented with Kokkos
 

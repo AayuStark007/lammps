@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,22 +15,24 @@
    Contributing author: Mike Parks (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_peri_lps.h"
-
 #include "atom.h"
-#include "comm.h"
 #include "domain.h"
-#include "error.h"
-#include "fix_peri_neigh.h"
-#include "force.h"
 #include "lattice.h"
-#include "math_const.h"
-#include "memory.h"
+#include "force.h"
+#include "update.h"
 #include "modify.h"
-#include "neigh_list.h"
+#include "fix.h"
+#include "fix_peri_neigh.h"
+#include "comm.h"
 #include "neighbor.h"
-
-#include <cmath>
+#include "neigh_list.h"
+#include "memory.h"
+#include "error.h"
+#include "update.h"
 
 using namespace LAMMPS_NS;
 
@@ -46,13 +47,13 @@ PairPeriLPS::PairPeriLPS(LAMMPS *lmp) : Pair(lmp)
   ifix_peri = -1;
 
   nmax = 0;
-  s0_new = nullptr;
-  theta = nullptr;
+  s0_new = NULL;
+  theta = NULL;
 
-  bulkmodulus = nullptr;
-  shearmodulus = nullptr;
-  s00 = alpha = nullptr;
-  cut = nullptr;
+  bulkmodulus = NULL;
+  shearmodulus = NULL;
+  s00 = alpha = NULL;
+  cut = NULL;
 
   // set comm size needed by this Pair
   // comm_reverse not needed
@@ -91,7 +92,8 @@ void PairPeriLPS::compute(int eflag, int vflag)
   double d_ij,delta,stretch;
 
   evdwl = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = eflag_global = eflag_atom = 0;
 
   double **f = atom->f;
   double **x = atom->x;
@@ -172,7 +174,7 @@ void PairPeriLPS::compute(int eflag, int vflag)
         // of the bond-based theory used in PMB model
 
         double kshort = (15.0 * 18.0 * bulkmodulus[itype][itype]) /
-          (MathConst::MY_PI * cutsq[itype][jtype] * cutsq[itype][jtype]);
+          (3.141592653589793 * cutsq[itype][jtype] * cutsq[itype][jtype]);
         rk = (kshort * vfrac[j]) * (dr / cut[itype][jtype]);
 
         if (r > 0.0) fpair = -(rk/r);
@@ -283,14 +285,13 @@ void PairPeriLPS::compute(int eflag, int vflag)
 
       omega_plus  = influence_function(-1.0*delx0,-1.0*dely0,-1.0*delz0);
       omega_minus = influence_function(delx0,dely0,delz0);
-      if ((wvolume[i] > 0.0) && (wvolume[j] > 0.0)) {
-        rk = ( (3.0 * bulkmodulus[itype][itype]) -
-               (5.0 * shearmodulus[itype][itype]) ) * vfrac[j] * vfrac_scale *
-          ( (omega_plus * theta[i] / wvolume[i]) +
-            ( omega_minus * theta[j] / wvolume[j] ) ) * r0[i][jj];
-        rk +=  15.0 * ( shearmodulus[itype][itype] * vfrac[j] * vfrac_scale ) *
-          ( (omega_plus / wvolume[i]) + (omega_minus / wvolume[j]) ) * dr;
-      } else rk = 0.0;
+
+      rk = ( (3.0 * bulkmodulus[itype][itype]) -
+             (5.0 * shearmodulus[itype][itype]) ) * vfrac[j] * vfrac_scale *
+        ( (omega_plus * theta[i] / wvolume[i]) +
+          ( omega_minus * theta[j] / wvolume[j] ) ) * r0[i][jj];
+      rk +=  15.0 * ( shearmodulus[itype][itype] * vfrac[j] * vfrac_scale ) *
+        ( (omega_plus / wvolume[i]) + (omega_minus / wvolume[j]) ) * dr;
 
       if (r > 0.0) fbond = -(rk/r);
       else fbond = 0.0;
@@ -304,11 +305,9 @@ void PairPeriLPS::compute(int eflag, int vflag)
       double deviatoric_extension = dr - (theta[i]* r0[i][jj] / 3.0);
 
 
-      if (eflag && (wvolume[i] > 0.0))
-        evdwl = 0.5 * 15 * (shearmodulus[itype][itype]/wvolume[i]) *
+      if (eflag) evdwl = 0.5 * 15 * (shearmodulus[itype][itype]/wvolume[i]) *
                    omega_plus*(deviatoric_extension * deviatoric_extension) *
                    vfrac[j] * vfrac_scale;
-      else evdwl = 0.0;
       if (evflag) ev_tally(i,i,nlocal,0,0.5*evdwl,0.0,
                            0.5*fbond*vfrac[i],delx,dely,delz);
 
@@ -361,7 +360,7 @@ void PairPeriLPS::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairPeriLPS::settings(int narg, char **/*arg*/)
+void PairPeriLPS::settings(int narg, char **arg)
 {
   if (narg) error->all(FLERR,"Illegal pair_style command");
 }
@@ -376,14 +375,14 @@ void PairPeriLPS::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
-  double bulkmodulus_one = utils::numeric(FLERR,arg[2],false,lmp);
-  double shearmodulus_one = utils::numeric(FLERR,arg[3],false,lmp);
-  double cut_one = utils::numeric(FLERR,arg[4],false,lmp);
-  double s00_one = utils::numeric(FLERR,arg[5],false,lmp);
-  double alpha_one = utils::numeric(FLERR,arg[6],false,lmp);
+  double bulkmodulus_one = force->numeric(FLERR,arg[2]);
+  double shearmodulus_one = force->numeric(FLERR,arg[3]);
+  double cut_one = force->numeric(FLERR,arg[4]);
+  double s00_one = force->numeric(FLERR,arg[5]);
+  double alpha_one = force->numeric(FLERR,arg[6]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -428,7 +427,7 @@ void PairPeriLPS::init_style()
 
   if (!atom->peri_flag)
     error->all(FLERR,"Pair style peri requires atom style peri");
-  if (atom->map_style == Atom::MAP_NONE)
+  if (atom->map_style == 0)
     error->all(FLERR,"Pair peri requires an atom map, see atom_modify");
 
   if (domain->lattice->xlattice != domain->lattice->ylattice ||
@@ -438,14 +437,21 @@ void PairPeriLPS::init_style()
 
   // if first init, create Fix needed for storing fixed neighbors
 
-  if (ifix_peri == -1) modify->add_fix("PERI_NEIGH all PERI_NEIGH");
+  if (ifix_peri == -1) {
+    char **fixarg = new char*[3];
+    fixarg[0] = (char *) "PERI_NEIGH";
+    fixarg[1] = (char *) "all";
+    fixarg[2] = (char *) "PERI_NEIGH";
+    modify->add_fix(3,fixarg);
+    delete [] fixarg;
+  }
 
   // find associated PERI_NEIGH fix that must exist
   // could have changed locations in fix list since created
 
-  ifix_peri = modify->find_fix_by_style("^PERI_NEIGH");
-  if (ifix_peri == -1)
-    error->all(FLERR,"Fix peri neigh does not exist");
+  for (int i = 0; i < modify->nfix; i++)
+    if (strcmp(modify->fix[i]->style,"PERI_NEIGH") == 0) ifix_peri = i;
+  if (ifix_peri == -1) error->all(FLERR,"Fix peri neigh does not exist");
 
   neighbor->request(this,instance_me);
 }
@@ -482,15 +488,15 @@ void PairPeriLPS::read_restart(FILE *fp)
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++)
     for (j = i; j <= atom->ntypes; j++) {
-      if (me == 0) utils::sfread(FLERR,&setflag[i][j],sizeof(int),1,fp,nullptr,error);
+      if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
       if (setflag[i][j]) {
         if (me == 0) {
-          utils::sfread(FLERR,&bulkmodulus[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&shearmodulus[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&s00[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&alpha[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&cut[i][j],sizeof(double),1,fp,nullptr,error);
+          fread(&bulkmodulus[i][j],sizeof(double),1,fp);
+          fread(&shearmodulus[i][j],sizeof(double),1,fp);
+          fread(&s00[i][j],sizeof(double),1,fp);
+          fread(&alpha[i][j],sizeof(double),1,fp);
+          fread(&cut[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&bulkmodulus[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&shearmodulus[i][j],1,MPI_DOUBLE,0,world);
@@ -621,7 +627,7 @@ void PairPeriLPS::compute_dilatation()
  ---------------------------------------------------------------------- */
 
 int PairPeriLPS::pack_forward_comm(int n, int *list, double *buf,
-                                   int /*pbc_flag*/, int * /*pbc*/)
+                                   int pbc_flag, int *pbc)
 {
   int i,j,m;
 

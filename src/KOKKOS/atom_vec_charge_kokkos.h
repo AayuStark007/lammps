@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,11 @@
 ------------------------------------------------------------------------- */
 
 #ifdef ATOM_CLASS
-// clang-format off
-AtomStyle(charge/kk,AtomVecChargeKokkos);
-AtomStyle(charge/kk/device,AtomVecChargeKokkos);
-AtomStyle(charge/kk/host,AtomVecChargeKokkos);
-// clang-format on
+
+AtomStyle(charge/kk,AtomVecChargeKokkos)
+
 #else
 
-// clang-format off
 #ifndef LMP_ATOM_VEC_CHARGE_KOKKOS_H
 #define LMP_ATOM_VEC_CHARGE_KOKKOS_H
 
@@ -34,6 +31,12 @@ class AtomVecChargeKokkos : public AtomVecKokkos {
   virtual ~AtomVecChargeKokkos() {}
   void grow(int);
   void copy(int, int, int);
+  int pack_comm(int, int *, double *, int, int *);
+  int pack_comm_vel(int, int *, double *, int, int *);
+  void unpack_comm(int, int, double *);
+  void unpack_comm_vel(int, int, double *);
+  int pack_reverse(int, int, double *);
+  void unpack_reverse(int, int *, double *);
   int pack_border(int, int *, double *, int, int *);
   int pack_border_vel(int, int *, double *, int, int *);
   int pack_border_hybrid(int, int *, double *);
@@ -52,9 +55,18 @@ class AtomVecChargeKokkos : public AtomVecKokkos {
   int pack_data_hybrid(int, double *);
   void write_data(FILE *, int, double **);
   int write_data_hybrid(FILE *, double *);
-  double memory_usage();
+  bigint memory_usage();
 
-  void grow_pointers();
+  void grow_reset();
+  int pack_comm_kokkos(const int &n, const DAT::tdual_int_2d &k_sendlist,
+                       const int & iswap,
+                       const DAT::tdual_xfloat_2d &buf,
+                       const int &pbc_flag, const int pbc[]);
+  void unpack_comm_kokkos(const int &n, const int &nfirst,
+                          const DAT::tdual_xfloat_2d &buf);
+  int pack_comm_self(const int &n, const DAT::tdual_int_2d &list,
+                     const int & iswap, const int nfirst,
+                     const int &pbc_flag, const int pbc[]);
   int pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist,
                          DAT::tdual_xfloat_2d buf,int iswap,
                          int pbc_flag, int *pbc, ExecutionSpace space);
@@ -94,6 +106,9 @@ class AtomVecChargeKokkos : public AtomVecKokkos {
   DAT::t_x_array d_x;
   DAT::t_v_array d_v;
   DAT::t_f_array d_f;
+  HAT::t_x_array h_x;
+  HAT::t_v_array h_v;
+  HAT::t_f_array h_f;
 
   DAT::t_float_1d d_q;
 

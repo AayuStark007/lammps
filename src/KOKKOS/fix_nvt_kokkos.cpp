@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,13 +11,11 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "fix_nvt_kokkos.h"
-
-#include "error.h"
 #include "group.h"
 #include "modify.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -31,21 +28,31 @@ FixNVTKokkos<DeviceType>::FixNVTKokkos(LAMMPS *lmp, int narg, char **arg) :
 {
   this->kokkosable = 1;
   if (!this->tstat_flag)
-    this->error->all(FLERR,"Temperature control must be used with fix nvt/kk");
+    this->error->all(FLERR,"Temperature control must be used with fix nvt");
   if (this->pstat_flag)
-    this->error->all(FLERR,"Pressure control can not be used with fix nvt/kk");
+    this->error->all(FLERR,"Pressure control can not be used with fix nvt");
 
   // create a new compute temp style
   // id = fix-ID + temp
 
-  this->id_temp = utils::strdup(std::string(this->id)+"_temp");
-  this->modify->add_compute(fmt::format("{} all temp/kk",this->id_temp));
+  int n = strlen(this->id) + 6;
+  this->id_temp = new char[n];
+  strcpy(this->id_temp,this->id);
+  strcat(this->id_temp,"_temp");
+
+  char **newarg = new char*[3];
+  newarg[0] = this->id_temp;
+  newarg[1] = this->group->names[this->igroup];
+  newarg[2] = (char *) "temp/kk";
+
+  this->modify->add_compute(3,newarg);
+  delete [] newarg;
   this->tcomputeflag = 1;
 }
 
 namespace LAMMPS_NS {
 template class FixNVTKokkos<LMPDeviceType>;
-#ifdef LMP_KOKKOS_GPU
+#ifdef KOKKOS_HAVE_CUDA
 template class FixNVTKokkos<LMPHostType>;
 #endif
 }

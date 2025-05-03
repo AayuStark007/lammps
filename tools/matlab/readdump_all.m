@@ -29,13 +29,13 @@ end
 i=1;
 while feof(dump) == 0
     id = fgetl(dump);
-     if (strncmpi(id,'ITEM: TIMESTEP',numel('ITEM: TIMESTEP')))
+     if (strcmpi(id,'ITEM: TIMESTEP'))
             timestep(i) = str2num(fgetl(dump));
     else
-     if (strncmpi(id,'ITEM: NUMBER OF ATOMS',numel('ITEM: NUMBER OF ATOMS')))
+     if (strcmpi(id,'ITEM: NUMBER OF ATOMS'))
             Natoms(i) = str2num(fgetl(dump));
      else
-      if (strncmpi(id,'ITEM: BOX BOUNDS',numel('ITEM: BOX BOUNDS')))
+      if (strcmpi(id,'ITEM: BOX BOUNDS'))
             x_bound(i,:) = str2num(fgetl(dump));
             y_bound(i,:) = str2num(fgetl(dump));
             z_bound(i,:) = str2num(fgetl(dump));

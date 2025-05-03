@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(pe,ComputePE);
-// clang-format on
+
+ComputeStyle(pe,ComputePE)
+
 #else
 
 #ifndef LMP_COMPUTE_PE_H
@@ -32,10 +32,10 @@ class ComputePE : public Compute {
   double compute_scalar();
 
  private:
-  int pairflag, bondflag, angleflag, dihedralflag, improperflag, kspaceflag, fixflag;
+  int pairflag,bondflag,angleflag,dihedralflag,improperflag,kspaceflag,fixflag;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

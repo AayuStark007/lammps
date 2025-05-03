@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(GROUP,FixGroup);
-// clang-format on
+
+FixStyle(GROUP,FixGroup)
+
 #else
 
 #ifndef LMP_FIX_GROUP_H
@@ -32,14 +32,13 @@ class FixGroup : public Fix {
   void init();
   void setup(int);
   void post_integrate();
-  void post_integrate_respa(int, int);
-  void *extract(const char *, int &);
+  void post_integrate_respa(int,int);
 
  private:
-  int gbit, gbitinverse;
-  int regionflag, varflag, propflag, proptype;
-  int iregion, ivar, iprop;
-  char *idregion, *idvar, *idprop;
+  int gbit,gbitinverse;
+  int regionflag,varflag;
+  int iregion,ivar;
+  char *idregion,*idvar;
   class Region *region;
 
   int nlevels_respa;
@@ -47,7 +46,7 @@ class FixGroup : public Fix {
   void set_group();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -68,10 +67,6 @@ E: Variable name for group dynamic does not exist
 
 Self-explanatory.
 
-E: Per atom property for group dynamic does not exist
-
-Self-explanatory.
-
 E: Group dynamic parent group cannot be dynamic
 
 Self-explanatory.
@@ -82,10 +77,10 @@ The variable must be an atom-style variable.
 
 W: One or more dynamic groups may not be updated at correct point in timestep
 
-If there are other fixes that act immediately after the initial stage
+If there are other fixes that act immediately after the intitial stage
 of time integration within a timestep (i.e. after atoms move), then
 the command that sets up the dynamic group should appear after those
-fixes.  This will insure that dynamic group assignments are made
+fixes.  This will insure that dynamic group assignements are made
 after all atoms have moved.
 
 */

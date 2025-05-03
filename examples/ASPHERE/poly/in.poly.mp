@@ -62,7 +62,6 @@ pair_coeff	3 3 1.0 1.5
 pair_coeff	1 4 0.0 1.0 0.5
 pair_coeff	2 4 0.0 1.0 1.0
 pair_coeff	3 4 0.0 1.0 0.75
-pair_coeff	4 4 0.0 1.0 0.0
 
 delete_atoms	overlap 1.0 small big
 
@@ -70,7 +69,7 @@ delete_atoms	overlap 1.0 small big
 
 reset_timestep	0
 
-neighbor	0.3 multi
+neighbor	0.3 bin
 neigh_modify	delay 0 every 1 check yes
 
 comm_modify	mode multi group big vel yes

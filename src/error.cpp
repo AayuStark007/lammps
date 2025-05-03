@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,36 +11,20 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <stdlib.h>
+#include <string.h>
 #include "error.h"
-
-#include "accelerator_kokkos.h"
-#include "input.h"
-#include "output.h"
 #include "universe.h"
-
-#if defined(LAMMPS_EXCEPTIONS)
-#include "update.h"
-#endif
+#include "output.h"
 
 using namespace LAMMPS_NS;
 
-// helper function to truncate a string to a segment starting with "src/";
-
-static std::string truncpath(const std::string &path)
-{
-  std::size_t found = path.find("src/");
-  if (found != std::string::npos)
-    return path.substr(found);
-  else return path;
-}
-
 /* ---------------------------------------------------------------------- */
 
-Error::Error(LAMMPS *lmp)
-  : Pointers(lmp), numwarn(0), maxwarn(100), allwarn(0)
-{
+Error::Error(LAMMPS *lmp) : Pointers(lmp) {
 #ifdef LAMMPS_EXCEPTIONS
-  last_error_message.clear();
+  last_error_message = NULL;
   last_error_type = ERROR_NONE;
 #endif
 }
@@ -52,17 +35,15 @@ Error::Error(LAMMPS *lmp)
    no abort, so insure all procs in universe call, else will hang
 ------------------------------------------------------------------------- */
 
-void Error::universe_all(const std::string &file, int line, const std::string &str)
+void Error::universe_all(const char *file, int line, const char *str)
 {
   MPI_Barrier(universe->uworld);
-  std::string mesg = "ERROR: " + str;
-  try {
-    mesg += fmt::format(" ({}:{})\n",truncpath(file),line);
-  } catch (fmt::format_error &e) {
-  }
+
   if (universe->me == 0) {
-    if (universe->uscreen)  fputs(mesg.c_str(),universe->uscreen);
-    if (universe->ulogfile) fputs(mesg.c_str(),universe->ulogfile);
+    if (universe->uscreen) fprintf(universe->uscreen,
+                                   "ERROR: %s (%s:%d)\n",str,file,line);
+    if (universe->ulogfile) fprintf(universe->ulogfile,
+                                    "ERROR: %s (%s:%d)\n",str,file,line);
   }
 
   if (output) delete output;
@@ -73,15 +54,10 @@ void Error::universe_all(const std::string &file, int line, const std::string &s
   if (universe->ulogfile) fclose(universe->ulogfile);
 
 #ifdef LAMMPS_EXCEPTIONS
-
-  // allow commands if an exception was caught in a run
-  // update may be a null pointer when catching command line errors
-
-  if (update) update->whichflag = 0;
-
-  throw LAMMPSException(mesg);
+  char msg[100];
+  sprintf(msg, "ERROR: %s (%s:%d)\n", str, file, line);
+  throw LAMMPSException(msg);
 #else
-  KokkosLMP::finalize();
   MPI_Finalize();
   exit(1);
 #endif
@@ -92,24 +68,18 @@ void Error::universe_all(const std::string &file, int line, const std::string &s
    forces abort of entire universe if any proc in universe calls
 ------------------------------------------------------------------------- */
 
-void Error::universe_one(const std::string &file, int line, const std::string &str)
+void Error::universe_one(const char *file, int line, const char *str)
 {
-  std::string mesg = fmt::format("ERROR on proc {}: {} ({}:{})\n",
-                                 universe->me,str,truncpath(file),line);
-  if (universe->uscreen) fputs(mesg.c_str(),universe->uscreen);
+  if (universe->uscreen)
+    fprintf(universe->uscreen,"ERROR on proc %d: %s (%s:%d)\n",
+            universe->me,str,file,line);
 
 #ifdef LAMMPS_EXCEPTIONS
-
-  // allow commands if an exception was caught in a run
-  // update may be a null pointer when catching command line errors
-
-  if (update) update->whichflag = 0;
-
-  throw LAMMPSAbortException(mesg, universe->uworld);
+  char msg[100];
+  sprintf(msg, "ERROR: %s (%s:%d)\n", str, file, line);
+  throw LAMMPSAbortException(msg, universe->uworld);
 #else
-  KokkosLMP::finalize();
   MPI_Abort(universe->uworld,1);
-  exit(1); // to trick "smart" compilers into believing this does not return
 #endif
 }
 
@@ -118,13 +88,11 @@ void Error::universe_one(const std::string &file, int line, const std::string &s
    prints a warning message to the screen
 ------------------------------------------------------------------------- */
 
-void Error::universe_warn(const std::string &file, int line, const std::string &str)
+void Error::universe_warn(const char *file, int line, const char *str)
 {
-  ++numwarn;
-  if ((numwarn > maxwarn) || (allwarn > maxwarn) || (maxwarn < 0)) return;
   if (universe->uscreen)
-    fmt::print(universe->uscreen,"WARNING on proc {}: {} ({}:{})\n",
-               universe->me,str,truncpath(file),line);
+    fprintf(universe->uscreen,"WARNING on proc %d: %s (%s:%d)\n",
+            universe->me,str,file,line);
 }
 
 /* ----------------------------------------------------------------------
@@ -134,35 +102,21 @@ void Error::universe_warn(const std::string &file, int line, const std::string &
    force MPI_Abort if running in multi-partition mode
 ------------------------------------------------------------------------- */
 
-void Error::all(const std::string &file, int line, const std::string &str)
+void Error::all(const char *file, int line, const char *str)
 {
   MPI_Barrier(world);
 
   int me;
-  std::string lastcmd = "(unknown)";
-
   MPI_Comm_rank(world,&me);
 
   if (me == 0) {
-    std::string mesg = "ERROR: " + str;
-    if (input && input->line) lastcmd = input->line;
-    try {
-      mesg += fmt::format(" ({}:{})\nLast command: {}\n",
-                          truncpath(file),line,lastcmd);
-    } catch (fmt::format_error &e) {
-    }
-    utils::logmesg(lmp,mesg);
+    if (screen) fprintf(screen,"ERROR: %s (%s:%d)\n",str,file,line);
+    if (logfile) fprintf(logfile,"ERROR: %s (%s:%d)\n",str,file,line);
   }
 
 #ifdef LAMMPS_EXCEPTIONS
-
-  // allow commands if an exception was caught in a run
-  // update may be a null pointer when catching command line errors
-
-  if (update) update->whichflag = 0;
-
-  std::string msg = fmt::format("ERROR: {} ({}:{})\n",
-                                str, truncpath(file), line);
+  char msg[100];
+  sprintf(msg, "ERROR: %s (%s:%d)\n", str, file, line);
 
   if (universe->nworlds > 1) {
     throw LAMMPSAbortException(msg, universe->uworld);
@@ -174,7 +128,6 @@ void Error::all(const std::string &file, int line, const std::string &str)
   if (screen && screen != stdout) fclose(screen);
   if (logfile) fclose(logfile);
 
-  KokkosLMP::finalize();
   if (universe->nworlds > 1) MPI_Abort(universe->uworld,1);
   MPI_Finalize();
   exit(1);
@@ -183,96 +136,41 @@ void Error::all(const std::string &file, int line, const std::string &str)
 
 /* ----------------------------------------------------------------------
    called by one proc in world
-   write to world screen only if non-nullptr on this proc
+   write to world screen only if non-NULL on this proc
    always write to universe screen
    forces abort of entire world (and universe) if any proc in world calls
 ------------------------------------------------------------------------- */
 
-void Error::one(const std::string &file, int line, const std::string &str)
+void Error::one(const char *file, int line, const char *str)
 {
   int me;
-  std::string lastcmd = "(unknown)";
   MPI_Comm_rank(world,&me);
-
-  if (input && input->line) lastcmd = input->line;
-  std::string mesg = fmt::format("ERROR on proc {}: {} ({}:{})\n",
-                                 me,str,truncpath(file),line,lastcmd);
-  utils::logmesg(lmp,mesg);
-
+  if (screen) fprintf(screen,"ERROR on proc %d: %s (%s:%d)\n",
+                      me,str,file,line);
   if (universe->nworlds > 1)
     if (universe->uscreen)
-      fputs(mesg.c_str(),universe->uscreen);
+      fprintf(universe->uscreen,"ERROR on proc %d: %s (%s:%d)\n",
+              universe->me,str,file,line);
 
 #ifdef LAMMPS_EXCEPTIONS
-
-  // allow commands if an exception was caught in a run
-  // update may be a null pointer when catching command line errors
-
-  if (update) update->whichflag = 0;
-
-  throw LAMMPSAbortException(mesg, world);
+  char msg[100];
+  sprintf(msg, "ERROR on proc %d: %s (%s:%d)\n", me, str, file, line);
+  throw LAMMPSAbortException(msg, world);
 #else
-  if (screen) fflush(screen);
-  if (logfile) fflush(logfile);
-  KokkosLMP::finalize();
   MPI_Abort(world,1);
-  exit(1); // to trick "smart" compilers into believing this does not return
 #endif
 }
 
 /* ----------------------------------------------------------------------
-   forward vararg version to single string version
-------------------------------------------------------------------------- */
-
-void Error::_all(const std::string &file, int line, fmt::string_view format,
-                 fmt::format_args args)
-{
-  try {
-    all(file,line,fmt::vformat(format, args));
-  } catch (fmt::format_error &e) {
-    all(file,line,e.what());
-  }
-  exit(1); // to trick "smart" compilers into believing this does not return
-}
-
-void Error::_one(const std::string &file, int line, fmt::string_view format,
-                 fmt::format_args args)
-{
-  try {
-    one(file,line,fmt::vformat(format, args));
-  } catch (fmt::format_error &e) {
-    one(file,line,e.what());
-  }
-  exit(1); // to trick "smart" compilers into believing this does not return
-}
-
-/* ----------------------------------------------------------------------
    called by one proc in world
-   only write to screen if non-nullptr on this proc since could be file
+   only write to screen if non-NULL on this proc since could be file
 ------------------------------------------------------------------------- */
 
-void Error::warning(const std::string &file, int line, const std::string &str)
+void Error::warning(const char *file, int line, const char *str, int logflag)
 {
-  ++numwarn;
-  if ((numwarn > maxwarn) || (allwarn > maxwarn) || (maxwarn < 0)) return;
-  std::string mesg = fmt::format("WARNING: {} ({}:{})\n",
-                                 str,truncpath(file),line);
-  if (screen) fputs(mesg.c_str(),screen);
-  if (logfile) fputs(mesg.c_str(),logfile);
-}
-
-/* ----------------------------------------------------------------------
-   forward vararg version to single string version
-------------------------------------------------------------------------- */
-
-void Error::_warning(const std::string &file, int line, fmt::string_view format,
-                     fmt::format_args args)
-{
-  try {
-    warning(file,line,fmt::vformat(format, args));
-  } catch (fmt::format_error &e) {
-    warning(file,line,e.what());
-  }
+  if (screen) fprintf(screen,"WARNING: %s (%s:%d)\n",str,file,line);
+  if (logflag && logfile) fprintf(logfile,"WARNING: %s (%s:%d)\n",
+                                  str,file,line);
 }
 
 /* ----------------------------------------------------------------------
@@ -280,26 +178,10 @@ void Error::_warning(const std::string &file, int line, fmt::string_view format,
    write message to screen and logfile (if logflag is set)
 ------------------------------------------------------------------------- */
 
-void Error::message(const std::string &file, int line, const std::string &str)
+void Error::message(const char *file, int line, const char *str, int logflag)
 {
-  std::string mesg = fmt::format("{} ({}:{})\n",str,truncpath(file),line);
-
-  if (screen) fputs(mesg.c_str(),screen);
-  if (logfile) fputs(mesg.c_str(),logfile);
-}
-
-/* ----------------------------------------------------------------------
-   forward vararg version to single string version
-------------------------------------------------------------------------- */
-
-void Error::_message(const std::string &file, int line, fmt::string_view format,
-                     fmt::format_args args)
-{
-  try {
-    message(file,line,fmt::vformat(format, args));
-  } catch (fmt::format_error &e) {
-    message(file,line,e.what());
-  }
+  if (screen) fprintf(screen,"%s (%s:%d)\n",str,file,line);
+  if (logflag && logfile) fprintf(logfile,"%s (%s:%d)\n",str,file,line);
 }
 
 /* ----------------------------------------------------------------------
@@ -317,7 +199,6 @@ void Error::done(int status)
   if (screen && screen != stdout) fclose(screen);
   if (logfile) fclose(logfile);
 
-  KokkosLMP::finalize();
   MPI_Finalize();
   exit(status);
 }
@@ -328,7 +209,7 @@ void Error::done(int status)
    compiled with -DLAMMPS_EXCEPTIONS)
 ------------------------------------------------------------------------- */
 
-std::string Error::get_last_error() const
+char * Error::get_last_error() const
 {
   return last_error_message;
 }
@@ -348,9 +229,16 @@ ErrorType Error::get_last_error_type() const
    (only used if compiled with -DLAMMPS_EXCEPTIONS)
 ------------------------------------------------------------------------- */
 
-void Error::set_last_error(const std::string &msg, ErrorType type)
+void Error::set_last_error(const char * msg, ErrorType type)
 {
-  last_error_message = msg;
+  delete [] last_error_message;
+
+  if(msg) {
+    last_error_message = new char[strlen(msg)+1];
+    strcpy(last_error_message, msg);
+  } else {
+    last_error_message = NULL;
+  }
   last_error_type = type;
 }
 #endif

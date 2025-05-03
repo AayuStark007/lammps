@@ -2,11 +2,10 @@
 //@HEADER
 // ************************************************************************
 //
-//                        Kokkos v. 3.0
-//       Copyright (2020) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
+//                        Kokkos v. 2.0
+//              Copyright (2014) Sandia Corporation
 //
-// Under the terms of Contract DE-NA0003525 with NTESS,
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -24,10 +23,10 @@
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
-// THIS SOFTWARE IS PROVIDED BY NTESS "AS IS" AND ANY
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NTESS OR THE
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
 // CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 // EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
 // PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -36,7 +35,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
+// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
@@ -45,365 +44,568 @@
 #ifndef KOKKOS_CORE_EXP_MD_RANGE_POLICY_HPP
 #define KOKKOS_CORE_EXP_MD_RANGE_POLICY_HPP
 
+#include <Kokkos_ExecPolicy.hpp>
+#include <Kokkos_Parallel.hpp>
 #include <initializer_list>
 
-#include <Kokkos_Layout.hpp>
-#include <Kokkos_Array.hpp>
-#include <impl/KokkosExp_Host_IterateTile.hpp>
-#include <Kokkos_ExecPolicy.hpp>
-#include <type_traits>
+#if defined(KOKKOS_OPT_RANGE_AGGRESSIVE_VECTORIZATION) && defined(KOKKOS_HAVE_PRAGMA_IVDEP) && !defined(__CUDA_ARCH__)
+#define KOKKOS_MDRANGE_IVDEP
+#endif
 
-namespace Kokkos {
+namespace Kokkos { namespace Experimental {
 
-// ------------------------------------------------------------------ //
-// Moved to Kokkos_Layout.hpp for more general accessibility
-/*
 enum class Iterate
 {
   Default, // Default for the device
   Left,    // Left indices stride fastest
   Right,   // Right indices stride fastest
+  Flat,    // Do not tile, only valid for inner direction
 };
-*/
 
 template <typename ExecSpace>
-struct default_outer_direction {
-  using type                     = Iterate;
+struct default_outer_direction
+{
+  using type = Iterate;
   static constexpr Iterate value = Iterate::Right;
 };
 
 template <typename ExecSpace>
-struct default_inner_direction {
-  using type                     = Iterate;
+struct default_inner_direction
+{
+  using type = Iterate;
   static constexpr Iterate value = Iterate::Right;
 };
+
 
 // Iteration Pattern
-template <unsigned N, Iterate OuterDir = Iterate::Default,
-          Iterate InnerDir = Iterate::Default>
-struct Rank {
-  static_assert(N != 0u, "Kokkos Error: rank 0 undefined");
-  static_assert(N != 1u,
-                "Kokkos Error: rank 1 is not a multi-dimensional range");
-  static_assert(N < 7u, "Kokkos Error: Unsupported rank...");
+template < unsigned N
+         , Iterate OuterDir = Iterate::Default
+         , Iterate InnerDir = Iterate::Default
+         >
+struct Rank
+{
+  static_assert( N != 0u, "Kokkos Error: rank 0 undefined");
+  static_assert( N != 1u, "Kokkos Error: rank 1 is not a multi-dimensional range");
+  static_assert( N < 4u, "Kokkos Error: Unsupported rank...");
 
   using iteration_pattern = Rank<N, OuterDir, InnerDir>;
 
-  static constexpr int rank                = N;
+  static constexpr int rank = N;
   static constexpr Iterate outer_direction = OuterDir;
   static constexpr Iterate inner_direction = InnerDir;
 };
 
-namespace Impl {
-// NOTE the comparison below is encapsulated to silent warnings about pointless
-// comparison of unsigned integer with zero
-template <class T>
-constexpr std::enable_if_t<!std::is_signed<T>::value, bool>
-is_less_than_value_initialized_variable(T) {
-  return false;
-}
 
-template <class T>
-constexpr std::enable_if_t<std::is_signed<T>::value, bool>
-is_less_than_value_initialized_variable(T arg) {
-  return arg < T{};
-}
-
-// Checked narrowing conversion that calls abort if the cast changes the value
-template <class To, class From>
-constexpr To checked_narrow_cast(From arg) {
-  constexpr const bool is_different_signedness =
-      (std::is_signed<To>::value != std::is_signed<From>::value);
-  auto const ret = static_cast<To>(arg);
-  if (static_cast<From>(ret) != arg ||
-      (is_different_signedness &&
-       is_less_than_value_initialized_variable(arg) !=
-           is_less_than_value_initialized_variable(ret))) {
-    Kokkos::abort("unsafe narrowing conversion");
-  }
-  return ret;
-}
-// NOTE prefer C array U[M] to std::initalizer_list<U> so that the number of
-// elements can be deduced (https://stackoverflow.com/q/40241370)
-// NOTE for some unfortunate reason the policy bounds are stored as signed
-// integer arrays (point_type which is Kokkos::Array<std::int64_t>) so we
-// specify the index type (actual policy index_type from the traits) and check
-// ahead of time that narrowing conversions will be safe.
-template <class IndexType, class Array, class U, std::size_t M>
-constexpr Array to_array_potentially_narrowing(const U (&init)[M]) {
-  using T = typename Array::value_type;
-  Array a{};
-  constexpr std::size_t N = a.size();
-  static_assert(M <= N, "");
-  auto* ptr = a.data();
-  // NOTE equivalent to
-  // std::transform(std::begin(init), std::end(init), a.data(),
-  //                [](U x) { return static_cast<T>(x); });
-  // except that std::transform is not constexpr.
-  for (auto x : init) {
-    *ptr++ = checked_narrow_cast<T>(x);
-    (void)checked_narrow_cast<IndexType>(x);  // see note above
-  }
-  return a;
-}
-
-// NOTE Making a copy even when std::is_same<Array, Kokkos::Array<U, M>>::value
-// is true to reduce code complexity.  You may change this if you have a good
-// reason to.  Intentionally not enabling std::array at this time but this may
-// change too.
-template <class IndexType, class NVCC_WONT_LET_ME_CALL_YOU_Array, class U,
-          std::size_t M>
-constexpr NVCC_WONT_LET_ME_CALL_YOU_Array to_array_potentially_narrowing(
-    Kokkos::Array<U, M> const& other) {
-  using T = typename NVCC_WONT_LET_ME_CALL_YOU_Array::value_type;
-  NVCC_WONT_LET_ME_CALL_YOU_Array a{};
-  constexpr std::size_t N = a.size();
-  static_assert(M <= N, "");
-  for (std::size_t i = 0; i < M; ++i) {
-    a[i] = checked_narrow_cast<T>(other[i]);
-    (void)checked_narrow_cast<IndexType>(other[i]);  // see note above
-  }
-  return a;
-}
-
-struct TileSizeProperties {
-  int max_threads;
-  int default_largest_tile_size;
-  int default_tile_size;
-  int max_total_tile_size;
-};
-
-template <typename ExecutionSpace>
-TileSizeProperties get_tile_size_properties(const ExecutionSpace&) {
-  // Host settings
-  TileSizeProperties properties;
-  properties.max_threads               = std::numeric_limits<int>::max();
-  properties.default_largest_tile_size = 0;
-  properties.default_tile_size         = 2;
-  properties.max_total_tile_size       = std::numeric_limits<int>::max();
-  return properties;
-}
-
-}  // namespace Impl
 
 // multi-dimensional iteration pattern
 template <typename... Properties>
-struct MDRangePolicy : public Kokkos::Impl::PolicyTraits<Properties...> {
-  using traits       = Kokkos::Impl::PolicyTraits<Properties...>;
+struct MDRangePolicy
+{
   using range_policy = RangePolicy<Properties...>;
 
-  typename traits::execution_space m_space;
+  static_assert( !std::is_same<range_policy,void>::value
+               , "Kokkos Error: MD iteration pattern not defined" );
 
-  using impl_range_policy =
-      RangePolicy<typename traits::execution_space,
-                  typename traits::schedule_type, typename traits::index_type>;
-
-  using execution_policy =
-      MDRangePolicy<Properties...>;  // needed for is_execution_space
-                                     // interrogation
-
-  template <class... OtherProperties>
-  friend struct MDRangePolicy;
-
-  static_assert(!std::is_same<typename traits::iteration_pattern, void>::value,
-                "Kokkos Error: MD iteration pattern not defined");
-
-  using iteration_pattern = typename traits::iteration_pattern;
-  using work_tag          = typename traits::work_tag;
-  using launch_bounds     = typename traits::launch_bounds;
-  using member_type       = typename range_policy::member_type;
+  using iteration_pattern   = typename range_policy::iteration_pattern;
+  using work_tag            = typename range_policy::work_tag;
 
   static constexpr int rank = iteration_pattern::rank;
 
-  using index_type       = typename traits::index_type;
-  using array_index_type = std::int64_t;
-  using point_type = Kokkos::Array<array_index_type, rank>;  // was index_type
-  using tile_type  = Kokkos::Array<array_index_type, rank>;
-  // If point_type or tile_type is not templated on a signed integral type (if
-  // it is unsigned), then if user passes in intializer_list of
-  // runtime-determined values of signed integral type that are not const will
-  // receive a compiler error due to an invalid case for implicit conversion -
-  // "conversion from integer or unscoped enumeration type to integer type that
-  // cannot represent all values of the original, except where source is a
-  // constant expression whose value can be stored exactly in the target type"
-  // This would require the user to either pass a matching index_type parameter
-  // as template parameter to the MDRangePolicy or static_cast the individual
-  // values
+  static constexpr int outer_direction = static_cast<int> (
+      (iteration_pattern::outer_direction != Iterate::Default && iteration_pattern::outer_direction != Iterate::Flat)
+    ? iteration_pattern::outer_direction
+    : default_outer_direction< typename range_policy::execution_space>::value );
 
-  point_type m_lower          = {};
-  point_type m_upper          = {};
-  tile_type m_tile            = {};
-  point_type m_tile_end       = {};
-  index_type m_num_tiles      = 1;
-  index_type m_prod_tile_dims = 1;
-  bool m_tune_tile_size       = false;
-
-  static constexpr auto outer_direction =
-      (iteration_pattern::outer_direction != Iterate::Default)
-          ? iteration_pattern::outer_direction
-          : default_outer_direction<typename traits::execution_space>::value;
-
-  static constexpr auto inner_direction =
+  static constexpr int inner_direction = static_cast<int> (
       iteration_pattern::inner_direction != Iterate::Default
-          ? iteration_pattern::inner_direction
-          : default_inner_direction<typename traits::execution_space>::value;
+    ? iteration_pattern::inner_direction
+    : default_inner_direction< typename range_policy::execution_space>::value ) ;
 
-  static constexpr auto Right = Iterate::Right;
-  static constexpr auto Left  = Iterate::Left;
 
-  KOKKOS_INLINE_FUNCTION const typename traits::execution_space& space() const {
-    return m_space;
-  }
+  // Ugly ugly workaround intel 14 not handling scoped enum correctly
+  static constexpr int Flat = static_cast<int>( Iterate::Flat );
+  static constexpr int Right = static_cast<int>( Iterate::Right );
 
-  MDRangePolicy() = default;
 
-  template <typename LT, std::size_t LN, typename UT, std::size_t UN,
-            typename TT = array_index_type, std::size_t TN = rank,
-            typename = std::enable_if_t<std::is_integral<LT>::value &&
-                                        std::is_integral<UT>::value &&
-                                        std::is_integral<TT>::value>>
-  MDRangePolicy(const LT (&lower)[LN], const UT (&upper)[UN],
-                const TT (&tile)[TN] = {})
-      : MDRangePolicy(
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_lower)>(
-                lower),
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_upper)>(
-                upper),
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_tile)>(
-                tile)) {
-    static_assert(
-        LN == rank && UN == rank && TN <= rank,
-        "MDRangePolicy: Constructor initializer lists have wrong size");
-  }
+  using size_type   = typename range_policy::index_type;
+  using index_type  = typename std::make_signed<size_type>::type;
 
-  template <typename LT, std::size_t LN, typename UT, std::size_t UN,
-            typename TT = array_index_type, std::size_t TN = rank,
-            typename = std::enable_if_t<std::is_integral<LT>::value &&
-                                        std::is_integral<UT>::value &&
-                                        std::is_integral<TT>::value>>
-  MDRangePolicy(const typename traits::execution_space& work_space,
-                const LT (&lower)[LN], const UT (&upper)[UN],
-                const TT (&tile)[TN] = {})
-      : MDRangePolicy(
-            work_space,
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_lower)>(
-                lower),
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_upper)>(
-                upper),
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_tile)>(
-                tile)) {
-    static_assert(
-        LN == rank && UN == rank && TN <= rank,
-        "MDRangePolicy: Constructor initializer lists have wrong size");
-  }
 
-  // NOTE: Keeping these two constructor despite the templated constructors
-  // from Kokkos arrays for backwards compability to allow construction from
-  // double-braced initializer lists.
-  MDRangePolicy(point_type const& lower, point_type const& upper,
-                tile_type const& tile = tile_type{})
-      : MDRangePolicy(typename traits::execution_space(), lower, upper, tile) {}
+  template <typename I>
+  MDRangePolicy( std::initializer_list<I> upper_corner )
+  {
+    static_assert( std::is_integral<I>::value, "Kokkos Error: corner defined with non-integral type" );
 
-  MDRangePolicy(const typename traits::execution_space& work_space,
-                point_type const& lower, point_type const& upper,
-                tile_type const& tile = tile_type{})
-      : m_space(work_space), m_lower(lower), m_upper(upper), m_tile(tile) {
-    init_helper(Impl::get_tile_size_properties(work_space));
-  }
+    // TODO check size of lists equal to rank
+    // static_asserts on initializer_list.size() require c++14
 
-  template <typename T, std::size_t NT = rank,
-            typename = std::enable_if_t<std::is_integral<T>::value>>
-  MDRangePolicy(Kokkos::Array<T, rank> const& lower,
-                Kokkos::Array<T, rank> const& upper,
-                Kokkos::Array<T, NT> const& tile = Kokkos::Array<T, NT>{})
-      : MDRangePolicy(typename traits::execution_space(), lower, upper, tile) {}
+    //static_assert( upper_corner.size() == rank, "Kokkos Error: upper_corner has incorrect rank" );
 
-  template <typename T, std::size_t NT = rank,
-            typename = std::enable_if_t<std::is_integral<T>::value>>
-  MDRangePolicy(const typename traits::execution_space& work_space,
-                Kokkos::Array<T, rank> const& lower,
-                Kokkos::Array<T, rank> const& upper,
-                Kokkos::Array<T, NT> const& tile = Kokkos::Array<T, NT>{})
-      : MDRangePolicy(
-            work_space,
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_lower)>(
-                lower),
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_upper)>(
-                upper),
-            Impl::to_array_potentially_narrowing<index_type, decltype(m_tile)>(
-                tile)) {}
+    const auto u = upper_corner.begin();
 
-  template <class... OtherProperties>
-  MDRangePolicy(const MDRangePolicy<OtherProperties...> p)
-      : traits(p),  // base class may contain data such as desired occupancy
-        m_space(p.m_space),
-        m_lower(p.m_lower),
-        m_upper(p.m_upper),
-        m_tile(p.m_tile),
-        m_tile_end(p.m_tile_end),
-        m_num_tiles(p.m_num_tiles),
-        m_prod_tile_dims(p.m_prod_tile_dims),
-        m_tune_tile_size(p.m_tune_tile_size) {}
-
-  void impl_change_tile_size(const point_type& tile) {
-    m_tile = tile;
-    init_helper(Impl::get_tile_size_properties(m_space));
-  }
-  bool impl_tune_tile_size() const { return m_tune_tile_size; }
-
- private:
-  void init_helper(Impl::TileSizeProperties properties) {
-    m_prod_tile_dims = 1;
-    int increment    = 1;
-    int rank_start   = 0;
-    int rank_end     = rank;
-    if (inner_direction == Iterate::Right) {
-      increment  = -1;
-      rank_start = rank - 1;
-      rank_end   = -1;
-    }
-    for (int i = rank_start; i != rank_end; i += increment) {
-      const index_type length = m_upper[i] - m_lower[i];
-      if (m_tile[i] <= 0) {
-        m_tune_tile_size = true;
-        if ((inner_direction == Iterate::Right && (i < rank - 1)) ||
-            (inner_direction == Iterate::Left && (i > 0))) {
-          if (m_prod_tile_dims * properties.default_tile_size <
-              static_cast<index_type>(properties.max_total_tile_size)) {
-            m_tile[i] = properties.default_tile_size;
-          } else {
-            m_tile[i] = 1;
-          }
-        } else {
-          m_tile[i] = properties.default_largest_tile_size == 0
-                          ? std::max<int>(length, 1)
-                          : properties.default_largest_tile_size;
-        }
+    m_num_tiles = 1;
+    for (int i=0; i<rank; ++i) {
+      m_offset[i] = static_cast<index_type>(0);
+      m_dim[i]    = static_cast<index_type>(u[i]);
+      if (inner_direction != Flat) {
+        // default tile size to 4
+        m_tile[i] = 4;
+      } else {
+        m_tile[i] = 1;
       }
-      m_tile_end[i] =
-          static_cast<index_type>((length + m_tile[i] - 1) / m_tile[i]);
-      m_num_tiles *= m_tile_end[i];
-      m_prod_tile_dims *= m_tile[i];
+      m_tile_dim[i] = (m_dim[i] + (m_tile[i] - 1)) / m_tile[i];
+      m_num_tiles *= m_tile_dim[i];
     }
-    if (m_prod_tile_dims > static_cast<index_type>(properties.max_threads)) {
-      printf(" Product of tile dimensions exceed maximum limit: %d\n",
-             static_cast<int>(properties.max_threads));
-      Kokkos::abort(
-          "ExecSpace Error: MDRange tile dims exceed maximum number "
-          "of threads per block - choose smaller tile dims");
+  }
+
+  template <typename IA, typename IB>
+  MDRangePolicy( std::initializer_list<IA> corner_a
+               , std::initializer_list<IB> corner_b
+               )
+  {
+    static_assert( std::is_integral<IA>::value, "Kokkos Error: corner A defined with non-integral type" );
+    static_assert( std::is_integral<IB>::value, "Kokkos Error: corner B defined with non-integral type" );
+
+    // TODO check size of lists equal to rank
+    // static_asserts on initializer_list.size() require c++14
+    //static_assert( corner_a.size() == rank, "Kokkos Error: corner_a has incorrect rank" );
+    //static_assert( corner_b.size() == rank, "Kokkos Error: corner_b has incorrect rank" );
+
+
+    using A = typename std::make_signed<IA>::type;
+    using B = typename std::make_signed<IB>::type;
+
+    const auto a = [=](int i) { return static_cast<A>(corner_a.begin()[i]); };
+    const auto b = [=](int i) { return static_cast<B>(corner_b.begin()[i]); };
+
+    m_num_tiles = 1;
+    for (int i=0; i<rank; ++i) {
+      m_offset[i] = static_cast<index_type>(a(i) <= b(i) ? a(i) : b(i));
+      m_dim[i]    = static_cast<index_type>(a(i) <= b(i) ? b(i) - a(i) : a(i) - b(i));
+      if (inner_direction != Flat) {
+        // default tile size to 4
+        m_tile[i] = 4;
+      } else {
+        m_tile[i] = 1;
+      }
+      m_tile_dim[i] = (m_dim[i] + (m_tile[i] - 1)) / m_tile[i];
+      m_num_tiles *= m_tile_dim[i];
+    }
+  }
+
+  template <typename IA, typename IB, typename T>
+  MDRangePolicy( std::initializer_list<IA> corner_a
+               , std::initializer_list<IB> corner_b
+               , std::initializer_list<T> tile
+               )
+  {
+    static_assert( std::is_integral<IA>::value, "Kokkos Error: corner A defined with non-integral type" );
+    static_assert( std::is_integral<IB>::value, "Kokkos Error: corner B defined with non-integral type" );
+    static_assert( std::is_integral<T>::value, "Kokkos Error: tile defined with non-integral type" );
+    static_assert( inner_direction != Flat, "Kokkos Error: tiling not support with flat iteration" );
+
+    // TODO check size of lists equal to rank
+    // static_asserts on initializer_list.size() require c++14
+    //static_assert( corner_a.size() == rank, "Kokkos Error: corner_a has incorrect rank" );
+    //static_assert( corner_b.size() == rank, "Kokkos Error: corner_b has incorrect rank" );
+    //static_assert( tile.size() == rank, "Kokkos Error: tile has incorrect rank" );
+
+    using A = typename std::make_signed<IA>::type;
+    using B = typename std::make_signed<IB>::type;
+
+    const auto a = [=](int i) { return static_cast<A>(corner_a.begin()[i]); };
+    const auto b = [=](int i) { return static_cast<B>(corner_b.begin()[i]); };
+    const auto t = tile.begin();
+
+    m_num_tiles = 1;
+    for (int i=0; i<rank; ++i) {
+      m_offset[i] = static_cast<index_type>(a(i) <= b(i) ? a(i) : b(i));
+      m_dim[i]    = static_cast<index_type>(a(i) <= b(i) ? b(i) - a(i) : a(i) - b(i));
+      m_tile[i]   = static_cast<int>(t[i] > (T)0 ? t[i] : (T)1 );
+      m_tile_dim[i] = (m_dim[i] + (m_tile[i] - 1)) / m_tile[i];
+      m_num_tiles *= m_tile_dim[i];
+    }
+  }
+
+  index_type   m_offset[rank];
+  index_type   m_dim[rank];
+  int          m_tile[rank];
+  index_type   m_tile_dim[rank];
+  size_type    m_num_tiles;       // product of tile dims
+};
+
+namespace Impl {
+
+// Serial, Threads, OpenMP
+// use enable_if to overload for Cuda
+template < typename MDRange, typename Functor, typename Enable = void >
+struct MDForFunctor
+{
+  using work_tag   = typename MDRange::work_tag;
+  using index_type = typename MDRange::index_type;
+  using size_type  = typename MDRange::size_type;
+
+  MDRange m_range;
+  Functor m_func;
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor( MDRange const& range, Functor const& f )
+    : m_range(range)
+    , m_func( f )
+  {}
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor( MDRange const& range, Functor && f )
+    : m_range(range)
+    , m_func( std::forward<Functor>(f) )
+  {}
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor( MDRange && range, Functor const& f )
+    : m_range( std::forward<MDRange>(range) )
+    , m_func( f )
+  {}
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor( MDRange && range, Functor && f )
+    : m_range( std::forward<MDRange>(range) )
+    , m_func( std::forward<Functor>(f) )
+  {}
+
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor( MDForFunctor const& ) = default;
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor& operator=( MDForFunctor const& ) = default;
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor( MDForFunctor && ) = default;
+
+  KOKKOS_INLINE_FUNCTION
+  MDForFunctor& operator=( MDForFunctor && ) = default;
+
+  // Rank-2, Flat, No Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && std::is_same<void, work_tag>::value
+                          && MDRange::rank == 2
+                          && MDRange::inner_direction == MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    if (  MDRange::outer_direction == MDRange::Right ) {
+      m_func( m_range.m_offset[0] + ( t / m_range.m_dim[1] )
+            , m_range.m_offset[1] + ( t % m_range.m_dim[1] ) );
+    } else {
+      m_func( m_range.m_offset[0] + ( t % m_range.m_dim[0] )
+            , m_range.m_offset[1] + ( t / m_range.m_dim[0] ) );
+    }
+  }
+
+  // Rank-2, Flat, Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && !std::is_same<void, work_tag>::value
+                          && MDRange::rank == 2
+                          && MDRange::inner_direction == MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    if (  MDRange::outer_direction == MDRange::Right ) {
+      m_func( work_tag{}, m_range.m_offset[0] + ( t / m_range.m_dim[1] )
+            , m_range.m_offset[1] + ( t % m_range.m_dim[1] ) );
+    } else {
+      m_func( work_tag{}, m_range.m_offset[0] + ( t % m_range.m_dim[0] )
+            , m_range.m_offset[1] + ( t / m_range.m_dim[0] ) );
+    }
+  }
+
+  // Rank-2, Not Flat, No Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && std::is_same<void, work_tag>::value
+                          && MDRange::rank == 2
+                          && MDRange::inner_direction != MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    index_type t0, t1;
+    if (  MDRange::outer_direction == MDRange::Right ) {
+      t0 = t / m_range.m_tile_dim[1];
+      t1 = t % m_range.m_tile_dim[1];
+    } else {
+      t0 = t % m_range.m_tile_dim[0];
+      t1 = t / m_range.m_tile_dim[0];
+    }
+
+    const index_type b0 = t0 * m_range.m_tile[0] + m_range.m_offset[0];
+    const index_type b1 = t1 * m_range.m_tile[1] + m_range.m_offset[1];
+
+    const index_type e0 = b0 + m_range.m_tile[0] <= (m_range.m_dim[0] + m_range.m_offset[0] ) ? b0 + m_range.m_tile[0] : ( m_range.m_dim[0] + m_range.m_offset[0] );
+    const index_type e1 = b1 + m_range.m_tile[1] <= (m_range.m_dim[1] + m_range.m_offset[1] ) ? b1 + m_range.m_tile[1] : ( m_range.m_dim[1] + m_range.m_offset[1] );
+
+    if (  MDRange::inner_direction == MDRange::Right ) {
+      for (int i0=b0; i0<e0; ++i0) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i1=b1; i1<e1; ++i1) {
+        m_func( i0, i1 );
+      }}
+    } else {
+      for (int i1=b1; i1<e1; ++i1) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i0=b0; i0<e0; ++i0) {
+        m_func( i0, i1 );
+      }}
+    }
+  }
+
+  // Rank-2, Not Flat, Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && !std::is_same<void, work_tag>::value
+                          && MDRange::rank == 2
+                          && MDRange::inner_direction != MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    work_tag tag;
+
+    index_type t0, t1;
+    if (  MDRange::outer_direction == MDRange::Right ) {
+      t0 = t / m_range.m_tile_dim[1];
+      t1 = t % m_range.m_tile_dim[1];
+    } else {
+      t0 = t % m_range.m_tile_dim[0];
+      t1 = t / m_range.m_tile_dim[0];
+    }
+
+    const index_type b0 = t0 * m_range.m_tile[0] + m_range.m_offset[0];
+    const index_type b1 = t1 * m_range.m_tile[1] + m_range.m_offset[1];
+
+    const index_type e0 = b0 + m_range.m_tile[0] <= (m_range.m_dim[0] + m_range.m_offset[0] ) ? b0 + m_range.m_tile[0] : ( m_range.m_dim[0] + m_range.m_offset[0] );
+    const index_type e1 = b1 + m_range.m_tile[1] <= (m_range.m_dim[1] + m_range.m_offset[1] ) ? b1 + m_range.m_tile[1] : ( m_range.m_dim[1] + m_range.m_offset[1] );
+
+    if (  MDRange::inner_direction == MDRange::Right ) {
+      for (int i0=b0; i0<e0; ++i0) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i1=b1; i1<e1; ++i1) {
+        m_func( tag, i0, i1 );
+      }}
+    } else {
+      for (int i1=b1; i1<e1; ++i1) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i0=b0; i0<e0; ++i0) {
+        m_func( tag, i0, i1 );
+      }}
+    }
+  }
+
+  //---------------------------------------------------------------------------
+
+  // Rank-3, Flat, No Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && std::is_same<void, work_tag>::value
+                          && MDRange::rank == 3
+                          && MDRange::inner_direction == MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    if (  MDRange::outer_direction == MDRange::Right ) {
+    const int64_t tmp_prod = m_range.m_dim[1]*m_range.m_dim[2];
+    m_func( m_range.m_offset[0] + (  t / tmp_prod )
+          , m_range.m_offset[1] + ( (t % tmp_prod) / m_range.m_dim[2] )
+          , m_range.m_offset[2] + ( (t % tmp_prod) % m_range.m_dim[2] )
+          );
+    } else {
+    const int64_t tmp_prod = m_range.m_dim[0]*m_range.m_dim[1];
+    m_func( m_range.m_offset[0] + ( (t % tmp_prod) % m_range.m_dim[0] )
+          , m_range.m_offset[1] + ( (t % tmp_prod) / m_range.m_dim[0] )
+          , m_range.m_offset[2] + (  t / tmp_prod )
+          );
+    }
+  }
+
+  // Rank-3, Flat, Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && !std::is_same<void, work_tag>::value
+                          && MDRange::rank == 3
+                          && MDRange::inner_direction == MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    if (  MDRange::outer_direction == MDRange::Right ) {
+      const int64_t tmp_prod = m_range.m_dim[1]*m_range.m_dim[2];
+      m_func( work_tag{}
+            , m_range.m_offset[0] + (  t / tmp_prod )
+            , m_range.m_offset[1] + ( (t % tmp_prod) / m_range.m_dim[2] )
+            , m_range.m_offset[2] + ( (t % tmp_prod) % m_range.m_dim[2] )
+            );
+    } else {
+      const int64_t tmp_prod = m_range.m_dim[0]*m_range.m_dim[1];
+      m_func( work_tag{}
+            , m_range.m_offset[0] + ( (t % tmp_prod) % m_range.m_dim[0] )
+            , m_range.m_offset[1] + ( (t % tmp_prod) / m_range.m_dim[0] )
+            , m_range.m_offset[2] + (  t / tmp_prod )
+            );
+    }
+  }
+
+  // Rank-3, Not Flat, No Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && std::is_same<void, work_tag>::value
+                          && MDRange::rank == 3
+                          && MDRange::inner_direction != MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    index_type t0, t1, t2;
+    if (  MDRange::outer_direction == MDRange::Right ) {
+      const index_type tmp_prod = ( m_range.m_tile_dim[1]*m_range.m_tile_dim[2]);
+      t0 = t / tmp_prod;
+      t1 = ( t % tmp_prod ) / m_range.m_tile_dim[2];
+      t2 = ( t % tmp_prod ) % m_range.m_tile_dim[2];
+    } else {
+      const index_type tmp_prod = ( m_range.m_tile_dim[0]*m_range.m_tile_dim[1]);
+      t0 = ( t % tmp_prod ) % m_range.m_tile_dim[0];
+      t1 = ( t % tmp_prod ) / m_range.m_tile_dim[0];
+      t2 = t / tmp_prod;
+    }
+
+    const index_type b0 = t0 * m_range.m_tile[0] + m_range.m_offset[0];
+    const index_type b1 = t1 * m_range.m_tile[1] + m_range.m_offset[1];
+    const index_type b2 = t2 * m_range.m_tile[2] + m_range.m_offset[2];
+
+    const index_type e0 = b0 + m_range.m_tile[0] <= (m_range.m_dim[0] + m_range.m_offset[0] ) ? b0 + m_range.m_tile[0] : ( m_range.m_dim[0] + m_range.m_offset[0] );
+    const index_type e1 = b1 + m_range.m_tile[1] <= (m_range.m_dim[1] + m_range.m_offset[1] ) ? b1 + m_range.m_tile[1] : ( m_range.m_dim[1] + m_range.m_offset[1] );
+    const index_type e2 = b2 + m_range.m_tile[2] <= (m_range.m_dim[2] + m_range.m_offset[2] ) ? b2 + m_range.m_tile[2] : ( m_range.m_dim[2] + m_range.m_offset[2] );
+
+    if (  MDRange::inner_direction == MDRange::Right ) {
+      for (int i0=b0; i0<e0; ++i0) {
+      for (int i1=b1; i1<e1; ++i1) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i2=b2; i2<e2; ++i2) {
+        m_func( i0, i1, i2 );
+      }}}
+    } else {
+      for (int i2=b2; i2<e2; ++i2) {
+      for (int i1=b1; i1<e1; ++i1) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i0=b0; i0<e0; ++i0) {
+        m_func( i0, i1, i2 );
+      }}}
+    }
+  }
+
+  // Rank-3, Not Flat, Tag
+  template <typename Idx>
+  KOKKOS_FORCEINLINE_FUNCTION
+  typename std::enable_if<(  std::is_integral<Idx>::value
+                          && !std::is_same<void, work_tag>::value
+                          && MDRange::rank == 3
+                          && MDRange::inner_direction != MDRange::Flat
+                          )>::type
+  operator()(Idx t) const
+  {
+    work_tag tag;
+
+    index_type t0, t1, t2;
+    if (  MDRange::outer_direction == MDRange::Right ) {
+      const index_type tmp_prod = ( m_range.m_tile_dim[1]*m_range.m_tile_dim[2]);
+      t0 = t / tmp_prod;
+      t1 = ( t % tmp_prod ) / m_range.m_tile_dim[2];
+      t2 = ( t % tmp_prod ) % m_range.m_tile_dim[2];
+    } else {
+      const index_type tmp_prod = ( m_range.m_tile_dim[0]*m_range.m_tile_dim[1]);
+      t0 = ( t % tmp_prod ) % m_range.m_tile_dim[0];
+      t1 = ( t % tmp_prod ) / m_range.m_tile_dim[0];
+      t2 = t / tmp_prod;
+    }
+
+    const index_type b0 = t0 * m_range.m_tile[0] + m_range.m_offset[0];
+    const index_type b1 = t1 * m_range.m_tile[1] + m_range.m_offset[1];
+    const index_type b2 = t2 * m_range.m_tile[2] + m_range.m_offset[2];
+
+    const index_type e0 = b0 + m_range.m_tile[0] <= (m_range.m_dim[0] + m_range.m_offset[0] ) ? b0 + m_range.m_tile[0] : ( m_range.m_dim[0] + m_range.m_offset[0] );
+    const index_type e1 = b1 + m_range.m_tile[1] <= (m_range.m_dim[1] + m_range.m_offset[1] ) ? b1 + m_range.m_tile[1] : ( m_range.m_dim[1] + m_range.m_offset[1] );
+    const index_type e2 = b2 + m_range.m_tile[2] <= (m_range.m_dim[2] + m_range.m_offset[2] ) ? b2 + m_range.m_tile[2] : ( m_range.m_dim[2] + m_range.m_offset[2] );
+
+    if (  MDRange::inner_direction == MDRange::Right ) {
+      for (int i0=b0; i0<e0; ++i0) {
+      for (int i1=b1; i1<e1; ++i1) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i2=b2; i2<e2; ++i2) {
+        m_func( tag, i0, i1, i2 );
+      }}}
+    } else {
+      for (int i2=b2; i2<e2; ++i2) {
+      for (int i1=b1; i1<e1; ++i1) {
+      #if defined(KOKKOS_MDRANGE_IVDEP)
+      #pragma ivdep
+      #endif
+      for (int i0=b0; i0<e0; ++i0) {
+        m_func( tag, i0, i1, i2 );
+      }}}
     }
   }
 };
 
-}  // namespace Kokkos
 
-// For backward compatibility
-namespace Kokkos {
-namespace Experimental {
-using Kokkos::Iterate;
-using Kokkos::MDRangePolicy;
-using Kokkos::Rank;
-}  // namespace Experimental
-}  // namespace Kokkos
 
-#endif  // KOKKOS_CORE_EXP_MD_RANGE_POLICY_HPP
+} // namespace Impl
+
+
+template <typename MDRange, typename Functor>
+void md_parallel_for( MDRange const& range
+                    , Functor const& f
+                    , const std::string& str = ""
+                    )
+{
+  Impl::MDForFunctor<MDRange, Functor> g(range, f);
+
+  using range_policy = typename MDRange::range_policy;
+
+  Kokkos::parallel_for( range_policy(0, range.m_num_tiles).set_chunk_size(1), g, str );
+}
+
+template <typename MDRange, typename Functor>
+void md_parallel_for( const std::string& str
+                    , MDRange const& range
+                    , Functor const& f
+                    )
+{
+  Impl::MDForFunctor<MDRange, Functor> g(range, f);
+
+  using range_policy = typename MDRange::range_policy;
+
+  Kokkos::parallel_for( range_policy(0, range.m_num_tiles).set_chunk_size(1), g, str );
+}
+
+}} // namespace Kokkos::Experimental
+
+#endif //KOKKOS_CORE_EXP_MD_RANGE_POLICY_HPP
+

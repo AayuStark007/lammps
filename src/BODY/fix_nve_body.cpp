@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,10 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 #include "fix_nve_body.h"
 #include "math_extra.h"
 #include "atom.h"
 #include "atom_vec_body.h"
+#include "force.h"
+#include "update.h"
+#include "memory.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
@@ -49,7 +54,7 @@ void FixNVEBody::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixNVEBody::initial_integrate(int /*vflag*/)
+void FixNVEBody::initial_integrate(int vflag)
 {
   double dtfm;
   double omega[3];

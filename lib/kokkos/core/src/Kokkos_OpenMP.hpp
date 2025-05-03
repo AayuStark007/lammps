@@ -2,11 +2,10 @@
 //@HEADER
 // ************************************************************************
 //
-//                        Kokkos v. 3.0
-//       Copyright (2020) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
+//                        Kokkos v. 2.0
+//              Copyright (2014) Sandia Corporation
 //
-// Under the terms of Contract DE-NA0003525 with NTESS,
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -24,10 +23,10 @@
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
-// THIS SOFTWARE IS PROVIDED BY NTESS "AS IS" AND ANY
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NTESS OR THE
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
 // CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 // EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
 // PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -36,7 +35,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
+// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
@@ -45,182 +44,146 @@
 #ifndef KOKKOS_OPENMP_HPP
 #define KOKKOS_OPENMP_HPP
 
-#include <Kokkos_Macros.hpp>
-#if defined(KOKKOS_ENABLE_OPENMP)
-
 #include <Kokkos_Core_fwd.hpp>
+
+#if defined( KOKKOS_HAVE_OPENMP ) && defined( _OPENMP )
+
+#include <omp.h>
 
 #include <cstddef>
 #include <iosfwd>
 #include <Kokkos_HostSpace.hpp>
-
-#ifdef KOKKOS_ENABLE_HBWSPACE
+#ifdef KOKKOS_HAVE_HBWSPACE
 #include <Kokkos_HBWSpace.hpp>
 #endif
-
 #include <Kokkos_ScratchSpace.hpp>
 #include <Kokkos_Parallel.hpp>
-#include <Kokkos_TaskScheduler.hpp>
+#include <Kokkos_TaskPolicy.hpp>
 #include <Kokkos_Layout.hpp>
 #include <impl/Kokkos_Tags.hpp>
-#include <impl/Kokkos_Profiling_Interface.hpp>
-#include <impl/Kokkos_ExecSpaceInitializer.hpp>
-
-#include <vector>
-
-/*--------------------------------------------------------------------------*/
-
-namespace Kokkos {
-
-namespace Impl {
-class OpenMPExec;
-}
-
-/// \class OpenMP
-/// \brief Kokkos device for multicore processors in the host memory space.
-class OpenMP {
- public:
-  //! Tag this class as a kokkos execution space
-  using execution_space = OpenMP;
-
-  using memory_space =
-#ifdef KOKKOS_ENABLE_HBWSPACE
-      Experimental::HBWSpace;
-#else
-      HostSpace;
-#endif
-
-  //! This execution space preferred device_type
-  using device_type          = Kokkos::Device<execution_space, memory_space>;
-  using array_layout         = LayoutRight;
-  using size_type            = memory_space::size_type;
-  using scratch_memory_space = ScratchMemorySpace<OpenMP>;
-
-  /// \brief Print configuration information to the given output stream.
-  static void print_configuration(std::ostream&, const bool verbose = false);
-
-  /// \brief is the instance running a parallel algorithm
-  inline static bool in_parallel(OpenMP const& = OpenMP()) noexcept;
-
-  /// \brief Wait until all dispatched functors complete on the given instance
-  ///
-  ///  This is a no-op on OpenMP
-  static void impl_static_fence(OpenMP const& = OpenMP()) noexcept;
-
-  void fence() const;
-
-  /// \brief Does the given instance return immediately after launching
-  /// a parallel algorithm
-  ///
-  /// This always returns false on OpenMP
-  inline static bool is_asynchronous(OpenMP const& = OpenMP()) noexcept;
-
-  /// \brief Partition the default instance into new instances without creating
-  ///  new masters
-  ///
-  /// This is a no-op on OpenMP since the default instance cannot be partitioned
-  /// without promoting other threads to 'master'
-  static std::vector<OpenMP> partition(...);
-
-  /// Non-default instances should be ref-counted so that when the last
-  /// is destroyed the instance resources are released
-  ///
-  /// This is a no-op on OpenMP since a non default instance cannot be created
-  static OpenMP create_instance(...);
-
-  /// \brief Partition the default instance and call 'f' on each new 'master'
-  /// thread
-  ///
-  /// Func is a functor with the following signiture
-  ///   void( int partition_id, int num_partitions )
-  template <typename F>
-  static void partition_master(F const& f, int requested_num_partitions = 0,
-                               int requested_partition_size = 0);
-
-  // use UniqueToken
-  static int concurrency();
-
-  static void impl_initialize(int thread_count = -1);
-
-  /// \brief is the default execution space initialized for current 'master'
-  /// thread
-  static bool impl_is_initialized() noexcept;
-
-  /// \brief Free any resources being consumed by the default execution space
-  static void impl_finalize();
-
-  inline static int impl_thread_pool_size() noexcept;
-
-  /** \brief  The rank of the executing thread in this thread pool */
-  KOKKOS_INLINE_FUNCTION
-  static int impl_thread_pool_rank() noexcept;
-
-  inline static int impl_thread_pool_size(int depth);
-
-  // use UniqueToken
-  inline static int impl_max_hardware_threads() noexcept;
-
-  // use UniqueToken
-  KOKKOS_INLINE_FUNCTION
-  static int impl_hardware_thread_id() noexcept;
-
-  static int impl_get_current_max_threads() noexcept;
-
-  static constexpr const char* name() noexcept { return "OpenMP"; }
-  uint32_t impl_instance_id() const noexcept { return 0; }
-};
-
-namespace Tools {
-namespace Experimental {
-template <>
-struct DeviceTypeTraits<OpenMP> {
-  static constexpr DeviceType id = DeviceType::OpenMP;
-};
-}  // namespace Experimental
-}  // namespace Tools
-
-namespace Impl {
-
-class OpenMPSpaceInitializer : public ExecSpaceInitializerBase {
- public:
-  OpenMPSpaceInitializer()  = default;
-  ~OpenMPSpaceInitializer() = default;
-  void initialize(const InitArguments& args) final;
-  void finalize(const bool) final;
-  void fence() final;
-  void print_configuration(std::ostream& msg, const bool detail) final;
-};
-
-}  // namespace Impl
-}  // namespace Kokkos
-
-/*--------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-namespace Kokkos {
-namespace Impl {
-
-template <>
-struct MemorySpaceAccess<Kokkos::OpenMP::memory_space,
-                         Kokkos::OpenMP::scratch_memory_space> {
-  enum : bool { assignable = false };
-  enum : bool { accessible = true };
-  enum : bool { deepcopy = false };
-};
-
-}  // namespace Impl
-}  // namespace Kokkos
-
-/*--------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-#include <OpenMP/Kokkos_OpenMP_Exec.hpp>
-#include <OpenMP/Kokkos_OpenMP_Team.hpp>
-#include <OpenMP/Kokkos_OpenMP_Parallel.hpp>
-#include <OpenMP/Kokkos_OpenMP_Task.hpp>
 
 #include <KokkosExp_MDRangePolicy.hpp>
 /*--------------------------------------------------------------------------*/
 
-#endif /* #if defined( KOKKOS_ENABLE_OPENMP ) && defined( _OPENMP ) */
+namespace Kokkos {
+
+/// \class OpenMP
+/// \brief Kokkos device for multicore processors in the host memory space.
+class OpenMP {
+public:
+  //------------------------------------
+  //! \name Type declarations that all Kokkos devices must provide.
+  //@{
+
+  //! Tag this class as a kokkos execution space
+  typedef OpenMP                execution_space ;
+  #ifdef KOKKOS_HAVE_HBWSPACE
+  typedef Experimental::HBWSpace memory_space ;
+  #else
+  typedef HostSpace             memory_space ;
+  #endif
+  //! This execution space preferred device_type
+  typedef Kokkos::Device<execution_space,memory_space> device_type;
+
+  typedef LayoutRight           array_layout ;
+  typedef memory_space::size_type  size_type ;
+
+  typedef ScratchMemorySpace< OpenMP > scratch_memory_space ;
+
+  //@}
+  //------------------------------------
+  //! \name Functions that all Kokkos execution spaces must implement.
+  //@{
+
+  inline static bool in_parallel() { return omp_in_parallel(); }
+
+  /** \brief  Set the device in a "sleep" state. A noop for OpenMP.  */
+  static bool sleep();
+
+  /** \brief Wake the device from the 'sleep' state. A noop for OpenMP. */
+  static bool wake();
+
+  /** \brief Wait until all dispatched functors complete. A noop for OpenMP. */
+  static void fence() {}
+
+  /// \brief Print configuration information to the given output stream.
+  static void print_configuration( std::ostream & , const bool detail = false );
+
+  /// \brief Free any resources being consumed by the device.
+  static void finalize();
+
+  /** \brief  Initialize the device.
+   *
+   *  1) If the hardware locality library is enabled and OpenMP has not
+   *     already bound threads then bind OpenMP threads to maximize
+   *     core utilization and group for memory hierarchy locality.
+   *
+   *  2) Allocate a HostThread for each OpenMP thread to hold its
+   *     topology and fan in/out data.
+   */
+  static void initialize( unsigned thread_count = 0 ,
+                          unsigned use_numa_count = 0 ,
+                          unsigned use_cores_per_numa = 0 );
+
+  static int is_initialized();
+
+  /** \brief  Return the maximum amount of concurrency.  */
+  static int concurrency();
+
+  //@}
+  //------------------------------------
+  /** \brief  This execution space has a topological thread pool which can be queried.
+   *
+   *  All threads within a pool have a common memory space for which they are cache coherent.
+   *    depth = 0  gives the number of threads in the whole pool.
+   *    depth = 1  gives the number of threads in a NUMA region, typically sharing L3 cache.
+   *    depth = 2  gives the number of threads at the finest granularity, typically sharing L1 cache.
+   */
+  inline static int thread_pool_size( int depth = 0 );
+
+  /** \brief  The rank of the executing thread in this thread pool */
+  KOKKOS_INLINE_FUNCTION static int thread_pool_rank();
+
+  //------------------------------------
+
+  inline static unsigned max_hardware_threads() { return thread_pool_size(0); }
+
+  KOKKOS_INLINE_FUNCTION static
+  unsigned hardware_thread_id() { return thread_pool_rank(); }
+};
+
+} // namespace Kokkos
+
+/*--------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+namespace Kokkos {
+namespace Impl {
+
+template<>
+struct VerifyExecutionCanAccessMemorySpace
+  < Kokkos::OpenMP::memory_space
+  , Kokkos::OpenMP::scratch_memory_space
+  >
+{
+  enum { value = true };
+  inline static void verify( void ) { }
+  inline static void verify( const void * ) { }
+};
+
+} // namespace Impl
+} // namespace Kokkos
+
+/*--------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+#include <OpenMP/Kokkos_OpenMPexec.hpp>
+#include <OpenMP/Kokkos_OpenMP_Parallel.hpp>
+#include <OpenMP/Kokkos_OpenMP_Task.hpp>
+
+/*--------------------------------------------------------------------------*/
+
+#endif /* #if defined( KOKKOS_HAVE_OPENMP ) && defined( _OPENMP ) */
 #endif /* #ifndef KOKKOS_OPENMP_HPP */
+
+

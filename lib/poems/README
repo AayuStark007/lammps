@@ -27,7 +27,7 @@ Rudranarayan Mukherjee (mukher@rpi.edu) - include "[POEMS]" in the subject
 
 or by mail:
 Prof. Kurt S. Anderson
-4006 Jonsson Engineering Center
+4006 Jonsson Engineering Center 	
 Rensselaer Polytechnic Institute
 110 8th Street,
 Troy, NY 12180-3510, U.S.A.
@@ -40,11 +40,6 @@ links against when using the POEMA package.
 This library must be built with a C++ compiler, before LAMMPS is
 built, so LAMMPS can link against it.
 
-You can type "make lib-poems" from the src directory to see help on
-how to build this library via make commands, or you can do the same
-thing by typing "python Install.py" from within this directory, or you
-can do it manually by following the instructions below.
-
 Build the library using one of the provided Makefile.* files or create
 your own, specific to your compiler and system.  For example:
 
@@ -53,8 +48,8 @@ make -f Makefile.g++
 When you are done building this library, two files should
 exist in this directory:
 
-libpoems.a              the library LAMMPS will link against
-Makefile.lammps         settings the LAMMPS Makefile will import
+libpoems.a		the library LAMMPS will link against
+Makefile.lammps		settings the LAMMPS Makefile will import
 
 Makefile.lammps is created by the make command, by copying one of the
 Makefile.lammps.* files.  See the EXTRAMAKE setting at the top of the

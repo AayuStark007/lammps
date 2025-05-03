@@ -13,10 +13,10 @@ message_logger &message_logger::global(){
   return *glogp;
 }
 
-message_logger *message_logger::glogp=nullptr;
+message_logger *message_logger::glogp=NULL;
 stdfile_logger default_log("",0,stdout,stderr,vblALLBAD|vblMESS1,vblFATAL,1);
 
-const char *logfmt(const char *format,...){
+const char *fmt(const char *format,...){
   va_list args;
   va_start(args,format);
   static char buff[1024];

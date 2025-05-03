@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -24,30 +24,18 @@ class ImbalanceGroup : public Imbalance {
   virtual ~ImbalanceGroup();
 
   // parse options, return number of arguments consumed
-  virtual int options(int, char **) override;
+  virtual int options(int, char **);
   // compute and apply weight factors to local atom array
-  virtual void compute(double *) override;
+  virtual void compute(double *);
   // print information about the state of this imbalance compute
-  virtual std::string info() override;
+  virtual void info(FILE *);
 
  private:
-  int num;           // number of groups with weights
-  int *id;           // numerical IDs of groups
-  double *factor;    // group weight factors
+  int num;                     // number of groups with weights
+  int *id;                     // numerical IDs of groups
+  double *factor;              // group weight factors
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
-
-/* ERROR/WARNING messages:
-
-E: Illegal ... command
-
-UNDOCUMENTED
-
-E: Unknown group in balance weight command
-
-UNDOCUMENTED
-
-*/

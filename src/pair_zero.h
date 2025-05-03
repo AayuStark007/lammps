@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 
    Pair zero is a dummy pair interaction useful for requiring a
-   force cutoff distance in the absence of pair-interactions or
+   force cutoff distance in the absense of pair-interactions or
    with hybrid/overlay if a larger force cutoff distance is required.
 
    This can be used in conjunction with bond/create to create bonds
@@ -22,9 +22,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(zero,PairZero);
-// clang-format on
+
+PairStyle(zero,PairZero)
+
 #else
 
 #ifndef LMP_PAIR_ZERO_H
@@ -39,7 +39,6 @@ class PairZero : public Pair {
   PairZero(class LAMMPS *);
   virtual ~PairZero();
   virtual void compute(int, int);
-  virtual void compute_outer(int, int);
   void settings(int, char **);
   void coeff(int, char **);
   double init_one(int, int);
@@ -49,7 +48,6 @@ class PairZero : public Pair {
   void read_restart_settings(FILE *);
   void write_data(FILE *);
   void write_data_all(FILE *);
-  double single(int, int, int, int, double, double, double, double &);
 
  protected:
   double cut_global;
@@ -59,7 +57,7 @@ class PairZero : public Pair {
   virtual void allocate();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -76,7 +74,7 @@ E: Incorrect args for pair coefficients
 
 Self-explanatory.  Check the input script or data file.
 
-U: Pair cutoff < Respa interior cutoff
+E: Pair cutoff < Respa interior cutoff
 
 One or more pairwise cutoffs are too short to use with the specified
 rRESPA cutoffs.

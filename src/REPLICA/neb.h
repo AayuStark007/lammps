@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,55 +12,53 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(neb,NEB);
-// clang-format on
+
+CommandStyle(neb,NEB)
+
 #else
 
 #ifndef LMP_NEB_H
 #define LMP_NEB_H
 
-#include "command.h"
+#include <stdio.h>
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class NEB : public Command {
+class NEB : protected Pointers {
  public:
   NEB(class LAMMPS *);
   NEB(class LAMMPS *, double, double, int, int, int, double *, double *);
   ~NEB();
-  void command(int, char **);    // process neb command
-  void run();                    // run NEB
+  void command(int, char **);  // process neb command
+  void run();                  // run NEB
 
-  double ebf, ebr;    // forward and reverse energy barriers
+  double ebf,ebr;              // forward and reverse energy barriers
 
  private:
-  int me, me_universe;    // my proc ID in world and universe
-  int ireplica, nreplica;
-  bool verbose;
+  int me,me_universe;          // my proc ID in world and universe
+  int ireplica,nreplica;
   MPI_Comm uworld;
-  MPI_Comm roots;    // MPI comm with 1 root proc from each world
+  MPI_Comm roots;              // MPI comm with 1 root proc from each world
   FILE *fp;
   int compressed;
-  double etol;             // energy tolerance convergence criterion
-  double ftol;             // force tolerance convergence criterion
-  int n1steps, n2steps;    // number of steps in stage 1 and 2
-  int nevery;              // output interval
-  char *inpfile;           // name of file containing final state
+  double etol;                 // energy tolerance convergence criterion
+  double ftol;                 // force tolerance convergence criterion
+  int n1steps, n2steps;        // number of steps in stage 1 and 2
+  int nevery;                  // output interval
+  char *infile;                // name of file containing final state
 
   class FixNEB *fneb;
-  int numall;                // per-replica dimension of array all
-  double **all;              // PE,plen,nlen,gradvnorm from each replica
-  double *rdist;             // normalize reaction distance, 0 to 1
-  double *freplica;          // force on an image
-  double *fmaxatomInRepl;    // force on an image
+  int nall;                    // per-replica dimension of array all
+  double **all;                // PE,plen,nlen,gradvnorm from each replica
+  double *rdist;               // normalize reaction distance, 0 to 1
 
   void readfile(char *, int);
   void open(char *);
   void print_status();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -81,6 +79,14 @@ E: Cannot use NEB with a single replica
 
 Self-explanatory.
 
+E: Can only use NEB with 1-processor replicas
+
+This is current restriction for NEB as implemented in LAMMPS.
+
+E: Cannot use NEB with atom_modify sort enabled
+
+This is current restriction for NEB implemented in LAMMPS.
+
 E: Cannot use NEB unless atom map exists
 
 Use the atom_modify command to create an atom map.
@@ -100,7 +106,7 @@ for NEB.
 
 E: Too many timesteps
 
-The cumulative timesteps must fit in a 64-bit integer.
+The cummulative timesteps must fit in a 64-bit integer.
 
 E: Unexpected end of neb file
 
@@ -124,13 +130,5 @@ E: Cannot open file %s
 The specified file cannot be opened.  Check that the path and name are
 correct. If the file is a compressed file, also check that the gzip
 executable can be found and run.
-
-U: Can only use NEB with 1-processor replicas
-
-This is current restriction for NEB as implemented in LAMMPS.
-
-U: Cannot use NEB with atom_modify sort enabled
-
-This is current restriction for NEB implemented in LAMMPS.
 
 */

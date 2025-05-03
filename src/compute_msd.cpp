@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,17 +11,15 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "compute_msd.h"
-
 #include "atom.h"
-#include "domain.h"
-#include "error.h"
-#include "fix_store.h"
-#include "group.h"
-#include "modify.h"
 #include "update.h"
-
-#include <cstring>
+#include "group.h"
+#include "domain.h"
+#include "modify.h"
+#include "fix_store.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -30,7 +27,7 @@ using namespace LAMMPS_NS;
 
 ComputeMSD::ComputeMSD(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  id_fix(nullptr)
+  id_fix(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute msd command");
 
@@ -65,9 +62,21 @@ ComputeMSD::ComputeMSD(LAMMPS *lmp, int narg, char **arg) :
   // create a new fix STORE style for reference positions
   // id = compute-ID + COMPUTE_STORE, fix group = compute group
 
-  id_fix = utils::strdup(id + std::string("_COMPUTE_STORE"));
-  fix = (FixStore *) modify->add_fix(fmt::format("{} {} STORE peratom 1 3",
-                                                 id_fix, group->names[igroup]));
+  int n = strlen(id) + strlen("_COMPUTE_STORE") + 1;
+  id_fix = new char[n];
+  strcpy(id_fix,id);
+  strcat(id_fix,"_COMPUTE_STORE");
+
+  char **newarg = new char*[6];
+  newarg[0] = id_fix;
+  newarg[1] = group->names[igroup];
+  newarg[2] = (char *) "STORE";
+  newarg[3] = (char *) "peratom";
+  newarg[4] = (char *) "1";
+  newarg[5] = (char *) "3";
+  modify->add_fix(6,newarg);
+  fix = (FixStore *) modify->fix[modify->nfix-1];
+  delete [] newarg;
 
   // calculate xu,yu,zu for fix store array
   // skip if reset from restart file
@@ -106,7 +115,7 @@ ComputeMSD::ComputeMSD(LAMMPS *lmp, int narg, char **arg) :
 
   // displacement vector
 
-  vector = new double[size_vector];
+  vector = new double[4];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -189,17 +198,17 @@ void ComputeMSD::compute_vector()
         xbox = (image[i] & IMGMASK) - IMGMAX;
         ybox = (image[i] >> IMGBITS & IMGMASK) - IMGMAX;
         zbox = (image[i] >> IMG2BITS) - IMGMAX;
-        xtmp = x[i][0] + xbox*xprd - cm[0];
-        ytmp = x[i][1] + ybox*yprd - cm[1];
-        ztmp = x[i][2] + zbox*zprd - cm[2];
+	xtmp = x[i][0] + xbox*xprd - cm[0];
+	ytmp = x[i][1] + ybox*yprd - cm[1];
+	ztmp = x[i][2] + zbox*zprd - cm[2];
 
-        // use running average position for reference if requested
+	// use running average position for reference if requested
 
-        if (avflag) {
-          xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-          xoriginal[i][1] = (xoriginal[i][1]*naverage + ytmp)*navfac;
-          xoriginal[i][2] = (xoriginal[i][2]*naverage + ztmp)*navfac;
-        }
+	if (avflag) {
+	  xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+	  xoriginal[i][1] = (xoriginal[i][1]*naverage + ytmp)*navfac;
+	  xoriginal[i][2] = (xoriginal[i][2]*naverage + ztmp)*navfac;
+	}
 
         dx = xtmp - xoriginal[i][0];
         dy = ytmp - xoriginal[i][1];
@@ -220,13 +229,13 @@ void ComputeMSD::compute_vector()
         ytmp = x[i][1] + h[1]*ybox + h[3]*zbox - cm[1];
         ztmp = x[i][2] + h[2]*zbox - cm[2];
 
-        // use running average position for reference if requested
+	// use running average position for reference if requested
 
-        if (avflag) {
-          xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-          xoriginal[i][1] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-          xoriginal[i][2] = (xoriginal[i][0]*naverage + xtmp)*navfac;
-        }
+	if (avflag) {
+	  xoriginal[i][0] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+	  xoriginal[i][1] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+	  xoriginal[i][2] = (xoriginal[i][0]*naverage + xtmp)*navfac;
+	}
 
         dx = xtmp - xoriginal[i][0];
         dy = ytmp - xoriginal[i][1];

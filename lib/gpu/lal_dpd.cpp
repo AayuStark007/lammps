@@ -23,7 +23,7 @@ const char *dpd=0;
 
 #include "lal_dpd.h"
 #include <cassert>
-namespace LAMMPS_AL {
+using namespace LAMMPS_AL;
 #define DPDT DPD<numtyp, acctyp>
 
 extern Device<PRECISION,ACC_PRECISION> device;
@@ -52,31 +52,15 @@ int DPDT::init(const int ntypes,
                const int max_nbors, const int maxspecial,
                const double cell_size,
                const double gpu_split, FILE *_screen) {
-  const int max_shared_types=this->device->max_shared_types();
-
-  int onetype=0;
-  #ifdef USE_OPENCL
-  if (maxspecial==0)
-    for (int i=1; i<ntypes; i++)
-      for (int j=i; j<ntypes; j++)
-        if (host_cutsq[i][j]>0) {
-          if (onetype>0)
-            onetype=-1;
-          else if (onetype==0)
-            onetype=i*max_shared_types+j;
-        }
-  if (onetype<0) onetype=0;
-  #endif
-
   int success;
-  success=this->init_atomic(nlocal,nall,max_nbors,maxspecial,cell_size,
-                            gpu_split,_screen,dpd,"k_dpd",onetype);
+  success=this->init_atomic(nlocal,nall,max_nbors,maxspecial,cell_size,gpu_split,_screen,dpd,"k_dpd");
   if (success!=0)
     return success;
 
   // If atom type constants fit in shared memory use fast kernel
   int lj_types=ntypes;
   shared_types=false;
+  int max_shared_types=this->device->max_shared_types();
   if (lj_types<=max_shared_types && this->_block_size>=max_shared_types) {
     lj_types=max_shared_types;
     shared_types=true;
@@ -133,9 +117,20 @@ double DPDT::host_memory_usage() const {
 // Calculate energies, forces, and torques
 // ---------------------------------------------------------------------------
 template <class numtyp, class acctyp>
-int DPDT::loop(const int eflag, const int vflag) {
+void DPDT::loop(const bool _eflag, const bool _vflag) {
   // Compute the block size and grid size to keep all cores busy
   const int BX=this->block_size();
+  int eflag, vflag;
+  if (_eflag)
+    eflag=1;
+  else
+    eflag=0;
+
+  if (_vflag)
+    vflag=1;
+  else
+    vflag=0;
+
   int GX=static_cast<int>(ceil(static_cast<double>(this->ans->inum())/
                                (BX/this->_threads_per_atom)));
 
@@ -143,8 +138,8 @@ int DPDT::loop(const int eflag, const int vflag) {
   int nbor_pitch=this->nbor->nbor_pitch();
   this->time_pair.start();
   if (shared_types) {
-    this->k_pair_sel->set_size(GX,BX);
-    this->k_pair_sel->run(&this->atom->x, &coeff, &sp_lj,
+    this->k_pair_fast.set_size(GX,BX);
+    this->k_pair_fast.run(&this->atom->x, &coeff, &sp_lj,
                           &this->nbor->dev_nbor, &this->_nbor_data->begin(),
                           &this->ans->force, &this->ans->engv, &eflag,
                           &vflag, &ainum, &nbor_pitch, &this->atom->v, &cutsq,
@@ -160,7 +155,6 @@ int DPDT::loop(const int eflag, const int vflag) {
                      &this->_threads_per_atom);
   }
   this->time_pair.stop();
-  return GX;
 }
 
 template <class numtyp, class acctyp>
@@ -174,4 +168,3 @@ void DPDT::update_coeff(int ntypes, double **host_a0, double **host_gamma,
 }
 
 template class DPD<PRECISION,ACC_PRECISION>;
-}

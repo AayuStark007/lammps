@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,15 +15,16 @@
    Contributing author: Carsten Svaneborg (SDU)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "angle_zero.h"
-
 #include "atom.h"
+#include "force.h"
 #include "comm.h"
 #include "math_const.h"
 #include "memory.h"
 #include "error.h"
-
-#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -47,7 +47,8 @@ AngleZero::~AngleZero()
 
 void AngleZero::compute(int eflag, int vflag)
 {
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -87,11 +88,11 @@ void AngleZero::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  utils::bounds(FLERR,arg[0],1,atom->nangletypes,ilo,ihi,error);
+  force->bounds(FLERR,arg[0],atom->nangletypes,ilo,ihi);
 
   double theta0_one = 0.0;
   if (coeffflag && (narg == 2))
-    theta0_one = utils::numeric(FLERR,arg[1],false,lmp);
+    theta0_one = force->numeric(FLERR,arg[1]);
 
   // convert theta0 from degrees to radians
 
@@ -129,7 +130,7 @@ void AngleZero::read_restart(FILE *fp)
   allocate();
 
   if (comm->me == 0) {
-    utils::sfread(FLERR,&theta0[1],sizeof(double),atom->nangletypes,fp,nullptr,error);
+    fread(&theta0[1],sizeof(double),atom->nangletypes,fp);
   }
   MPI_Bcast(&theta0[1],atom->nangletypes,MPI_DOUBLE,0,world);
 
@@ -147,7 +148,7 @@ void AngleZero::write_data(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double AngleZero::single(int /*type*/, int /*i1*/, int /*i2*/, int /*i3*/)
+double AngleZero::single(int type, int i1, int i2, int i3)
 {
   return 0.0;
 }

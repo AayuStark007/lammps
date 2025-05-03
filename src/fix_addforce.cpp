@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,21 +11,22 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
 #include "fix_addforce.h"
-
 #include "atom.h"
 #include "atom_masks.h"
-#include "domain.h"
-#include "error.h"
-#include "input.h"
-#include "memory.h"
+#include "accelerator_kokkos.h"
+#include "update.h"
 #include "modify.h"
+#include "domain.h"
 #include "region.h"
 #include "respa.h"
-#include "update.h"
+#include "input.h"
 #include "variable.h"
-
-#include <cstring>
+#include "memory.h"
+#include "error.h"
+#include "force.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -37,8 +37,8 @@ enum{NONE,CONSTANT,EQUAL,ATOM};
 
 FixAddForce::FixAddForce(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  xstr(nullptr), ystr(nullptr), zstr(nullptr), estr(nullptr),
-  idregion(nullptr), sforce(nullptr)
+  xstr(NULL), ystr(NULL), zstr(NULL), estr(NULL), idregion(NULL), sforce(NULL)
+
 {
   if (narg < 6) error->all(FLERR,"Illegal fix addforce command");
 
@@ -49,29 +49,33 @@ FixAddForce::FixAddForce(LAMMPS *lmp, int narg, char **arg) :
   global_freq = 1;
   extscalar = 1;
   extvector = 1;
-  energy_global_flag = 1;
-  virial_global_flag = virial_peratom_flag = 1;
   respa_level_support = 1;
   ilevel_respa = 0;
 
-  xstr = ystr = zstr = nullptr;
+  xstr = ystr = zstr = NULL;
 
-  if (utils::strmatch(arg[3],"^v_")) {
-    xstr = utils::strdup(arg[3]+2);
+  if (strstr(arg[3],"v_") == arg[3]) {
+    int n = strlen(&arg[3][2]) + 1;
+    xstr = new char[n];
+    strcpy(xstr,&arg[3][2]);
   } else {
-    xvalue = utils::numeric(FLERR,arg[3],false,lmp);
+    xvalue = force->numeric(FLERR,arg[3]);
     xstyle = CONSTANT;
   }
-  if (utils::strmatch(arg[4],"^v_")) {
-    ystr = utils::strdup(arg[4]+2);
+  if (strstr(arg[4],"v_") == arg[4]) {
+    int n = strlen(&arg[4][2]) + 1;
+    ystr = new char[n];
+    strcpy(ystr,&arg[4][2]);
   } else {
-    yvalue = utils::numeric(FLERR,arg[4],false,lmp);
+    yvalue = force->numeric(FLERR,arg[4]);
     ystyle = CONSTANT;
   }
-  if (utils::strmatch(arg[5],"^v_")) {
-    zstr = utils::strdup(arg[5]+2);
+  if (strstr(arg[5],"v_") == arg[5]) {
+    int n = strlen(&arg[5][2]) + 1;
+    zstr = new char[n];
+    strcpy(zstr,&arg[5][2]);
   } else {
-    zvalue = utils::numeric(FLERR,arg[5],false,lmp);
+    zvalue = force->numeric(FLERR,arg[5]);
     zstyle = CONSTANT;
   }
 
@@ -84,7 +88,7 @@ FixAddForce::FixAddForce(LAMMPS *lmp, int narg, char **arg) :
   while (iarg < narg) {
     if (strcmp(arg[iarg],"every") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix addforce command");
-      nevery = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      nevery = atoi(arg[iarg+1]);
       if (nevery <= 0) error->all(FLERR,"Illegal fix addforce command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"region") == 0) {
@@ -92,12 +96,16 @@ FixAddForce::FixAddForce(LAMMPS *lmp, int narg, char **arg) :
       iregion = domain->find_region(arg[iarg+1]);
       if (iregion == -1)
         error->all(FLERR,"Region ID for fix addforce does not exist");
-      idregion = utils::strdup(arg[iarg+1]);
+      int n = strlen(arg[iarg+1]) + 1;
+      idregion = new char[n];
+      strcpy(idregion,arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"energy") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix addforce command");
-      if (utils::strmatch(arg[iarg+1],"^v_")) {
-        estr = utils::strdup(arg[iarg+1]+2);
+      if (strstr(arg[iarg+1],"v_") == arg[iarg+1]) {
+        int n = strlen(&arg[iarg+1][2]) + 1;
+        estr = new char[n];
+        strcpy(estr,&arg[iarg+1][2]);
       } else error->all(FLERR,"Illegal fix addforce command");
       iarg += 2;
     } else error->all(FLERR,"Illegal fix addforce command");
@@ -130,6 +138,7 @@ int FixAddForce::setmask()
 
   int mask = 0;
   mask |= POST_FORCE;
+  mask |= THERMO_ENERGY;
   mask |= POST_FORCE_RESPA;
   mask |= MIN_POST_FORCE;
   return mask;
@@ -194,7 +203,7 @@ void FixAddForce::init()
       update->whichflag == 2 && estyle == NONE)
     error->all(FLERR,"Must use variable energy with fix addforce");
 
-  if (utils::strmatch(update->integrate_style,"^respa")) {
+  if (strstr(update->integrate_style,"respa")) {
     ilevel_respa = ((Respa *) update->integrate)->nlevels-1;
     if (respa_level >= 0) ilevel_respa = MIN(respa_level,ilevel_respa);
   }
@@ -204,7 +213,7 @@ void FixAddForce::init()
 
 void FixAddForce::setup(int vflag)
 {
-  if (utils::strmatch(update->integrate_style,"^verlet"))
+  if (strstr(update->integrate_style,"verlet"))
     post_force(vflag);
   else {
     ((Respa *) update->integrate)->copy_flevel_f(ilevel_respa);
@@ -228,14 +237,9 @@ void FixAddForce::post_force(int vflag)
   double **f = atom->f;
   int *mask = atom->mask;
   imageint *image = atom->image;
-  double v[6];
   int nlocal = atom->nlocal;
 
   if (update->ntimestep % nevery) return;
-
-  // virial setup
-
-  v_init(vflag);
 
   if (lmp->kokkos)
     atom->sync_modify(Host, (unsigned int) (F_MASK | MASK_MASK),
@@ -243,7 +247,7 @@ void FixAddForce::post_force(int vflag)
 
   // update region if necessary
 
-  Region *region = nullptr;
+  Region *region = NULL;
   if (iregion >= 0) {
     region = domain->regions[iregion];
     region->prematch();
@@ -279,15 +283,6 @@ void FixAddForce::post_force(int vflag)
         f[i][0] += xvalue;
         f[i][1] += yvalue;
         f[i][2] += zvalue;
-        if (evflag) {
-          v[0] = xvalue * unwrap[0];
-          v[1] = yvalue * unwrap[1];
-          v[2] = zvalue * unwrap[2];
-          v[3] = xvalue * unwrap[1];
-          v[4] = xvalue * unwrap[2];
-          v[5] = yvalue * unwrap[2];
-          v_tally(i,v);
-        }
       }
 
   // variable force, wrap with clear/add
@@ -295,7 +290,6 @@ void FixAddForce::post_force(int vflag)
   // wrap with clear/add
 
   } else {
-    double unwrap[3];
 
     modify->clearstep_compute();
 
@@ -313,45 +307,26 @@ void FixAddForce::post_force(int vflag)
 
     modify->addstep_compute(update->ntimestep + 1);
 
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
         if (region && !region->match(x[i][0],x[i][1],x[i][2])) continue;
-        domain->unmap(x[i],image[i],unwrap);
-        if (xstyle == ATOM) xvalue = sforce[i][0];
-        if (ystyle == ATOM) yvalue = sforce[i][1];
-        if (zstyle == ATOM) zvalue = sforce[i][2];
-
-        if (estyle == ATOM) {
-          foriginal[0] += sforce[i][3];
-        } else {
-          if (xstyle) foriginal[0] -= xvalue*unwrap[0];
-          if (ystyle) foriginal[0] -= yvalue*unwrap[1];
-          if (zstyle) foriginal[0] -= zvalue*unwrap[2];
-        }
+        if (estyle == ATOM) foriginal[0] += sforce[i][3];
         foriginal[1] += f[i][0];
         foriginal[2] += f[i][1];
         foriginal[3] += f[i][2];
-
-        if (xstyle) f[i][0] += xvalue;
-        if (ystyle) f[i][1] += yvalue;
-        if (zstyle) f[i][2] += zvalue;
-        if (evflag) {
-          v[0] = xstyle ? xvalue*unwrap[0] : 0.0;
-          v[1] = ystyle ? yvalue*unwrap[1] : 0.0;
-          v[2] = zstyle ? zvalue*unwrap[2] : 0.0;
-          v[3] = xstyle ? xvalue*unwrap[1] : 0.0;
-          v[4] = xstyle ? xvalue*unwrap[2] : 0.0;
-          v[5] = ystyle ? yvalue*unwrap[2] : 0.0;
-          v_tally(i,v);
-        }
+        if (xstyle == ATOM) f[i][0] += sforce[i][0];
+        else if (xstyle) f[i][0] += xvalue;
+        if (ystyle == ATOM) f[i][1] += sforce[i][1];
+        else if (ystyle) f[i][1] += yvalue;
+        if (zstyle == ATOM) f[i][2] += sforce[i][2];
+        else if (zstyle) f[i][2] += zvalue;
       }
-    }
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixAddForce::post_force_respa(int vflag, int ilevel, int /*iloop*/)
+void FixAddForce::post_force_respa(int vflag, int ilevel, int iloop)
 {
   if (ilevel == ilevel_respa) post_force(vflag);
 }

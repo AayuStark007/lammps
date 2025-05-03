@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,13 @@
 ------------------------------------------------------------------------- */
 
 #ifdef DIHEDRAL_CLASS
-// clang-format off
-DihedralStyle(opls/kk,DihedralOPLSKokkos<LMPDeviceType>);
-DihedralStyle(opls/kk/device,DihedralOPLSKokkos<LMPDeviceType>);
-DihedralStyle(opls/kk/host,DihedralOPLSKokkos<LMPHostType>);
-// clang-format on
+
+DihedralStyle(opls/kk,DihedralOPLSKokkos<LMPDeviceType>)
+DihedralStyle(opls/kk/device,DihedralOPLSKokkos<LMPDeviceType>)
+DihedralStyle(opls/kk/host,DihedralOPLSKokkos<LMPHostType>)
+
 #else
 
-// clang-format off
 #ifndef LMP_DIHEDRAL_OPLS_KOKKOS_H
 #define LMP_DIHEDRAL_OPLS_KOKKOS_H
 
@@ -40,9 +39,8 @@ class DihedralOPLSKokkos : public DihedralOPLS {
 
   DihedralOPLSKokkos(class LAMMPS *);
   virtual ~DihedralOPLSKokkos();
-  void compute(int, int);
-  void coeff(int, char **);
-  void read_restart(FILE *);
+  virtual void compute(int, int);
+  virtual void coeff(int, char **);
 
   template<int NEWTON_BOND, int EVFLAG>
   KOKKOS_INLINE_FUNCTION
@@ -70,8 +68,8 @@ class DihedralOPLSKokkos : public DihedralOPLS {
 
   DAT::tdual_efloat_1d k_eatom;
   DAT::tdual_virial_array k_vatom;
-  typename ArrayTypes<DeviceType>::t_efloat_1d d_eatom;
-  typename ArrayTypes<DeviceType>::t_virial_array d_vatom;
+  DAT::t_efloat_1d d_eatom;
+  DAT::t_virial_array d_vatom;
 
   int nlocal,newton_bond;
   int eflag,vflag;
@@ -85,12 +83,12 @@ class DihedralOPLSKokkos : public DihedralOPLS {
   DAT::tdual_ffloat_1d k_k3;
   DAT::tdual_ffloat_1d k_k4;
 
-  typename AT::t_ffloat_1d d_k1;
-  typename AT::t_ffloat_1d d_k2;
-  typename AT::t_ffloat_1d d_k3;
-  typename AT::t_ffloat_1d d_k4;
+  DAT::t_ffloat_1d d_k1;
+  DAT::t_ffloat_1d d_k2;
+  DAT::t_ffloat_1d d_k3;
+  DAT::t_ffloat_1d d_k4;
 
-  void allocate();
+  virtual void allocate();
 };
 
 }

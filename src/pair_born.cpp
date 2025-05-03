@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,10 +15,11 @@
    Contributing Author: Sai Jayaraman (Sandia)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_born.h"
-
-#include <cmath>
-#include <cstring>
 #include "atom.h"
 #include "comm.h"
 #include "force.h"
@@ -27,7 +27,6 @@
 #include "math_const.h"
 #include "memory.h"
 #include "error.h"
-
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -72,7 +71,8 @@ void PairBorn::compute(int eflag, int vflag)
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   evdwl = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -178,14 +178,14 @@ void PairBorn::settings(int narg, char **arg)
 {
   if (narg != 1) error->all(FLERR,"Illegal pair_style command");
 
-  cut_global = utils::numeric(FLERR,arg[0],false,lmp);
+  cut_global = force->numeric(FLERR,arg[0]);
 
   // reset cutoffs that have been explicitly set
 
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i; j <= atom->ntypes; j++)
+      for (j = i+1; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -200,18 +200,18 @@ void PairBorn::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
-  double a_one = utils::numeric(FLERR,arg[2],false,lmp);
-  double rho_one = utils::numeric(FLERR,arg[3],false,lmp);
-  double sigma_one = utils::numeric(FLERR,arg[4],false,lmp);
+  double a_one = force->numeric(FLERR,arg[2]);
+  double rho_one = force->numeric(FLERR,arg[3]);
+  double sigma_one = force->numeric(FLERR,arg[4]);
   if (rho_one <= 0) error->all(FLERR,"Incorrect args for pair coefficients");
-  double c_one = utils::numeric(FLERR,arg[5],false,lmp);
-  double d_one = utils::numeric(FLERR,arg[6],false,lmp);
+  double c_one = force->numeric(FLERR,arg[5]);
+  double d_one = force->numeric(FLERR,arg[6]);
 
   double cut_one = cut_global;
-  if (narg == 8) cut_one = utils::numeric(FLERR,arg[7],false,lmp);
+  if (narg == 8) cut_one = force->numeric(FLERR,arg[7]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -243,7 +243,7 @@ double PairBorn::init_one(int i, int j)
   born2[i][j] = 6.0*c[i][j];
   born3[i][j] = 8.0*d[i][j];
 
-  if (offset_flag && (cut[i][j] > 0.0)) {
+  if (offset_flag) {
     double rexp = exp((sigma[i][j]-cut[i][j])*rhoinv[i][j]);
     offset[i][j] = a[i][j]*rexp - c[i][j]/pow(cut[i][j],6.0) +
       d[i][j]/pow(cut[i][j],8.0);
@@ -331,16 +331,16 @@ void PairBorn::read_restart(FILE *fp)
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++)
     for (j = i; j <= atom->ntypes; j++) {
-      if (me == 0) utils::sfread(FLERR,&setflag[i][j],sizeof(int),1,fp,nullptr,error);
+      if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
       if (setflag[i][j]) {
         if (me == 0) {
-          utils::sfread(FLERR,&a[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&rho[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&sigma[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&c[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&d[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&cut[i][j],sizeof(double),1,fp,nullptr,error);
+          fread(&a[i][j],sizeof(double),1,fp);
+          fread(&rho[i][j],sizeof(double),1,fp);
+          fread(&sigma[i][j],sizeof(double),1,fp);
+          fread(&c[i][j],sizeof(double),1,fp);
+          fread(&d[i][j],sizeof(double),1,fp);
+          fread(&cut[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&a[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&rho[i][j],1,MPI_DOUBLE,0,world);
@@ -371,10 +371,10 @@ void PairBorn::write_restart_settings(FILE *fp)
 void PairBorn::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
-    utils::sfread(FLERR,&cut_global,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&offset_flag,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&mix_flag,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&tail_flag,sizeof(int),1,fp,nullptr,error);
+    fread(&cut_global,sizeof(double),1,fp);
+    fread(&offset_flag,sizeof(int),1,fp);
+    fread(&mix_flag,sizeof(int),1,fp);
+    fread(&tail_flag,sizeof(int),1,fp);
   }
   MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
@@ -407,8 +407,8 @@ void PairBorn::write_data_all(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairBorn::single(int /*i*/, int /*j*/, int itype, int jtype,
-                        double rsq, double /*factor_coul*/, double factor_lj,
+double PairBorn::single(int i, int j, int itype, int jtype,
+                        double rsq, double factor_coul, double factor_lj,
                         double &fforce)
 {
   double r2inv,r6inv,r,rexp,forceborn,phiborn;
@@ -434,5 +434,5 @@ void *PairBorn::extract(const char *str, int &dim)
   if (strcmp(str,"a") == 0) return (void *) a;
   if (strcmp(str,"c") == 0) return (void *) c;
   if (strcmp(str,"d") == 0) return (void *) d;
-  return nullptr;
+  return NULL;
 }

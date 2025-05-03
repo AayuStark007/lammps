@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,8 +15,8 @@
    Contributing author: Jonathan Lee (Sandia)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
 #include "fix_wall_lj1043.h"
-#include <cmath>
 #include "atom.h"
 #include "math_const.h"
 
@@ -27,10 +26,7 @@ using namespace MathConst;
 /* ---------------------------------------------------------------------- */
 
 FixWallLJ1043::FixWallLJ1043(LAMMPS *lmp, int narg, char **arg) :
-  FixWall(lmp, narg, arg)
-{
-  dynamic_group_allow = 1;
-}
+  FixWall(lmp, narg, arg) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -48,7 +44,7 @@ void FixWallLJ1043::precompute(int m)
   double r2inv = rinv*rinv;
   double r4inv = r2inv*r2inv;
   offset[m] = coeff1[m]*r4inv*r4inv*r2inv - coeff2[m]*r4inv -
-        coeff3[m]*pow(cutoff[m]+coeff4[m],-3.0);
+	coeff3[m]*pow(cutoff[m]+coeff4[m],-3.0);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -56,7 +52,6 @@ void FixWallLJ1043::precompute(int m)
 void FixWallLJ1043::wall_particle(int m, int which, double coord)
 {
   double delta,rinv,r2inv,r4inv,r10inv,fwall;
-  double vn;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -79,16 +74,10 @@ void FixWallLJ1043::wall_particle(int m, int which, double coord)
       r10inv = r4inv*r4inv*r2inv;
 
       fwall = side * (coeff5[m]*r10inv*rinv - coeff6[m]*r4inv*rinv -
-        coeff7[m]*pow(delta+coeff4[m],-4.0));
+	coeff7[m]*pow(delta+coeff4[m],-4.0));
       f[i][dim] -= fwall;
       ewall[0] += coeff1[m]*r10inv - coeff2[m]*r4inv -
-        coeff3[m]*pow(delta+coeff4[m],-3.0) - offset[m];
+	coeff3[m]*pow(delta+coeff4[m],-3.0) - offset[m];
       ewall[m+1] += fwall;
-
-      if (evflag) {
-        if (side < 0) vn = -fwall*delta;
-        else vn = fwall*delta;
-        v_tally(dim, i, vn);
-      }
     }
 }

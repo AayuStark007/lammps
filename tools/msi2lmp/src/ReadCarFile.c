@@ -73,10 +73,12 @@ void ReadCarFile(void)
   int skip;                    /* lines to skip at beginning of file */
   double lowest, highest;      /* temp coordinate finding variables */
   double total_q;
+  double sq_c;
   double cos_alpha;  /* Added by SLTM Sept 13, 2010 */
   double cos_gamma;
   double sin_gamma;
   double cos_beta;
+  double sin_beta;
   double A, B, C;
   double center[3];
   double hmat[6];
@@ -227,7 +229,7 @@ void ReadCarFile(void)
   /* Search coordinates to find lowest and highest for x, y, and z */
 
   if (periodic == 0) {
-    /* Added if/else statement STLM Oct 5 2010 */
+    /* Added if/else statment STLM Oct 5 2010 */
     if (TriclinicFlag == 0) {
       /* no need to re-center the box, if we use min/max values */
       center[0] = center[1] = center[2] = 0.0;
@@ -259,11 +261,12 @@ void ReadCarFile(void)
         box[2][k] =  0.0;
       }
     } else {
-      double ly,lz;
+      sq_c = pbc[2]*pbc[2];
       cos_alpha = cos(pbc[3]*PI_180);
       cos_gamma = cos(pbc[5]*PI_180);
       sin_gamma = sin(pbc[5]*PI_180);
       cos_beta =  cos(pbc[4]*PI_180);
+      sin_beta =  sin(pbc[4]*PI_180);
       if (pflag > 2) {
         printf(" pbc[3] %f pbc[4] %f pbc[5] %f\n", pbc[3] ,pbc[4] ,pbc[5]);
         printf(" cos_alpha %f cos_beta %f cos_gamma %f\n", cos_alpha ,cos_beta ,cos_gamma);
@@ -272,23 +275,16 @@ void ReadCarFile(void)
       B = pbc[1];
       C = pbc[2];
 
-      /* compute xy, xz, and yz */
-      box[2][0] =  B * cos_gamma;
-      box[2][1] =  C * cos_beta;
-      if (fabs(sin_gamma) > 0.0001)
-        box[2][2] =  C*(cos_alpha-cos_gamma*cos_beta)/sin_gamma;
-      else box[2][2] = 0.0;
 
       box[0][0] = -0.5*A + center[0] + shift[0];
       box[1][0] =  0.5*A + center[0] + shift[0];
-
-      /* compute adjusted box length for y and z and apply */
-      ly = sqrt(B*B - box[2][0]*box[2][0]);
-      lz = sqrt(C*C - box[2][1]*box[2][1] - box[2][2]*box[2][2]);
-      box[0][1] = -0.5*ly + center[1] + shift[1];
-      box[1][1] =  0.5*ly + center[1] + shift[1];
-      box[0][2] = -0.5*lz + center[2] + shift[2];
-      box[1][2] =  0.5*lz + center[2] + shift[2];
+      box[0][1] = -0.5*B*sin_gamma + center[1] + shift[1];
+      box[1][1] =  0.5*B*sin_gamma + center[1] + shift[1];
+      box[0][2] = -0.5*sqrt(sq_c * sin_beta*sin_beta - C*(cos_alpha-cos_gamma*cos_beta)/sin_gamma) + center[2] + shift[2];
+      box[1][2] =  0.5*sqrt(sq_c * sin_beta*sin_beta - C*(cos_alpha-cos_gamma*cos_beta)/sin_gamma) + center[2] + shift[2];
+      box[2][0] =  B * cos_gamma; /* This is xy SLTM */
+      box[2][1] =  C * cos_beta;  /* This is xz SLTM */
+      box[2][2] =  C*(cos_alpha-cos_gamma*cos_beta)/sin_gamma; /* This is yz SLTM */
     }
   }
 

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,25 +11,27 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "run.h"
-
 #include "domain.h"
-#include "error.h"
-#include "finish.h"
-#include "input.h"
+#include "update.h"
+#include "force.h"
 #include "integrate.h"
 #include "modify.h"
 #include "output.h"
+#include "finish.h"
+#include "input.h"
 #include "timer.h"
-#include "update.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
+#define MAXLINE 2048
+
 /* ---------------------------------------------------------------------- */
 
-Run::Run(LAMMPS *lmp) : Command(lmp) {}
+Run::Run(LAMMPS *lmp) : Pointers(lmp) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -42,10 +43,9 @@ void Run::command(int narg, char **arg)
     error->all(FLERR,"Run command before simulation box is defined");
 
   // ignore run command, if walltime limit was already reached
-
   if (timer->is_timeout()) return;
 
-  bigint nsteps_input = utils::bnumeric(FLERR,arg[0],false,lmp);
+  bigint nsteps_input = force->bnumeric(FLERR,arg[0]);
 
   // parse optional args
 
@@ -68,12 +68,12 @@ void Run::command(int narg, char **arg)
     } else if (strcmp(arg[iarg],"start") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal run command");
       startflag = 1;
-      start = utils::bnumeric(FLERR,arg[iarg+1],false,lmp);
+      start = force->bnumeric(FLERR,arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"stop") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal run command");
       stopflag = 1;
-      stop = utils::bnumeric(FLERR,arg[iarg+1],false,lmp);
+      stop = force->bnumeric(FLERR,arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"pre") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal run command");
@@ -90,11 +90,11 @@ void Run::command(int narg, char **arg)
 
       // all remaining args are commands
       // first,last = arg index of first/last commands
-      // set ncommands = 0 if single command and it is "NULL"
+      // set ncommands = 0 if single command and it is NULL
 
     } else if (strcmp(arg[iarg],"every") == 0) {
       if (iarg+3 > narg) error->all(FLERR,"Illegal run command");
-      nevery = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      nevery = force->inumeric(FLERR,arg[iarg+1]);
       if (nevery <= 0) error->all(FLERR,"Illegal run command");
       first = iarg+2;
       last = narg-1;
@@ -133,18 +133,20 @@ void Run::command(int narg, char **arg)
       error->all(FLERR,"Run command stop value is before end of run");
   }
 
-  if (!preflag && utils::strmatch(update->integrate_style,"^respa"))
+  if (!preflag && strstr(update->integrate_style,"respa"))
     error->all(FLERR,"Run flag 'pre no' not compatible with r-RESPA");
 
   // if nevery, make copies of arg strings that are commands
   // required because re-parsing commands via input->one() will wipe out args
 
-  char **commands = nullptr;
+  char **commands = NULL;
   if (nevery && ncommands > 0) {
     commands = new char*[ncommands];
     ncommands = 0;
     for (int i = first; i <= last; i++) {
-      commands[ncommands] = utils::strdup(arg[i]);
+      int n = strlen(arg[i]) + 1;
+      commands[ncommands] = new char[n];
+      strcpy(commands[ncommands],arg[i]);
       ncommands++;
     }
   }
@@ -172,7 +174,7 @@ void Run::command(int narg, char **arg)
 
     if (preflag || update->first_update == 0) {
       lmp->init();
-      update->integrate->setup(1);
+      update->integrate->setup();
     } else output->setup(0);
 
     timer->init();
@@ -213,7 +215,7 @@ void Run::command(int narg, char **arg)
 
       if (preflag || iter == 0) {
         lmp->init();
-        update->integrate->setup(1);
+        update->integrate->setup();
       } else output->setup(0);
 
       timer->init();

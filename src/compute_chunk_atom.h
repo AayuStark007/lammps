@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(chunk/atom,ComputeChunkAtom);
-// clang-format on
+
+ComputeStyle(chunk/atom,ComputeChunkAtom)
+
 #else
 
 #ifndef LMP_COMPUTE_CHUNK_ATOM_H
@@ -27,19 +27,18 @@ namespace LAMMPS_NS {
 
 class ComputeChunkAtom : public Compute {
  public:
-  int nchunk, ncoord, compress, idsflag, lockcount;
+  int nchunk,ncoord,compress,idsflag,lockcount;
   int computeflag;    // 1 if this compute invokes other computes
   double chunk_volume_scalar;
   double *chunk_volume_vec;
   double **coord;
-  int *ichunk, *chunkID;
+  int *ichunk,*chunkID;
 
   ComputeChunkAtom(class LAMMPS *, int, char **);
   ~ComputeChunkAtom();
   void init();
   void setup();
   void compute_peratom();
-  double compute_scalar();
   void set_arrays(int);
   double memory_usage();
 
@@ -49,39 +48,39 @@ class ComputeChunkAtom : public Compute {
   void compute_ichunk();
 
  private:
-  int which, binflag;
-  int regionflag, nchunksetflag, nchunkflag, discard;
-  int limit, limitstyle, limitfirst;
-  int scaleflag, pbcflag;
-  double xscale, yscale, zscale;
+  int which,binflag;
+  int regionflag,nchunksetflag,nchunkflag,discard;
+  int limit,limitstyle,limitfirst;
+  int scaleflag,pbcflag;
+  double xscale,yscale,zscale;
   int argindex;
   char *cfvid;
 
   // xyz spatial bins
 
   int ndim;
-  int dim[3], originflag[3], nlayers[3];
-  int minflag[3], maxflag[3];
-  double origin[3], delta[3];
-  double offset[3], invdelta[3];
-  double minvalue[3], maxvalue[3];
+  int dim[3],originflag[3],nlayers[3];
+  int minflag[3],maxflag[3];
+  double origin[3],delta[3];
+  double offset[3],invdelta[3];
+  double minvalue[3],maxvalue[3];
 
   // spherical spatial bins
 
   double sorigin_user[3];
   double sorigin[3];
-  double sradmin_user, sradmax_user;
-  double sradmin, sradmax, sinvrad;
+  double sradmin_user,sradmax_user;
+  double sradmin,sradmax,sinvrad;
   int nsbin;
 
   // cylindrical spatial bins
 
   double corigin_user[3];
   double corigin[3];
-  double cradmin_user, cradmax_user;
-  double cradmin, cradmax, cinvrad;
-  int cdim1, cdim2;
-  int ncbin, ncplane;
+  double cradmin_user,cradmax_user;
+  double cradmin,cradmax,cinvrad;
+  int cdim1,cdim2;
+  int ncbin,ncplane;
 
   char *idregion;
   class Region *region;
@@ -95,22 +94,24 @@ class ComputeChunkAtom : public Compute {
   char *id_fix;
   class FixStore *fixstore;
 
-  class Fix *lockfix;            // ptr to FixAveChunk that is locking out setups
-                                 // null pointer if no lock currently in place
-  bigint lockstart, lockstop;    // timesteps for start and stop of locking
+  class Fix *lockfix;         // ptr to FixAveChunk that is locking out setups
+                              // NULL if no lock currently in place
+  bigint lockstart,lockstop;  // timesteps for start and stop of locking
 
-  bigint invoked_setup;     // last timestep setup_chunks and nchunk calculated
-  bigint invoked_ichunk;    // last timestep ichunk values calculated
-  int nmax, nmaxint;
+  bigint invoked_setup;    // last timestep setup_chunks and nchunk calculated
+  bigint invoked_ichunk;   // last timestep ichunk values calculated
+  int nmax,nmaxint;
   double *chunk;
 
-  int molcheck;                   // one-time check if all molecule atoms in chunk
-  int *exclude;                   // 1 if atom is not assigned to any chunk
-  std::map<tagint, int> *hash;    // store original chunks IDs before compression
+  int molcheck;              // one-time check if all molecule atoms in chunk
+  int *exclude;              // 1 if atom is not assigned to any chunk
+  std::map<tagint,int> *hash;   // store original chunks IDs before compression
 
-  // callback function for ring communication
+  // static variable for ring communication callback to access class data
+  // callback functions for ring communication
 
-  static void idring(int, char *, void *);
+  static ComputeChunkAtom *cptr;
+  static void idring(int, char *);
 
   void assign_chunk_ids();
   void compress_chunk_ids();
@@ -127,7 +128,7 @@ class ComputeChunkAtom : public Compute {
   void readdim(int, char **, int, int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -226,9 +227,11 @@ E: Compute chunk/atom ids once but nchunk is not once
 You cannot assign chunks IDs to atom permanently if the number of
 chunks may change.
 
-E: Two fix commands using same compute chunk/atom command in incompatible ways
+E: Two fix ave commands using same compute chunk/atom command in incompatible ways
 
-UNDOCUMENTED
+They are both attempting to "lock" the chunk/atom command so that the
+chunk assignments persist for some number of timesteps, but are doing
+it in different ways.
 
 E: Fix used in compute chunk/atom not computed at compatible time
 
@@ -245,20 +248,14 @@ The lo/hi values are inconsistent.
 
 E: Compute chunk/atom bin/sphere radius is too large for periodic box
 
-Radius cannot be bigger than 1/2 of any periodic dimension.
+Radius cannot be bigger than 1/2 of any periodic dimention.
 
 E: Compute chunk/atom bin/cylinder radius is too large for periodic box
 
-Radius cannot be bigger than 1/2 of a non-axis  periodic dimension.
+Radius cannot be bigger than 1/2 of a non-axis  periodic dimention.
 
 E: Cannot use compute chunk/atom bin z for 2d model
 
 Self-explanatory.
-
-U: Two fix ave commands using same compute chunk/atom command in incompatible ways
-
-They are both attempting to "lock" the chunk/atom command so that the
-chunk assignments persist for some number of timesteps, but are doing
-it in different ways.
 
 */

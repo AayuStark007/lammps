@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -18,19 +17,16 @@
             "Parallel Unconstrained Min", Plantenga, SAND98-8201
 ------------------------------------------------------------------------- */
 
-#include "min_hftn.h"
-
+#include <math.h>
+#include <string.h>
 #include "atom.h"
-#include "error.h"
 #include "fix_minimize.h"
+#include "min_hftn.h"
 #include "modify.h"
 #include "output.h"
 #include "pair.h"
-#include "timer.h"
 #include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "timer.h"
 
 using namespace LAMMPS_NS;
 
@@ -82,11 +78,11 @@ MinHFTN::MinHFTN(LAMMPS *lmp) : Min(lmp)
   searchflag = 1;
 
   for (int  i = 1; i < NUM_HFTN_ATOM_BASED_VECTORS; i++)
-    _daExtraGlobal[i] = nullptr;
+    _daExtraGlobal[i] = NULL;
   for (int  i = 0; i < NUM_HFTN_ATOM_BASED_VECTORS; i++)
-    _daExtraAtom[i] = nullptr;
+    _daExtraAtom[i] = NULL;
 
-  _fpPrint = nullptr;
+  _fpPrint = NULL;
 
   return;
 }
@@ -98,10 +94,10 @@ MinHFTN::MinHFTN(LAMMPS *lmp) : Min(lmp)
 MinHFTN::~MinHFTN (void)
 {
   for (int  i = 1; i < NUM_HFTN_ATOM_BASED_VECTORS; i++)
-    if (_daExtraGlobal[i] != nullptr)
+    if (_daExtraGlobal[i] != NULL)
       delete [] _daExtraGlobal[i];
   for (int  i = 0; i < NUM_HFTN_ATOM_BASED_VECTORS; i++)
-    if (_daExtraAtom[i] != nullptr)
+    if (_daExtraAtom[i] != NULL)
       delete [] _daExtraAtom[i];
 
   return;
@@ -115,18 +111,15 @@ void MinHFTN::init()
 {
   Min::init();
 
-  if (normstyle == MAX)
-    error->all(FLERR,"Incorrect min_modify option");
-
   for (int  i = 1; i < NUM_HFTN_ATOM_BASED_VECTORS; i++) {
-    if (_daExtraGlobal[i] != nullptr)
+    if (_daExtraGlobal[i] != NULL)
       delete [] _daExtraGlobal[i];
-    _daExtraGlobal[i] = nullptr;
+    _daExtraGlobal[i] = NULL;
   }
   for (int  i = 0; i < NUM_HFTN_ATOM_BASED_VECTORS; i++) {
-    if (_daExtraAtom[i] != nullptr)
+    if (_daExtraAtom[i] != NULL)
       delete [] _daExtraAtom[i];
-    _daExtraAtom[i] = nullptr;
+    _daExtraAtom[i] = NULL;
   }
 
   return;
@@ -411,7 +404,7 @@ int MinHFTN::execute_hftn_(const bool      bPrintProgress,
       double  dMag = 0.5 * (fabs (dCurrentEnergy) + fabs (dNewEnergy));
       dMag = MAX (dMag, MIN_ETOL_MAG);
       if (   (fabs (dAred) < (update->etol * dMag))
-             || (dStepLengthInf == 0.0)) {
+             || (dStepLengthInf == 0.0) ) {
         if (bPrintProgress)
           hftn_print_line_ (true, niter+1, neval,
                             dNewEnergy, dNewForce2,
@@ -893,7 +886,7 @@ bool MinHFTN::compute_inner_cg_step_(const double    dTrustRadius,
    Private method calc_xinf_using_mpi_
 ------------------------------------------------------------------------- */
 
-double MinHFTN::calc_xinf_using_mpi_() const
+double MinHFTN::calc_xinf_using_mpi_(void) const
 {
   double dXInfLocal = 0.0;
   for (int  i = 0; i < nvec; i++)
@@ -1162,7 +1155,7 @@ bool MinHFTN::step_exceeds_TR_(const double    dTrustRadius,
                               which calls fix_box_relax->max_alpha
 ------------------------------------------------------------------------- */
 
-bool MinHFTN::step_exceeds_DMAX_() const
+bool MinHFTN::step_exceeds_DMAX_(void) const
 {
   double  dAlpha = dmax * sqrt((double) _nNumUnknowns);
 
@@ -1268,7 +1261,7 @@ double MinHFTN::compute_to_tr_(const double  dPP,
 
   //---- CHECK FOR ERRONEOUS DATA.
   if (   (dDD <= 0.0) || (dPP < 0.0) || (dTrustRadius < 0.0)
-         || (dTrustRadius * dTrustRadius < dPP)) {
+         || (dTrustRadius * dTrustRadius < dPP) ) {
     printf ("HFTN internal error - bad data given to compute_to_tr_()\n");
     return( 0.0 );
   }
@@ -1611,7 +1604,7 @@ void MinHFTN::evaluate_dir_der_(const bool      bUseForwardDiffs,
    Private method open_hftn_print_file_
 ------------------------------------------------------------------------- */
 
-void MinHFTN::open_hftn_print_file_()
+void MinHFTN::open_hftn_print_file_(void)
 {
   int  nMyRank;
   MPI_Comm_rank (world, &nMyRank);
@@ -1619,7 +1612,7 @@ void MinHFTN::open_hftn_print_file_()
   char  szTmp[50];
   sprintf (szTmp, "progress_MinHFTN_%d.txt", nMyRank);
   _fpPrint = fopen (szTmp, "w");
-  if (_fpPrint == nullptr) {
+  if (_fpPrint == NULL) {
     printf ("*** MinHFTN cannot open file '%s'\n", szTmp);
     printf ("*** continuing...\n");
     return;
@@ -1656,7 +1649,7 @@ void MinHFTN::hftn_print_line_(const bool    bIsStepAccepted,
   const char  sFormatR[]
     = "r %4d   %5d  %14.8f  %11.5e  %3s  %9.3e   %8.2e  %10.3e %10.3e\n";
 
-  if (_fpPrint == nullptr)
+  if (_fpPrint == NULL)
     return;
 
   char  sStepType[4];
@@ -1700,8 +1693,8 @@ void MinHFTN::hftn_print_line_(const bool    bIsStepAccepted,
    Private method close_hftn_print_file_
 ------------------------------------------------------------------------- */
 
-void MinHFTN::close_hftn_print_file_()
+void MinHFTN::close_hftn_print_file_(void)
 {
-  if (_fpPrint != nullptr) fclose (_fpPrint);
+  if (_fpPrint != NULL) fclose (_fpPrint);
   return;
 }

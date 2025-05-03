@@ -23,7 +23,7 @@ const char *charmm_long=0;
 
 #include "lal_charmm_long.h"
 #include <cassert>
-namespace LAMMPS_AL {
+using namespace LAMMPS_AL;
 #define CHARMMLongT CHARMMLong<numtyp, acctyp>
 
 extern Device<PRECISION,ACC_PRECISION> device;
@@ -131,9 +131,20 @@ double CHARMMLongT::host_memory_usage() const {
 // Calculate energies, forces, and torques
 // ---------------------------------------------------------------------------
 template <class numtyp, class acctyp>
-int CHARMMLongT::loop(const int eflag, const int vflag) {
+void CHARMMLongT::loop(const bool _eflag, const bool _vflag) {
   // Compute the block size and grid size to keep all cores busy
   const int BX=this->_block_bio_size;
+  int eflag, vflag;
+  if (_eflag)
+    eflag=1;
+  else
+    eflag=0;
+
+  if (_vflag)
+    vflag=1;
+  else
+    vflag=0;
+
   int GX=static_cast<int>(ceil(static_cast<double>(this->ans->inum())/
                                (BX/this->_threads_per_atom)));
 
@@ -141,8 +152,8 @@ int CHARMMLongT::loop(const int eflag, const int vflag) {
   int nbor_pitch=this->nbor->nbor_pitch();
   this->time_pair.start();
   if (shared_types) {
-    this->k_pair_sel->set_size(GX,BX);
-    this->k_pair_sel->run(&this->atom->x, &ljd, &sp_lj,
+    this->k_pair_fast.set_size(GX,BX);
+    this->k_pair_fast.run(&this->atom->x, &ljd, &sp_lj,
                           &this->nbor->dev_nbor, &this->_nbor_data->begin(),
                           &this->ans->force, &this->ans->engv, &eflag,
                           &vflag, &ainum, &nbor_pitch, &this->atom->q,
@@ -160,8 +171,6 @@ int CHARMMLongT::loop(const int eflag, const int vflag) {
                      &this->_threads_per_atom);
   }
   this->time_pair.stop();
-  return GX;
 }
 
 template class CHARMMLong<PRECISION,ACC_PRECISION>;
-}

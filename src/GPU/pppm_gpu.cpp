@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,25 +15,30 @@
    Contributing authors: Mike Brown (ORNL), Axel Kohlmeyer (Temple)
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 #include "pppm_gpu.h"
-
 #include "atom.h"
-#include "domain.h"
-#include "error.h"
-#include "fft3d_wrap.h"
-#include "fix.h"
-#include "force.h"
-#include "gpu_extra.h"
+#include "comm.h"
 #include "gridcomm.h"
+#include "neighbor.h"
+#include "force.h"
+#include "pair.h"
+#include "bond.h"
+#include "angle.h"
+#include "domain.h"
+#include "fft3d_wrap.h"
+#include "remap_wrap.h"
+#include "gpu_extra.h"
 #include "math_const.h"
 #include "memory.h"
-#include "modify.h"
-#include "neighbor.h"
-#include "remap_wrap.h"
-#include "universe.h"
+#include "error.h"
 #include "update.h"
-
-#include <cstring>
+#include "universe.h"
+#include "fix.h"
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -45,7 +49,7 @@ using namespace MathConst;
 #define LARGE 10000.0
 #define EPS_HOC 1.0e-7
 
-enum{REVERSE_RHO_GPU,REVERSE_RHO};
+enum{REVERSE_RHO};
 enum{FORWARD_IK,FORWARD_AD,FORWARD_IK_PERATOM,FORWARD_AD_PERATOM};
 
 #ifdef FFT_SINGLE
@@ -76,18 +80,21 @@ FFT_SCALAR* PPPM_GPU_API(init)(const int nlocal, const int nall, FILE *screen,
                                const bool respa, int &success);
 void PPPM_GPU_API(clear)(const double poisson_time);
 int PPPM_GPU_API(spread)(const int ago, const int nlocal, const int nall,
-                         double **host_x, int *host_type, bool &success,
-                         double *host_q, double *boxlo, const double delxinv,
-                         const double delyinv, const double delzinv);
+                      double **host_x, int *host_type, bool &success,
+                      double *host_q, double *boxlo, const double delxinv,
+                      const double delyinv, const double delzinv);
 void PPPM_GPU_API(interp)(const FFT_SCALAR qqrd2e_scale);
 double PPPM_GPU_API(bytes)();
 void PPPM_GPU_API(forces)(double **f);
 
 /* ---------------------------------------------------------------------- */
 
-PPPMGPU::PPPMGPU(LAMMPS *lmp) : PPPM(lmp)
+PPPMGPU::PPPMGPU(LAMMPS *lmp, int narg, char **arg) : PPPM(lmp, narg, arg)
 {
-  density_brick_gpu = vd_brick = nullptr;
+  if (narg != 1) error->all(FLERR,"Illegal kspace_style pppm/gpu command");
+
+  triclinic_support = 0;
+  density_brick_gpu = vd_brick = NULL;
   kspace_split = false;
   im_real_space = false;
 
@@ -101,8 +108,6 @@ PPPMGPU::PPPMGPU(LAMMPS *lmp) : PPPM(lmp)
 PPPMGPU::~PPPMGPU()
 {
   PPPM_GPU_API(clear)(poisson_time);
-  destroy_3d_offset(density_brick_gpu,nzlo_out,nylo_out);
-  destroy_3d_offset(vd_brick,nzlo_out,nylo_out);
 }
 
 /* ----------------------------------------------------------------------
@@ -115,11 +120,11 @@ void PPPMGPU::init()
   //      thru its deallocate(), allocate()
   // NOTE: could free density_brick and vdxyz_brick after PPPM allocates them,
   //       before allocating db_gpu and vd_brick down below, if don't need,
-  //       if do this, make sure to set them to a null pointer
+  //       if do this, make sure to set them to NULL
 
   destroy_3d_offset(density_brick_gpu,nzlo_out,nylo_out);
   destroy_3d_offset(vd_brick,nzlo_out,nylo_out);
-  density_brick_gpu = vd_brick = nullptr;
+  density_brick_gpu = vd_brick = NULL;
 
   PPPM::init();
 
@@ -147,7 +152,7 @@ void PPPMGPU::init()
   // GPU precision specific init
 
   bool respa_value=false;
-  if (utils::strmatch(update->integrate_style,"^respa"))
+  if (strstr(update->integrate_style,"respa"))
     respa_value=true;
 
   if (order>8)
@@ -196,24 +201,28 @@ void PPPMGPU::compute(int eflag, int vflag)
   // set energy/virial flags
   // invoke allocate_peratom() if needed for first time
 
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = evflag_atom = eflag_global = vflag_global =
+        eflag_atom = vflag_atom = 0;
 
   // If need per-atom energies/virials, allocate per-atom arrays here
   // so that particle map on host can be done concurrently with GPU calculations
 
-  if (evflag_atom && !peratom_allocate_flag) allocate_peratom();
-
-  if (triclinic == 0) {
-    bool success = true;
-    int flag=PPPM_GPU_API(spread)(nago, atom->nlocal, atom->nlocal +
-                                  atom->nghost, atom->x, atom->type, success,
-                                  atom->q, domain->boxlo, delxinv, delyinv,
-                                  delzinv);
-    if (!success)
-      error->one(FLERR,"Insufficient memory on accelerator");
-    if (flag != 0)
-      error->one(FLERR,"Out of range atoms - cannot compute PPPM");
+  if (evflag_atom && !peratom_allocate_flag) {
+    allocate_peratom();
+    cg_peratom->ghost_notify();
+    cg_peratom->setup();
   }
+
+  bool success = true;
+  int flag=PPPM_GPU_API(spread)(nago, atom->nlocal, atom->nlocal +
+                             atom->nghost, atom->x, atom->type, success,
+                             atom->q, domain->boxlo, delxinv, delyinv,
+                             delzinv);
+  if (!success)
+    error->one(FLERR,"Insufficient memory on accelerator");
+  if (flag != 0)
+    error->one(FLERR,"Out of range atoms - cannot compute PPPM");
 
   // convert atoms from box to lamda coords
 
@@ -224,10 +233,9 @@ void PPPMGPU::compute(int eflag, int vflag)
   }
 
   // If need per-atom energies/virials, also do particle map on host
-  // concurrently with GPU calculations,
-  // or if the box is triclinic, particle map is done on host
+  // concurrently with GPU calculations
 
-  if (evflag_atom || triclinic) {
+  if (evflag_atom) {
 
     // extend size of per-atom arrays if necessary
 
@@ -240,26 +248,14 @@ void PPPMGPU::compute(int eflag, int vflag)
     particle_map();
   }
 
-  // if the box is triclinic,
-  // map my particle charge onto my local 3d density grid on the host
-
-  if (triclinic) make_rho();
-
   double t3 = MPI_Wtime();
 
   // all procs communicate density values from their ghost cells
   //   to fully sum contribution in their 3d bricks
   // remap from 3d decomposition to FFT decomposition
 
-  if (triclinic == 0) {
-    gc->reverse_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),
-                     REVERSE_RHO_GPU,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
-    brick2fft_gpu();
-  } else {
-    gc->reverse_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),
-                     REVERSE_RHO,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
-    PPPM::brick2fft();
-  }
+  cg->reverse_comm(this,REVERSE_RHO);
+  brick2fft();
 
   // compute potential gradient on my FFT grid and
   //   portion of e_long on this proc's FFT grid
@@ -270,22 +266,16 @@ void PPPMGPU::compute(int eflag, int vflag)
   // all procs communicate E-field values
   // to fill ghost cells surrounding their 3d bricks
 
-  if (differentiation_flag == 1)
-    gc->forward_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),
-                     FORWARD_AD,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
-  else
-    gc->forward_comm(GridComm::KSPACE,this,3,sizeof(FFT_SCALAR),
-                     FORWARD_IK,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+  if (differentiation_flag == 1) cg->forward_comm(this,FORWARD_AD);
+  else cg->forward_comm(this,FORWARD_IK);
 
   // extra per-atom energy/virial communication
 
   if (evflag_atom) {
     if (differentiation_flag == 1 && vflag_atom)
-      gc->forward_comm(GridComm::KSPACE,this,6,sizeof(FFT_SCALAR),
-                       FORWARD_AD_PERATOM,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+      cg_peratom->forward_comm(this,FORWARD_AD_PERATOM);
     else if (differentiation_flag == 0)
-      gc->forward_comm(GridComm::KSPACE,this,7,sizeof(FFT_SCALAR),
-                       FORWARD_IK_PERATOM,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
+      cg_peratom->forward_comm(this,FORWARD_IK_PERATOM);
   }
 
   poisson_time += MPI_Wtime()-t3;
@@ -293,8 +283,7 @@ void PPPMGPU::compute(int eflag, int vflag)
   // calculate the force on my particles
 
   FFT_SCALAR qscale = force->qqrd2e * scale;
-  if (triclinic == 0) PPPM_GPU_API(interp)(qscale);
-  else fieldforce();
+  PPPM_GPU_API(interp)(qscale);
 
   // per-atom energy/virial
   // energy includes self-energy correction
@@ -366,7 +355,7 @@ void PPPMGPU::compute(int eflag, int vflag)
    remap density from 3d brick decomposition to FFT decomposition
 ------------------------------------------------------------------------- */
 
-void PPPMGPU::brick2fft_gpu()
+void PPPMGPU::brick2fft()
 {
   int n,ix,iy,iz;
 
@@ -400,7 +389,7 @@ void PPPMGPU::poisson_ik()
     work1[n++] = ZEROF;
   }
 
-  fft1->compute(work1,work1,FFT3d::FORWARD);
+  fft1->compute(work1,work1,1);
 
   // if requested, compute energy and virial contribution
 
@@ -439,7 +428,7 @@ void PPPMGPU::poisson_ik()
 
   if (evflag_atom) poisson_peratom();
 
-  // compute gradients of V(r) in each of 3 dims by transformimg ik*V(k)
+  // compute gradients of V(r) in each of 3 dims by transformimg -ik*V(k)
   // FFT leaves data in 3d brick decomposition
   // copy it into inner portion of vdx,vdy,vdz arrays
 
@@ -449,12 +438,12 @@ void PPPMGPU::poisson_ik()
   for (k = nzlo_fft; k <= nzhi_fft; k++)
     for (j = nylo_fft; j <= nyhi_fft; j++)
       for (i = nxlo_fft; i <= nxhi_fft; i++) {
-        work2[n] = -fkx[i]*work1[n+1];
-        work2[n+1] = fkx[i]*work1[n];
+        work2[n] = fkx[i]*work1[n+1];
+        work2[n+1] = -fkx[i]*work1[n];
         n += 2;
       }
 
-  fft2->compute(work2,work2,FFT3d::BACKWARD);
+  fft2->compute(work2,work2,-1);
 
   n = 0;
   int x_hi = nxhi_in * 4 + 3;
@@ -471,12 +460,12 @@ void PPPMGPU::poisson_ik()
   for (k = nzlo_fft; k <= nzhi_fft; k++)
     for (j = nylo_fft; j <= nyhi_fft; j++)
       for (i = nxlo_fft; i <= nxhi_fft; i++) {
-        work2[n] = -fky[j]*work1[n+1];
-        work2[n+1] = fky[j]*work1[n];
+        work2[n] = fky[j]*work1[n+1];
+        work2[n+1] = -fky[j]*work1[n];
         n += 2;
       }
 
-  fft2->compute(work2,work2,FFT3d::BACKWARD);
+  fft2->compute(work2,work2,-1);
 
   n = 0;
   for (k = nzlo_in; k <= nzhi_in; k++)
@@ -492,12 +481,12 @@ void PPPMGPU::poisson_ik()
   for (k = nzlo_fft; k <= nzhi_fft; k++)
     for (j = nylo_fft; j <= nyhi_fft; j++)
       for (i = nxlo_fft; i <= nxhi_fft; i++) {
-        work2[n] = -fkz[k]*work1[n+1];
-        work2[n+1] = fkz[k]*work1[n];
+        work2[n] = fkz[k]*work1[n+1];
+        work2[n+1] = -fkz[k]*work1[n];
         n += 2;
       }
 
-  fft2->compute(work2,work2,FFT3d::BACKWARD);
+  fft2->compute(work2,work2,-1);
 
   n = 0;
   for (k = nzlo_in; k <= nzhi_in; k++)
@@ -512,10 +501,8 @@ void PPPMGPU::poisson_ik()
    pack own values to buf to send to another proc
 ------------------------------------------------------------------------- */
 
-void PPPMGPU::pack_forward_grid(int flag, void *vbuf, int nlist, int *list)
+void PPPMGPU::pack_forward(int flag, FFT_SCALAR *buf, int nlist, int *list)
 {
-  FFT_SCALAR *buf = (FFT_SCALAR *) vbuf;
-
   int n = 0;
 
   if (flag == FORWARD_IK) {
@@ -572,10 +559,8 @@ void PPPMGPU::pack_forward_grid(int flag, void *vbuf, int nlist, int *list)
    unpack another proc's own values from buf and set own ghost values
 ------------------------------------------------------------------------- */
 
-void PPPMGPU::unpack_forward_grid(int flag, void *vbuf, int nlist, int *list)
+void PPPMGPU::unpack_forward(int flag, FFT_SCALAR *buf, int nlist, int *list)
 {
-  FFT_SCALAR *buf = (FFT_SCALAR *) vbuf;
-
   int n = 0;
 
   if (flag == FORWARD_IK) {
@@ -632,16 +617,10 @@ void PPPMGPU::unpack_forward_grid(int flag, void *vbuf, int nlist, int *list)
    pack ghost values into buf to send to another proc
 ------------------------------------------------------------------------- */
 
-void PPPMGPU::pack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
+void PPPMGPU::pack_reverse(int flag, FFT_SCALAR *buf, int nlist, int *list)
 {
-  FFT_SCALAR *buf = (FFT_SCALAR *) vbuf;
-
-  if (flag == REVERSE_RHO_GPU) {
+  if (flag == REVERSE_RHO) {
     FFT_SCALAR *src = &density_brick_gpu[nzlo_out][nylo_out][nxlo_out];
-    for (int i = 0; i < nlist; i++)
-      buf[i] = src[list[i]];
-  } else if (flag == REVERSE_RHO) {
-    FFT_SCALAR *src = &density_brick[nzlo_out][nylo_out][nxlo_out];
     for (int i = 0; i < nlist; i++)
       buf[i] = src[list[i]];
   }
@@ -651,16 +630,10 @@ void PPPMGPU::pack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
    unpack another proc's ghost values from buf and add to own values
 ------------------------------------------------------------------------- */
 
-void PPPMGPU::unpack_reverse_grid(int flag, void *vbuf, int nlist, int *list)
+void PPPMGPU::unpack_reverse(int flag, FFT_SCALAR *buf, int nlist, int *list)
 {
-  FFT_SCALAR *buf = (FFT_SCALAR *) vbuf;
-
-  if (flag == REVERSE_RHO_GPU) {
+  if (flag == REVERSE_RHO) {
     FFT_SCALAR *dest = &density_brick_gpu[nzlo_out][nylo_out][nxlo_out];
-    for (int i = 0; i < nlist; i++)
-      dest[list[i]] += buf[i];
-  } else if (flag == REVERSE_RHO) {
-    FFT_SCALAR *dest = &density_brick[nzlo_out][nylo_out][nxlo_out];
     for (int i = 0; i < nlist; i++)
       dest[list[i]] += buf[i];
   }
@@ -705,7 +678,7 @@ FFT_SCALAR ***PPPMGPU::create_3d_offset(int n1lo, int n1hi, int n2lo, int n2hi,
 void PPPMGPU::destroy_3d_offset(FFT_SCALAR ***array, int n1_offset,
                                  int n2_offset)
 {
-  if (array == nullptr) return;
+  if (array == NULL) return;
   memory->sfree(&array[n1_offset][n2_offset]);
   memory->sfree(array + n1_offset);
 }
@@ -763,119 +736,3 @@ void PPPMGPU::setup()
   if (im_real_space) return;
   PPPM::setup();
 }
-
-/* ----------------------------------------------------------------------
-   group-group interactions
- ------------------------------------------------------------------------- */
-
-/* ----------------------------------------------------------------------
-   compute the PPPM total long-range force and energy for groups A and B
- ------------------------------------------------------------------------- */
-
-void PPPMGPU::compute_group_group(int groupbit_A, int groupbit_B, int AA_flag)
-{
-  if (slabflag && triclinic)
-    error->all(FLERR,"Cannot (yet) use K-space slab "
-               "correction with compute group/group for triclinic systems");
-
-  if (differentiation_flag)
-    error->all(FLERR,"Cannot (yet) use kspace_modify "
-               "diff ad with compute group/group");
-
-  if (!group_allocate_flag) allocate_groups();
-
-  // convert atoms from box to lamda coords
-
-  if (triclinic == 0) boxlo = domain->boxlo;
-  else {
-    boxlo = domain->boxlo_lamda;
-    domain->x2lamda(atom->nlocal);
-  }
-
-  // extend size of per-atom arrays if necessary
-  // part2grid needs to be allocated
-
-  if (atom->nmax > nmax || part2grid == nullptr) {
-    memory->destroy(part2grid);
-    nmax = atom->nmax;
-    memory->create(part2grid,nmax,3,"pppm:part2grid");
-  }
-
-  particle_map();
-
-  e2group = 0.0; //energy
-  f2group[0] = 0.0; //force in x-direction
-  f2group[1] = 0.0; //force in y-direction
-  f2group[2] = 0.0; //force in z-direction
-
-  // map my particle charge onto my local 3d density grid
-
-  make_rho_groups(groupbit_A,groupbit_B,AA_flag);
-
-  // all procs communicate density values from their ghost cells
-  //   to fully sum contribution in their 3d bricks
-  // remap from 3d decomposition to FFT decomposition
-
-  // temporarily store and switch pointers so we can
-  //  use brick2fft() for groups A and B (without
-  //  writing an additional function)
-
-  FFT_SCALAR ***density_brick_real = density_brick;
-  FFT_SCALAR *density_fft_real = density_fft;
-
-  // group A
-
-  density_brick = density_A_brick;
-  density_fft = density_A_fft;
-
-  gc->reverse_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),
-                   REVERSE_RHO,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
-  brick2fft();
-
-  // group B
-
-  density_brick = density_B_brick;
-  density_fft = density_B_fft;
-
-  gc->reverse_comm(GridComm::KSPACE,this,1,sizeof(FFT_SCALAR),
-                   REVERSE_RHO,gc_buf1,gc_buf2,MPI_FFT_SCALAR);
-  brick2fft();
-
-  // switch back pointers
-
-  density_brick = density_brick_real;
-  density_fft = density_fft_real;
-
-  // compute potential gradient on my FFT grid and
-  //   portion of group-group energy/force on this proc's FFT grid
-
-  poisson_groups(AA_flag);
-
-  const double qscale = qqrd2e * scale;
-
-  // total group A <--> group B energy
-  // self and boundary correction terms are in compute_group_group.cpp
-
-  double e2group_all;
-  MPI_Allreduce(&e2group,&e2group_all,1,MPI_DOUBLE,MPI_SUM,world);
-  e2group = e2group_all;
-
-  e2group *= qscale*0.5*volume;
-
-  // total group A <--> group B force
-
-  double f2group_all[3];
-  MPI_Allreduce(f2group,f2group_all,3,MPI_DOUBLE,MPI_SUM,world);
-
-  f2group[0] = qscale*volume*f2group_all[0];
-  f2group[1] = qscale*volume*f2group_all[1];
-  if (slabflag != 2) f2group[2] = qscale*volume*f2group_all[2];
-
-  // convert atoms back from lamda to box coords
-
-  if (triclinic) domain->lamda2x(atom->nlocal);
-
-  if (slabflag == 1)
-    slabcorr_groups(groupbit_A, groupbit_B, AA_flag);
-}
-

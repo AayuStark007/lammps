@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,10 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "pair_lj_class2_coul_cut.h"
-
-#include <cmath>
-#include <cstring>
 #include "atom.h"
 #include "comm.h"
 #include "force.h"
@@ -25,7 +24,6 @@
 #include "memory.h"
 #include "error.h"
 
-
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
@@ -34,30 +32,29 @@ using namespace MathConst;
 PairLJClass2CoulCut::PairLJClass2CoulCut(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
-  centroidstressflag = CENTROID_SAME;
 }
 
 /* ---------------------------------------------------------------------- */
 
 PairLJClass2CoulCut::~PairLJClass2CoulCut()
 {
-  if (copymode) return;
+  if (!copymode) {
+    if (allocated) {
+      memory->destroy(setflag);
+      memory->destroy(cutsq);
 
-  if (allocated) {
-    memory->destroy(setflag);
-    memory->destroy(cutsq);
-
-    memory->destroy(cut_lj);
-    memory->destroy(cut_ljsq);
-    memory->destroy(cut_coul);
-    memory->destroy(cut_coulsq);
-    memory->destroy(epsilon);
-    memory->destroy(sigma);
-    memory->destroy(lj1);
-    memory->destroy(lj2);
-    memory->destroy(lj3);
-    memory->destroy(lj4);
-    memory->destroy(offset);
+      memory->destroy(cut_lj);
+      memory->destroy(cut_ljsq);
+      memory->destroy(cut_coul);
+      memory->destroy(cut_coulsq);
+      memory->destroy(epsilon);
+      memory->destroy(sigma);
+      memory->destroy(lj1);
+      memory->destroy(lj2);
+      memory->destroy(lj3);
+      memory->destroy(lj4);
+      memory->destroy(offset);
+    }
   }
 }
 
@@ -72,7 +69,8 @@ void PairLJClass2CoulCut::compute(int eflag, int vflag)
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   evdwl = ecoul = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -195,16 +193,16 @@ void PairLJClass2CoulCut::settings(int narg, char **arg)
 {
   if (narg < 1 || narg > 2) error->all(FLERR,"Illegal pair_style command");
 
-  cut_lj_global = utils::numeric(FLERR,arg[0],false,lmp);
+  cut_lj_global = force->numeric(FLERR,arg[0]);
   if (narg == 1) cut_coul_global = cut_lj_global;
-  else cut_coul_global = utils::numeric(FLERR,arg[1],false,lmp);
+  else cut_coul_global = force->numeric(FLERR,arg[1]);
 
   // reset cutoffs that have been explicitly set
 
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i; j <= atom->ntypes; j++)
+      for (j = i+1; j <= atom->ntypes; j++)
         if (setflag[i][j]) {
           cut_lj[i][j] = cut_lj_global;
           cut_coul[i][j] = cut_coul_global;
@@ -218,22 +216,20 @@ void PairLJClass2CoulCut::settings(int narg, char **arg)
 
 void PairLJClass2CoulCut::coeff(int narg, char **arg)
 {
-  if (narg < 4 || narg > 6)
-    error->all(FLERR,"Incorrect args for pair coefficients");
-
+  if (narg < 4 || narg > 6) error->all(FLERR,"Incorrect args for pair coefficients");
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
-  double epsilon_one = utils::numeric(FLERR,arg[2],false,lmp);
-  double sigma_one = utils::numeric(FLERR,arg[3],false,lmp);
+  double epsilon_one = force->numeric(FLERR,arg[2]);
+  double sigma_one = force->numeric(FLERR,arg[3]);
 
   double cut_lj_one = cut_lj_global;
   double cut_coul_one = cut_coul_global;
-  if (narg >= 5) cut_coul_one = cut_lj_one = utils::numeric(FLERR,arg[4],false,lmp);
-  if (narg == 6) cut_coul_one = utils::numeric(FLERR,arg[5],false,lmp);
+  if (narg >= 5) cut_coul_one = cut_lj_one = force->numeric(FLERR,arg[4]);
+  if (narg == 6) cut_coul_one = force->numeric(FLERR,arg[5]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -290,7 +286,7 @@ double PairLJClass2CoulCut::init_one(int i, int j)
   lj3[i][j] = 2.0 * epsilon[i][j] * pow(sigma[i][j],9.0);
   lj4[i][j] = 3.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
 
-  if (offset_flag && (cut_lj[i][j] > 0.0)) {
+  if (offset_flag) {
     double ratio = sigma[i][j] / cut_lj[i][j];
     offset[i][j] = epsilon[i][j] * (2.0*pow(ratio,9.0) - 3.0*pow(ratio,6.0));
   } else offset[i][j] = 0.0;
@@ -365,14 +361,14 @@ void PairLJClass2CoulCut::read_restart(FILE *fp)
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++)
     for (j = i; j <= atom->ntypes; j++) {
-      if (me == 0) utils::sfread(FLERR,&setflag[i][j],sizeof(int),1,fp,nullptr,error);
+      if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
       if (setflag[i][j]) {
         if (me == 0) {
-          utils::sfread(FLERR,&epsilon[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&sigma[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&cut_lj[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&cut_coul[i][j],sizeof(double),1,fp,nullptr,error);
+          fread(&epsilon[i][j],sizeof(double),1,fp);
+          fread(&sigma[i][j],sizeof(double),1,fp);
+          fread(&cut_lj[i][j],sizeof(double),1,fp);
+          fread(&cut_coul[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&epsilon[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&sigma[i][j],1,MPI_DOUBLE,0,world);
@@ -402,11 +398,11 @@ void PairLJClass2CoulCut::write_restart_settings(FILE *fp)
 void PairLJClass2CoulCut::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
-    utils::sfread(FLERR,&cut_lj_global,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&cut_coul_global,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&offset_flag,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&mix_flag,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&tail_flag,sizeof(int),1,fp,nullptr,error);
+    fread(&cut_lj_global,sizeof(double),1,fp);
+    fread(&cut_coul_global,sizeof(double),1,fp);
+    fread(&offset_flag,sizeof(int),1,fp);
+    fread(&mix_flag,sizeof(int),1,fp);
+    fread(&tail_flag,sizeof(int),1,fp);
   }
   MPI_Bcast(&cut_lj_global,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&cut_coul_global,1,MPI_DOUBLE,0,world);
@@ -470,15 +466,3 @@ double PairLJClass2CoulCut::single(int i, int j, int itype, int jtype,
 
   return eng;
 }
-
-/* ---------------------------------------------------------------------- */
-
-void *PairLJClass2CoulCut::extract(const char *str, int &dim)
-{
-  dim = 2;
-  if (strcmp(str,"cut_coul") == 0) return (void *) &cut_coul;
-  if (strcmp(str,"epsilon") == 0) return (void *) epsilon;
-  if (strcmp(str,"sigma") == 0) return (void *) sigma;
-  return nullptr;
-}
-

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(lj/cut,PairLJCut);
-// clang-format on
+
+PairStyle(lj/cut,PairLJCut)
+
 #else
 
 #ifndef LMP_PAIR_LJ_CUT_H
@@ -32,6 +32,7 @@ class PairLJCut : public Pair {
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();
+  void init_list(int, class NeighList *);
   double init_one(int, int);
   void write_restart(FILE *);
   void read_restart(FILE *);
@@ -49,14 +50,14 @@ class PairLJCut : public Pair {
  protected:
   double cut_global;
   double **cut;
-  double **epsilon, **sigma;
-  double **lj1, **lj2, **lj3, **lj4, **offset;
+  double **epsilon,**sigma;
+  double **lj1,**lj2,**lj3,**lj4,**offset;
   double *cut_respa;
 
   virtual void allocate();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

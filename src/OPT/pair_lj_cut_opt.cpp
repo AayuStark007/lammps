@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -19,8 +18,8 @@
      Vincent Natoli, Stone Ridge Technology
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
 #include "pair_lj_cut_opt.h"
-
 #include "atom.h"
 #include "force.h"
 #include "neigh_list.h"
@@ -35,7 +34,8 @@ PairLJCutOpt::PairLJCutOpt(LAMMPS *lmp) : PairLJCut(lmp) {}
 
 void PairLJCutOpt::compute(int eflag, int vflag)
 {
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   if (evflag) {
     if (eflag) {

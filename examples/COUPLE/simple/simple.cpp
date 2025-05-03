@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/
+   www.cs.sandia.gov/~sjplimp/lammps.html
    Steve Plimpton, sjplimp@sandia.gov, Sandia National Laboratories
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -19,13 +19,12 @@
 //         in.lammps = LAMMPS input script
 // See README for compilation instructions
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <mpi.h>
+#include "stdio.h"
+#include "stdlib.h"
+#include "string.h"
+#include "mpi.h"
 
-// these are LAMMPS include files
-#include "lammps.h"
+#include "lammps.h"         // these are LAMMPS include files
 #include "input.h"
 #include "atom.h"
 #include "library.h"
@@ -110,11 +109,11 @@ int main(int narg, char **arg)
     int natoms = static_cast<int> (lmp->atom->natoms);
     x = new double[3*natoms];
     v = new double[3*natoms];
-    lammps_gather_atoms(lmp,(char *) "x",1,3,x);
-    lammps_gather_atoms(lmp,(char *) "v",1,3,v);
+    lammps_gather_atoms(lmp,"x",1,3,x);
+    lammps_gather_atoms(lmp,"v",1,3,v);
     double epsilon = 0.1;
     x[0] += epsilon;
-    lammps_scatter_atoms(lmp,(char *) "x",1,3,x);
+    lammps_scatter_atoms(lmp,"x",1,3,x);
 
     // these 2 lines are the same
 
@@ -125,22 +124,21 @@ int main(int narg, char **arg)
   // extract force on single atom two different ways
 
   if (lammps == 1) {
-    double **f = (double **) lammps_extract_atom(lmp,(char *) "f");
+    double **f = (double **) lammps_extract_atom(lmp,"f");
     printf("Force on 1 atom via extract_atom: %g\n",f[0][0]);
 
-    double *fx = (double *) 
-      lammps_extract_variable(lmp,(char *) "fx",(char *) "all");
+    double *fx = (double *) lammps_extract_variable(lmp,"fx","all");
     printf("Force on 1 atom via extract_variable: %g\n",fx[0]);
   }
 
   // use commands_string() and commands_list() to invoke more commands
 
-  const char *strtwo = (char *) "run 10\nrun 20";
+  char *strtwo = "run 10\nrun 20";
   if (lammps == 1) lammps_commands_string(lmp,strtwo);
 
-  const char *cmds[2];
-  cmds[0] = (char *) "run 10";
-  cmds[1] = (char *) "run 20";
+  char *cmds[2];
+  cmds[0] = "run 10";
+  cmds[1] = "run 20";
   if (lammps == 1) lammps_commands_list(lmp,2,cmds);
 
   // delete all atoms
@@ -155,7 +153,7 @@ int main(int narg, char **arg)
     for (int i = 0; i < natoms; i++) type[i] = 1;
 
     lmp->input->one("delete_atoms group all");
-    lammps_create_atoms(lmp,natoms,NULL,type,x,v,NULL,0);
+    lammps_create_atoms(lmp,natoms,NULL,type,x,v);
     lmp->input->one("run 10");
   }
 

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,12 +11,13 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdio.h>
+#include <string.h>
 #include "fix_nve_noforce.h"
-
 #include "atom.h"
-#include "error.h"
-#include "respa.h"
 #include "update.h"
+#include "respa.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -48,13 +48,13 @@ void FixNVENoforce::init()
 {
   dtv = update->dt;
 
-  if (utils::strmatch(update->integrate_style,"^respa"))
+  if (strstr(update->integrate_style,"respa"))
     step_respa = ((Respa *) update->integrate)->step;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixNVENoforce::initial_integrate(int /*vflag*/)
+void FixNVENoforce::initial_integrate(int vflag)
 {
   double **x = atom->x;
   double **v = atom->v;

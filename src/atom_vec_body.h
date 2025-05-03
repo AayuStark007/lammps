@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,15 +12,16 @@
 ------------------------------------------------------------------------- */
 
 #ifdef ATOM_CLASS
-// clang-format off
-AtomStyle(body,AtomVecBody);
-// clang-format on
+
+AtomStyle(body,AtomVecBody)
+
 #else
 
 #ifndef LMP_ATOM_VEC_BODY_H
 #define LMP_ATOM_VEC_BODY_H
 
 #include "atom_vec.h"
+#include "my_pool_chunk.h"
 
 namespace LAMMPS_NS {
 
@@ -31,8 +32,8 @@ class AtomVecBody : public AtomVec {
   struct Bonus {
     double quat[4];
     double inertia[3];
-    int ninteger, ndouble;
-    int iindex, dindex;
+    int ninteger,ndouble;
+    int iindex,dindex;
     int *ivalue;
     double *dvalue;
     int ilocal;
@@ -42,55 +43,77 @@ class AtomVecBody : public AtomVec {
   AtomVecBody(class LAMMPS *);
   ~AtomVecBody();
   void process_args(int, char **);
+  void grow(int);
+  void grow_reset();
+  void copy(int, int, int);
+  int pack_comm(int, int *, double *, int, int *);
+  int pack_comm_vel(int, int *, double *, int, int *);
+  int pack_comm_hybrid(int, int *, double *);
+  void unpack_comm(int, int, double *);
+  void unpack_comm_vel(int, int, double *);
+  int unpack_comm_hybrid(int, int, double *);
+  int pack_reverse(int, int, double *);
+  int pack_reverse_hybrid(int, int, double *);
+  void unpack_reverse(int, int *, double *);
+  int unpack_reverse_hybrid(int, int *, double *);
+  int pack_border(int, int *, double *, int, int *);
+  int pack_border_vel(int, int *, double *, int, int *);
+  int pack_border_hybrid(int, int *, double *);
+  void unpack_border(int, int, double *);
+  void unpack_border_vel(int, int, double *);
+  int unpack_border_hybrid(int, int, double *);
+  int pack_exchange(int, double *);
+  int unpack_exchange(double *);
+  int size_restart();
+  int pack_restart(int, double *);
+  int unpack_restart(double *);
+  void create_atom(int, double *);
+  void data_atom(double *, imageint, char **);
+  int data_atom_hybrid(int, char **);
+  void data_vel(int, char **);
+  int data_vel_hybrid(int, char **);
+  void pack_data(double **);
+  int pack_data_hybrid(int, double *);
+  void write_data(FILE *, int, double **);
+  int write_data_hybrid(FILE *, double *);
+  void pack_vel(double **);
+  int pack_vel_hybrid(int, double *);
+  void write_vel(FILE *, int, double **);
+  int write_vel_hybrid(FILE *, double *);
+  bigint memory_usage();
 
-  void grow_pointers();
-  void copy_bonus(int, int, int);
+  // manipulate Bonus data structure for extra atom info
+
   void clear_bonus();
-  int pack_comm_bonus(int, int *, double *);
-  void unpack_comm_bonus(int, int, double *);
-  int pack_border_bonus(int, int *, double *);
-  int unpack_border_bonus(int, int, double *);
-  int pack_exchange_bonus(int, double *);
-  int unpack_exchange_bonus(int, double *);
-  int size_restart_bonus();
-  int pack_restart_bonus(int, double *);
-  int unpack_restart_bonus(int, double *);
   void data_body(int, int, int, int *, double *);
-  double memory_usage_bonus();
-
-  void create_atom_post(int);
-  void data_atom_post(int);
-  void pack_data_pre(int);
-  void pack_data_post(int);
-
-  int pack_data_bonus(double *, int);
-  void write_data_bonus(FILE *, int, double *, int);
 
   // methods used by other classes to query/set body info
-
+  
   double radius_body(int, int, int *, double *);
   void set_quat(int, double *);
-
-  int nlocal_bonus;
-
+  
  private:
+  tagint *tag;
+  int *type,*mask;
+  imageint *image;
+  double **x,**v,**f;
+  double *radius;
+  double *rmass;
+  double **angmom,**torque;
   int *body;
-  double *rmass, *radius;
-  double **angmom;
 
-  int nghost_bonus, nmax_bonus;
-  int intdoubleratio;    // sizeof(double) / sizeof(int)
-  int body_flag;
+  int nlocal_bonus,nghost_bonus,nmax_bonus;
+  int intdoubleratio;       // sizeof(double) / sizeof(int)
 
   MyPoolChunk<int> *icp;
   MyPoolChunk<double> *dcp;
 
   void grow_bonus();
-  void copy_bonus_all(int, int);
-  // check(int);
+  void copy_bonus(int, int);
+  //void check(int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -105,7 +128,7 @@ E: Invalid atom_style body command
 
 No body style argument was provided.
 
-E: Unrecognized body style
+E: Unknown body style
 
 The choice of body style is unknown.
 

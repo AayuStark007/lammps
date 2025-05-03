@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,19 +12,19 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(change_box,ChangeBox);
-// clang-format on
+
+CommandStyle(change_box,ChangeBox)
+
 #else
 
 #ifndef LMP_CHANGE_BOX_H
 #define LMP_CHANGE_BOX_H
 
-#include "command.h"
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class ChangeBox : public Command {
+class ChangeBox : protected Pointers {
  public:
   ChangeBox(class LAMMPS *);
   void command(int, char **);
@@ -34,25 +34,25 @@ class ChangeBox : public Command {
   double scale[3];
 
   struct Operation {
-    int style, flavor;
-    int dim, boundindex;
-    int vdim1, vdim2;
-    double flo, fhi, ftilt;
-    double dlo, dhi, dtilt;
+    int style,flavor;
+    int dim,boundindex;
+    int vdim1,vdim2;
+    double flo,fhi,ftilt;
+    double dlo,dhi,dtilt;
     double scale;
   };
 
   Operation *ops;
   int nops;
 
-  double boxlo[3], h_inv[6];
+  double boxlo[3],h_inv[6];
 
   void options(int, char **);
   void save_box_state();
   void volume_preserve(int, int, double);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -97,7 +97,7 @@ E: Cannot change box tilt factors for orthogonal box
 
 Cannot use tilt factors unless the simulation box is non-orthogonal.
 
-E: Cannot change box z boundary to non-periodic for a 2d simulation
+E: Cannot change box z boundary to nonperiodic for a 2d simulation
 
 Self-explanatory.
 
@@ -116,10 +116,6 @@ E: Cannot change box ortho/triclinic with certain fixes defined
 This is because those fixes store the shape of the box.  You need to
 use unfix to discard the fix, change the box, then redefine a new
 fix.
-
-W: Attempting to remap atoms in rigid bodies
-
-UNDOCUMENTED
 
 W: Lost atoms via change_box: original %ld current %ld
 

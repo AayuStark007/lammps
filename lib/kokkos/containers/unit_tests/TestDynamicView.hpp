@@ -1,14 +1,13 @@
 /*
 //@HEADER
 // ************************************************************************
-//
-//                        Kokkos v. 3.0
-//       Copyright (2020) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
-//
-// Under the terms of Contract DE-NA0003525 with NTESS,
+// 
+//                        Kokkos v. 2.0
+//              Copyright (2014) Sandia Corporation
+// 
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
-//
+// 
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -24,10 +23,10 @@
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
-// THIS SOFTWARE IS PROVIDED BY NTESS "AS IS" AND ANY
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NTESS OR THE
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
 // CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 // EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
 // PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -36,8 +35,8 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
-//
+// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
+// 
 // ************************************************************************
 //@HEADER
 */
@@ -56,201 +55,114 @@
 
 namespace Test {
 
-template <typename Scalar, class Space>
-struct TestDynamicView {
-  using execution_space = typename Space::execution_space;
-  using memory_space    = typename Space::memory_space;
+template< typename Scalar , class Space >
+struct TestDynamicView
+{
+  typedef typename Space::execution_space  execution_space ;
+  typedef typename Space::memory_space     memory_space ;
 
-  using view_type = Kokkos::Experimental::DynamicView<Scalar*, Space>;
+  typedef Kokkos::Experimental::MemoryPool<typename Space::device_type> memory_pool_type;
 
-  using value_type = double;
+  typedef Kokkos::Experimental::DynamicView<Scalar*,Space> view_type;
 
-  static void run(unsigned arg_total_size) {
-    // Test: Create DynamicView, initialize size (via resize), run through
-    // parallel_for to set values, check values (via parallel_reduce); resize
-    // values and repeat
-    //   Case 1: min_chunk_size is a power of 2
-    {
-      {
-        view_type d1;
-        ASSERT_FALSE(d1.is_allocated());
+  typedef typename Kokkos::TeamPolicy<execution_space>::member_type member_type ;
+  typedef double value_type;
 
-        d1 = view_type("d1", 1024, arg_total_size);
-        view_type d2(d1);
-        view_type d3("d3", 1024, arg_total_size);
+  struct TEST {};
+  struct VERIFY {};
 
-        ASSERT_FALSE(d1.is_allocated());
-        ASSERT_FALSE(d2.is_allocated());
-        ASSERT_FALSE(d3.is_allocated());
+  view_type a;
+  const unsigned total_size ;
 
-        unsigned d_size = arg_total_size / 8;
-        d1.resize_serial(d_size);
-        d2.resize_serial(d_size);
-        d3.resize_serial(d_size);
+  TestDynamicView( const view_type & arg_a , const unsigned arg_total )
+    : a(arg_a), total_size( arg_total ) {}
 
-        ASSERT_TRUE(d1.is_allocated());
-        ASSERT_TRUE(d2.is_allocated());
-        ASSERT_TRUE(d3.is_allocated());
+  KOKKOS_INLINE_FUNCTION
+  void operator() ( const TEST , member_type team_member, double& value) const
+  {
+    const unsigned int team_idx = team_member.league_rank() * team_member.team_size();
+
+    if ( team_member.team_rank() == 0 ) {
+      unsigned n = team_idx + team_member.team_size();
+
+      if ( total_size < n ) n = total_size ;
+
+      a.resize_parallel( n );
+
+      if ( a.extent(0) < n ) {
+        Kokkos::abort("GrowTest TEST failed resize_parallel");
       }
-      view_type da("da", 1024, arg_total_size);
-      ASSERT_EQ(da.size(), 0);
-      // Init
-      unsigned da_size = arg_total_size / 8;
-      da.resize_serial(da_size);
-      ASSERT_EQ(da.size(), da_size);
+    }
 
-#if defined(KOKKOS_ENABLE_CXX11_DISPATCH_LAMBDA)
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<execution_space>(0, da_size),
-          KOKKOS_LAMBDA(const int i) { da(i) = Scalar(i); });
+    // Make sure resize is done for all team members:
+    team_member.team_barrier();
 
-      value_type result_sum = 0.0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<execution_space>(0, da_size),
-          KOKKOS_LAMBDA(const int i, value_type& partial_sum) {
-            partial_sum += (value_type)da(i);
-          },
-          result_sum);
+    const unsigned int val = team_idx + team_member.team_rank();
 
-      ASSERT_EQ(result_sum, (value_type)(da_size * (da_size - 1) / 2));
-#endif
+    if ( val < total_size ) {
+      value += val ;
 
-      // add 3x more entries i.e. 4x larger than previous size
-      // the first 1/4 should remain the same
-      unsigned da_resize = arg_total_size / 2;
-      da.resize_serial(da_resize);
-      ASSERT_EQ(da.size(), da_resize);
+      a( val ) = val ;
+    }
+  }
 
-#if defined(KOKKOS_ENABLE_CXX11_DISPATCH_LAMBDA)
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<execution_space>(da_size, da_resize),
-          KOKKOS_LAMBDA(const int i) { da(i) = Scalar(i); });
+  KOKKOS_INLINE_FUNCTION
+  void operator() ( const VERIFY , member_type team_member, double& value) const
+  {
+    const unsigned int val =
+      team_member.team_rank() + 
+      team_member.league_rank() * team_member.team_size();
 
-      value_type new_result_sum = 0.0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<execution_space>(da_size, da_resize),
-          KOKKOS_LAMBDA(const int i, value_type& partial_sum) {
-            partial_sum += (value_type)da(i);
-          },
-          new_result_sum);
+    if ( val < total_size ) {
+    
+      if ( val != a(val) ) {
+        Kokkos::abort("GrowTest VERIFY failed resize_parallel");
+      }
 
-      ASSERT_EQ(new_result_sum + result_sum,
-                (value_type)(da_resize * (da_resize - 1) / 2));
-#endif
-    }  // end scope
+      value += a(val);
+    }
+  }
 
-    // Test: Create DynamicView, initialize size (via resize), run through
-    // parallel_for to set values, check values (via parallel_reduce); resize
-    // values and repeat
-    //   Case 2: min_chunk_size is NOT a power of 2
-    {
-      view_type da("da", 1023, arg_total_size);
-      ASSERT_EQ(da.size(), 0);
-      // Init
-      unsigned da_size = arg_total_size / 8;
-      da.resize_serial(da_size);
-      ASSERT_EQ(da.size(), da_size);
+  static void run( unsigned arg_total_size )
+  {
+    typedef Kokkos::TeamPolicy<execution_space,TEST> TestPolicy ;
+    typedef Kokkos::TeamPolicy<execution_space,VERIFY> VerifyPolicy ;
 
-#if defined(KOKKOS_ENABLE_CXX11_DISPATCH_LAMBDA)
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<execution_space>(0, da_size),
-          KOKKOS_LAMBDA(const int i) { da(i) = Scalar(i); });
+// printf("TestDynamicView::run(%d) construct memory pool\n",arg_total_size);
 
-      value_type result_sum = 0.0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<execution_space>(0, da_size),
-          KOKKOS_LAMBDA(const int i, value_type& partial_sum) {
-            partial_sum += (value_type)da(i);
-          },
-          result_sum);
+    memory_pool_type pool( memory_space() , arg_total_size * sizeof(Scalar) * 1.2 );
 
-      ASSERT_EQ(result_sum, (value_type)(da_size * (da_size - 1) / 2));
-#endif
+// printf("TestDynamicView::run(%d) construct dynamic view\n",arg_total_size);
 
-      // add 3x more entries i.e. 4x larger than previous size
-      // the first 1/4 should remain the same
-      unsigned da_resize = arg_total_size / 2;
-      da.resize_serial(da_resize);
-      ASSERT_EQ(da.size(), da_resize);
+    view_type da("A",pool,arg_total_size);
 
-#if defined(KOKKOS_ENABLE_CXX11_DISPATCH_LAMBDA)
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<execution_space>(da_size, da_resize),
-          KOKKOS_LAMBDA(const int i) { da(i) = Scalar(i); });
+// printf("TestDynamicView::run(%d) construct test functor\n",arg_total_size);
 
-      value_type new_result_sum = 0.0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<execution_space>(da_size, da_resize),
-          KOKKOS_LAMBDA(const int i, value_type& partial_sum) {
-            partial_sum += (value_type)da(i);
-          },
-          new_result_sum);
+    TestDynamicView functor(da,arg_total_size);
 
-      ASSERT_EQ(new_result_sum + result_sum,
-                (value_type)(da_resize * (da_resize - 1) / 2));
-#endif
-    }  // end scope
+    const unsigned team_size = TestPolicy::team_size_recommended(functor);
+    const unsigned league_size = ( arg_total_size + team_size - 1 ) / team_size ;
 
-    // Test: Create DynamicView, initialize size (via resize), run through
-    // parallel_for to set values, check values (via parallel_reduce); resize
-    // values and repeat
-    //   Case 3: resize reduces the size
-    {
-      view_type da("da", 1023, arg_total_size);
-      ASSERT_EQ(da.size(), 0);
-      // Init
-      unsigned da_size = arg_total_size / 2;
-      da.resize_serial(da_size);
-      ASSERT_EQ(da.size(), da_size);
+    double reference = 0;
+    double result = 0;
 
-#if defined(KOKKOS_ENABLE_CXX11_DISPATCH_LAMBDA)
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<execution_space>(0, da_size),
-          KOKKOS_LAMBDA(const int i) { da(i) = Scalar(i); });
+// printf("TestDynamicView::run(%d) run functor test\n",arg_total_size);
 
-      value_type result_sum = 0.0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<execution_space>(0, da_size),
-          KOKKOS_LAMBDA(const int i, value_type& partial_sum) {
-            partial_sum += (value_type)da(i);
-          },
-          result_sum);
+    Kokkos::parallel_reduce( TestPolicy(league_size,team_size) , functor , reference);
+    execution_space::fence();
 
-      ASSERT_EQ(result_sum, (value_type)(da_size * (da_size - 1) / 2));
-#endif
 
-      // remove the final 3/4 entries i.e. first 1/4 remain
-      unsigned da_resize = arg_total_size / 8;
-      da.resize_serial(da_resize);
-      ASSERT_EQ(da.size(), da_resize);
+// printf("TestDynamicView::run(%d) run functor verify\n",arg_total_size);
 
-#if defined(KOKKOS_ENABLE_CXX11_DISPATCH_LAMBDA)
-      Kokkos::parallel_for(
-          Kokkos::RangePolicy<execution_space>(0, da_resize),
-          KOKKOS_LAMBDA(const int i) { da(i) = Scalar(i); });
+    Kokkos::parallel_reduce( VerifyPolicy(league_size,team_size) , functor , result );
+    execution_space::fence();
 
-      value_type new_result_sum = 0.0;
-      Kokkos::parallel_reduce(
-          Kokkos::RangePolicy<execution_space>(0, da_resize),
-          KOKKOS_LAMBDA(const int i, value_type& partial_sum) {
-            partial_sum += (value_type)da(i);
-          },
-          new_result_sum);
+// printf("TestDynamicView::run(%d) done\n",arg_total_size);
 
-      ASSERT_EQ(new_result_sum, (value_type)(da_resize * (da_resize - 1) / 2));
-#endif
-    }  // end scope
   }
 };
 
-TEST(TEST_CATEGORY, dynamic_view) {
-  using TestDynView = TestDynamicView<double, TEST_EXECSPACE>;
-
-  for (int i = 0; i < 10; ++i) {
-    TestDynView::run(100000 + 100 * i);
-  }
-}
-
-}  // namespace Test
+} // namespace Test
 
 #endif /* #ifndef KOKKOS_TEST_DYNAMICVIEW_HPP */
+

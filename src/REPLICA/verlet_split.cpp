@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,6 +15,7 @@
    Contributing authors: Yuxing Peng and Chris Knight (U Chicago)
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "verlet_split.h"
 #include "universe.h"
 #include "neighbor.h"
@@ -43,7 +43,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 VerletSplit::VerletSplit(LAMMPS *lmp, int narg, char **arg) :
-  Verlet(lmp, narg, arg), qsize(nullptr), qdisp(nullptr), xsize(nullptr), xdisp(nullptr), f_kspace(nullptr)
+  Verlet(lmp, narg, arg), qsize(NULL), qdisp(NULL), xsize(NULL), xdisp(NULL), f_kspace(NULL)
 {
   // error checks on partitions
 
@@ -195,7 +195,7 @@ VerletSplit::VerletSplit(LAMMPS *lmp, int narg, char **arg) :
   // allocate dummy version for Kspace partition
 
   maxatom = 0;
-  f_kspace = nullptr;
+  f_kspace = NULL;
   if (!master) memory->create(f_kspace,1,1,"verlet/split:f_kspace");
 }
 
@@ -223,7 +223,7 @@ void VerletSplit::init()
   if (!force->kspace && comm->me == 0)
     error->warning(FLERR,"No Kspace calculation with verlet/split");
 
-  if (force->kspace_match("/tip4p",0)) tip4p_flag = 1;
+  if (force->kspace_match("tip4p",0)) tip4p_flag = 1;
   else tip4p_flag = 0;
 
   // currently TIP4P does not work with verlet/split, so generate error
@@ -239,13 +239,13 @@ void VerletSplit::init()
    servant partition only sets up KSpace calculation
 ------------------------------------------------------------------------- */
 
-void VerletSplit::setup(int flag)
+void VerletSplit::setup()
 {
   if (comm->me == 0 && screen)
     fprintf(screen,"Setting up Verlet/split run ...\n");
 
   if (!master) force->kspace->setup();
-  else Verlet::setup(flag);
+  else Verlet::setup();
 }
 
 /* ----------------------------------------------------------------------
@@ -290,7 +290,7 @@ void VerletSplit::run(int n)
 
   Fix *fix_omp;
   int ifix = modify->find_fix("package_omp");
-  if (ifix < 0) fix_omp = nullptr;
+  if (ifix < 0) fix_omp = NULL;
   else fix_omp = modify->fix[ifix];
 
   // flags for timestepping iterations
@@ -344,7 +344,7 @@ void VerletSplit::run(int n)
         if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
         timer->stamp(Timer::COMM);
         if (n_pre_neighbor) modify->pre_neighbor();
-        neighbor->build(1);
+        neighbor->build();
         timer->stamp(Timer::NEIGH);
       }
     }
@@ -368,7 +368,7 @@ void VerletSplit::run(int n)
         timer->stamp(Timer::PAIR);
       }
 
-      if (atom->molecular != Atom::ATOMIC) {
+      if (atom->molecular) {
         if (force->bond) force->bond->compute(eflag,vflag);
         if (force->angle) force->angle->compute(eflag,vflag);
         if (force->dihedral) force->dihedral->compute(eflag,vflag);
@@ -581,8 +581,8 @@ void VerletSplit::k2r_comm()
    memory usage of Kspace force array on master procs
 ------------------------------------------------------------------------- */
 
-double VerletSplit::memory_usage()
+bigint VerletSplit::memory_usage()
 {
-  double bytes = (double)maxatom*3 * sizeof(double);
+  bigint bytes = maxatom*3 * sizeof(double);
   return bytes;
 }

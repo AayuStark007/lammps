@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef REGION_CLASS
-// clang-format off
-RegionStyle(sphere,RegSphere);
-// clang-format on
+
+RegionStyle(sphere,RegSphere)
+
 #else
 
 #ifndef LMP_REGION_SPHERE_H
@@ -36,19 +36,17 @@ class RegSphere : public Region {
   void set_velocity_shape();
   void velocity_contact_shape(double *, double *);
 
+
  private:
-  double xc, yc, zc;
+  double xc,yc,zc;
   double radius;
-  int xstyle, xvar;
-  int ystyle, yvar;
-  int zstyle, zvar;
-  int rstyle, rvar;
-  char *xstr, *ystr, *zstr, *rstr;
+  int rstyle,rvar;
+  char *rstr;
 
   void variable_check();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -71,6 +69,6 @@ Self-explanatory.
 
 E: Variable for region sphere is invalid style
 
-Only equal-style variables are allowed.
+Only equal-style varaibles are allowed.
 
 */

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -25,47 +25,35 @@ class Special : protected Pointers {
   void build();
 
  private:
-  int me, nprocs;
-  int maxall;
-  tagint **onetwo, **onethree, **onefour;
+  int me,nprocs;
+  tagint **onetwo,**onethree,**onefour;
 
-  // data used by rendezvous callback methods
+  // data used by ring callback methods
 
-  int nrvous;
-  tagint *atomIDs;
-  int *procowner;
-
-  struct IDRvous {
-    int me;
-    tagint atomID;
-  };
-
-  struct PairRvous {
-    tagint atomID, partnerID;
-  };
-
-  // private methods
-
-  void atom_owners();
-  void onetwo_build_newton();
-  void onetwo_build_newton_off();
-  void onethree_build();
-  void onefour_build();
+  int *count;
+  int **dflag;
 
   void dedup();
   void angle_trim();
   void dihedral_trim();
   void combine();
   void fix_alteration();
-  void timer_output(double);
 
-  // callback functions for rendezvous communication
+  // static variable for ring communication callback to access class data
+  // callback functions for ring communication
 
-  static int rendezvous_ids(int, char *, int &, int *&, char *&, void *);
-  static int rendezvous_pairs(int, char *, int &, int *&, char *&, void *);
+  static Special *sptr;
+  static void ring_one(int, char *);
+  static void ring_two(int, char *);
+  static void ring_three(int, char *);
+  static void ring_four(int, char *);
+  static void ring_five(int, char *);
+  static void ring_six(int, char *);
+  static void ring_seven(int, char *);
+  static void ring_eight(int, char *);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 

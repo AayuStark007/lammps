@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,50 +15,56 @@
    Contributing author: Pieter in 't Veld (SNL)
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include "fix_deform.h"
-
 #include "atom.h"
-#include "comm.h"
-#include "domain.h"
-#include "error.h"
-#include "force.h"
-#include "input.h"
-#include "irregular.h"
-#include "kspace.h"
-#include "lattice.h"
-#include "math_const.h"
-#include "modify.h"
 #include "update.h"
+#include "comm.h"
+#include "irregular.h"
+#include "domain.h"
+#include "lattice.h"
+#include "force.h"
+#include "modify.h"
+#include "math_const.h"
+#include "kspace.h"
+#include "input.h"
 #include "variable.h"
-
-#include <cmath>
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
 using namespace MathConst;
 
-enum{NONE=0,FINAL,DELTA,SCALE,VEL,ERATE,TRATE,VOLUME,WIGGLE,VARIABLE};
+enum{NONE,FINAL,DELTA,SCALE,VEL,ERATE,TRATE,VOLUME,WIGGLE,VARIABLE};
 enum{ONE_FROM_ONE,ONE_FROM_TWO,TWO_FROM_ONE};
+
+// same as domain.cpp, fix_nvt_sllod.cpp, compute_temp_deform.cpp
+
+enum{NO_REMAP,X_REMAP,V_REMAP};
 
 /* ---------------------------------------------------------------------- */
 
 FixDeform::FixDeform(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg),
-rfix(nullptr), irregular(nullptr), set(nullptr)
+rfix(NULL), irregular(NULL), set(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix deform command");
 
   no_change_box = 1;
-  restart_global = 1;
-  pre_exchange_migrate = 1;
 
-  nevery = utils::inumeric(FLERR,arg[3],false,lmp);
+  nevery = force->inumeric(FLERR,arg[3]);
   if (nevery <= 0) error->all(FLERR,"Illegal fix deform command");
 
   // set defaults
 
   set = new Set[6];
-  memset(set,0,6*sizeof(Set));
+  set[0].style = set[1].style = set[2].style =
+    set[3].style = set[4].style = set[5].style = NONE;
+  set[0].hstr = set[1].hstr = set[2].hstr =
+    set[3].hstr = set[4].hstr = set[5].hstr = NULL;
+  set[0].hratestr = set[1].hratestr = set[2].hratestr =
+    set[3].hratestr = set[4].hratestr = set[5].hratestr = NULL;
 
   // parse arguments
 
@@ -80,34 +85,34 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
       if (strcmp(arg[iarg+1],"final") == 0) {
         if (iarg+4 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = FINAL;
-        set[index].flo = utils::numeric(FLERR,arg[iarg+2],false,lmp);
-        set[index].fhi = utils::numeric(FLERR,arg[iarg+3],false,lmp);
+        set[index].flo = force->numeric(FLERR,arg[iarg+2]);
+        set[index].fhi = force->numeric(FLERR,arg[iarg+3]);
         iarg += 4;
       } else if (strcmp(arg[iarg+1],"delta") == 0) {
         if (iarg+4 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = DELTA;
-        set[index].dlo = utils::numeric(FLERR,arg[iarg+2],false,lmp);
-        set[index].dhi = utils::numeric(FLERR,arg[iarg+3],false,lmp);
+        set[index].dlo = force->numeric(FLERR,arg[iarg+2]);
+        set[index].dhi = force->numeric(FLERR,arg[iarg+3]);
         iarg += 4;
       } else if (strcmp(arg[iarg+1],"scale") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = SCALE;
-        set[index].scale = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].scale = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"vel") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = VEL;
-        set[index].vel = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].vel = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"erate") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = ERATE;
-        set[index].rate = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].rate = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"trate") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = TRATE;
-        set[index].rate = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].rate = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"volume") == 0) {
         set[index].style = VOLUME;
@@ -115,8 +120,8 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
       } else if (strcmp(arg[iarg+1],"wiggle") == 0) {
         if (iarg+4 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = WIGGLE;
-        set[index].amplitude = utils::numeric(FLERR,arg[iarg+2],false,lmp);
-        set[index].tperiod = utils::numeric(FLERR,arg[iarg+3],false,lmp);
+        set[index].amplitude = force->numeric(FLERR,arg[iarg+2]);
+        set[index].tperiod = force->numeric(FLERR,arg[iarg+3]);
         if (set[index].tperiod <= 0.0)
           error->all(FLERR,"Illegal fix deform command");
         iarg += 4;
@@ -129,8 +134,12 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
           error->all(FLERR,"Illegal fix deform command");
         delete [] set[index].hstr;
         delete [] set[index].hratestr;
-        set[index].hstr = utils::strdup(&arg[iarg+2][2]);
-        set[index].hratestr = utils::strdup(&arg[iarg+3][2]);
+        int n = strlen(&arg[iarg+2][2]) + 1;
+        set[index].hstr = new char[n];
+        strcpy(set[index].hstr,&arg[iarg+2][2]);
+        n = strlen(&arg[iarg+3][2]) + 1;
+        set[index].hratestr = new char[n];
+        strcpy(set[index].hratestr,&arg[iarg+3][2]);
         iarg += 4;
       } else error->all(FLERR,"Illegal fix deform command");
 
@@ -148,33 +157,33 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
       if (strcmp(arg[iarg+1],"final") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = FINAL;
-        set[index].ftilt = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].ftilt = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"delta") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = DELTA;
-        set[index].dtilt = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].dtilt = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"vel") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = VEL;
-        set[index].vel = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].vel = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"erate") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = ERATE;
-        set[index].rate = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].rate = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"trate") == 0) {
         if (iarg+3 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = TRATE;
-        set[index].rate = utils::numeric(FLERR,arg[iarg+2],false,lmp);
+        set[index].rate = force->numeric(FLERR,arg[iarg+2]);
         iarg += 3;
       } else if (strcmp(arg[iarg+1],"wiggle") == 0) {
         if (iarg+4 > narg) error->all(FLERR,"Illegal fix deform command");
         set[index].style = WIGGLE;
-        set[index].amplitude = utils::numeric(FLERR,arg[iarg+2],false,lmp);
-        set[index].tperiod = utils::numeric(FLERR,arg[iarg+3],false,lmp);
+        set[index].amplitude = force->numeric(FLERR,arg[iarg+2]);
+        set[index].tperiod = force->numeric(FLERR,arg[iarg+3]);
         if (set[index].tperiod <= 0.0)
           error->all(FLERR,"Illegal fix deform command");
         iarg += 4;
@@ -187,8 +196,12 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
           error->all(FLERR,"Illegal fix deform command");
         delete [] set[index].hstr;
         delete [] set[index].hratestr;
-        set[index].hstr = utils::strdup(&arg[iarg+2][2]);
-        set[index].hratestr = utils::strdup(&arg[iarg+3][2]);
+        int n = strlen(&arg[iarg+2][2]) + 1;
+        set[index].hstr = new char[n];
+        strcpy(set[index].hstr,&arg[iarg+2][2]);
+        n = strlen(&arg[iarg+3][2]) + 1;
+        set[index].hratestr = new char[n];
+        strcpy(set[index].hratestr,&arg[iarg+3][2]);
         iarg += 4;
       } else error->all(FLERR,"Illegal fix deform command");
 
@@ -199,7 +212,7 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
   // no x remap effectively moves atoms within box, so set restart_pbc
 
   options(narg-iarg,&arg[iarg]);
-  if (remapflag != Domain::X_REMAP) restart_pbc = 1;
+  if (remapflag != X_REMAP) restart_pbc = 1;
 
   // setup dimflags used by other classes to check for volume-change conflicts
 
@@ -207,12 +220,8 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
     if (set[i].style == NONE) dimflag[i] = 0;
     else dimflag[i] = 1;
 
-  if (dimflag[0]) box_change |= BOX_CHANGE_X;
-  if (dimflag[1]) box_change |= BOX_CHANGE_Y;
-  if (dimflag[2]) box_change |= BOX_CHANGE_Z;
-  if (dimflag[3]) box_change |= BOX_CHANGE_YZ;
-  if (dimflag[4]) box_change |= BOX_CHANGE_XZ;
-  if (dimflag[5]) box_change |= BOX_CHANGE_XY;
+  if (dimflag[0] || dimflag[1] || dimflag[2]) box_change_size = 1;
+  if (dimflag[3] || dimflag[4] || dimflag[5]) box_change_shape = 1;
 
   // no tensile deformation on shrink-wrapped dims
   // b/c shrink wrap will change box-length
@@ -334,9 +343,11 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
     set[i].hi_initial = domain->boxhi[i];
     set[i].vol_initial = domain->xprd * domain->yprd * domain->zprd;
   }
-  set[3].tilt_initial = domain->yz;
-  set[4].tilt_initial = domain->xz;
-  set[5].tilt_initial = domain->xy;
+  for (int i = 3; i < 6; i++) {
+    if (i == 5) set[i].tilt_initial = domain->xy;
+    else if (i == 4) set[i].tilt_initial = domain->xz;
+    else if (i == 3) set[i].tilt_initial = domain->yz;
+  }
 
   // reneighboring only forced if flips can occur due to shape changes
 
@@ -348,7 +359,7 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
   flip = 0;
 
   if (force_reneighbor) irregular = new Irregular(lmp);
-  else irregular = nullptr;
+  else irregular = NULL;
 
   TWOPI = 2.0*MY_PI;
 }
@@ -357,7 +368,7 @@ rfix(nullptr), irregular(nullptr), set(nullptr)
 
 FixDeform::~FixDeform()
 {
-  if (set) {
+  if(set) {
     for (int i = 0; i < 6; i++) {
       delete [] set[i].hstr;
       delete [] set[i].hratestr;
@@ -613,7 +624,7 @@ void FixDeform::init()
 
   delete [] rfix;
   nrigid = 0;
-  rfix = nullptr;
+  rfix = NULL;
 
   for (int i = 0; i < modify->nfix; i++)
     if (modify->fix[i]->rigid_flag) nrigid++;
@@ -717,7 +728,7 @@ void FixDeform::end_of_step()
   // set new box size for VOLUME dims that are linked to other dims
   // NOTE: still need to set h_rate for these dims
 
-  for (i = 0; i < 3; i++) {
+  for (int i = 0; i < 3; i++) {
     if (set[i].style != VOLUME) continue;
 
     if (set[i].substyle == ONE_FROM_ONE) {
@@ -801,7 +812,7 @@ void FixDeform::end_of_step()
       // tilt_target can be large positive or large negative value
       // add/subtract box lengths until tilt_target is closest to current value
 
-      int idenom = 0;
+      int idenom;
       if (i == 5) idenom = 0;
       else if (i == 4) idenom = 0;
       else if (i == 3) idenom = 1;
@@ -885,7 +896,7 @@ void FixDeform::end_of_step()
 
   // convert atoms and rigid bodies to lamda coords
 
-  if (remapflag == Domain::X_REMAP) {
+  if (remapflag == X_REMAP) {
     double **x = atom->x;
     int *mask = atom->mask;
     int nlocal = atom->nlocal;
@@ -925,7 +936,7 @@ void FixDeform::end_of_step()
 
   // convert atoms and rigid bodies back to box coords
 
-  if (remapflag == Domain::X_REMAP) {
+  if (remapflag == X_REMAP) {
     double **x = atom->x;
     int *mask = atom->mask;
     int nlocal = atom->nlocal;
@@ -944,50 +955,13 @@ void FixDeform::end_of_step()
   if (kspace_flag) force->kspace->setup();
 }
 
-/* ----------------------------------------------------------------------
-   write Set data to restart file
-------------------------------------------------------------------------- */
-
-void FixDeform::write_restart(FILE *fp)
-{
-  if (comm->me == 0) {
-    int size = 6*sizeof(Set);
-    fwrite(&size,sizeof(int),1,fp);
-    fwrite(set,sizeof(Set),6,fp);
-  }
-}
-
-/* ----------------------------------------------------------------------
-   use selected state info from restart file to restart the Fix
-------------------------------------------------------------------------- */
-
-void FixDeform::restart(char *buf)
-{
-  int samestyle = 1;
-  Set *set_restart = (Set *) buf;
-  for (int i=0; i<6; ++i) {
-    // restore data from initial state
-    set[i].lo_initial = set_restart[i].lo_initial;
-    set[i].hi_initial = set_restart[i].hi_initial;
-    set[i].vol_initial = set_restart[i].vol_initial;
-    set[i].tilt_initial = set_restart[i].tilt_initial;
-    // check if style settings are consistent (should do the whole set?)
-    if (set[i].style != set_restart[i].style)
-      samestyle = 0;
-    if (set[i].substyle != set_restart[i].substyle)
-      samestyle = 0;
-  }
-  if (!samestyle)
-    error->all(FLERR,"Fix deform settings not consistent with restart");
-}
-
 /* ---------------------------------------------------------------------- */
 
 void FixDeform::options(int narg, char **arg)
 {
   if (narg < 0) error->all(FLERR,"Illegal fix deform command");
 
-  remapflag = Domain::X_REMAP;
+  remapflag = X_REMAP;
   scaleflag = 1;
   flipflag = 1;
 
@@ -995,9 +969,9 @@ void FixDeform::options(int narg, char **arg)
   while (iarg < narg) {
     if (strcmp(arg[iarg],"remap") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix deform command");
-      if (strcmp(arg[iarg+1],"x") == 0) remapflag = Domain::X_REMAP;
-      else if (strcmp(arg[iarg+1],"v") == 0) remapflag = Domain::V_REMAP;
-      else if (strcmp(arg[iarg+1],"none") == 0) remapflag = Domain::NO_REMAP;
+      if (strcmp(arg[iarg+1],"x") == 0) remapflag = X_REMAP;
+      else if (strcmp(arg[iarg+1],"v") == 0) remapflag = V_REMAP;
+      else if (strcmp(arg[iarg+1],"none") == 0) remapflag = NO_REMAP;
       else error->all(FLERR,"Illegal fix deform command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"units") == 0) {

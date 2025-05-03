@@ -108,7 +108,7 @@ class DriverSocket(socket.socket):
    """Deals with communication between the client and driver code.
 
    Deals with sending and receiving the data from the driver code. Keeps track
-   of the status of the driver. Initializes the driver forcefield, sends the
+   of the status of the driver. Initialises the driver forcefield, sends the
    position and cell data, and receives the force data.
 
    Attributes:
@@ -119,7 +119,7 @@ class DriverSocket(socket.socket):
    """
 
    def __init__(self, socket):
-      """Initializes DriverSocket.
+      """Initialises DriverSocket.
 
       Args:
          socket: A socket through which the communication should be done.
@@ -243,7 +243,7 @@ class DriverSocket(socket.socket):
          return np.fromstring(self._buf[0:blen], dest.dtype).reshape(dest.shape)
 
    def initialize(self, rid, pars):
-      """Sends the initialization string to the driver.
+      """Sends the initialisation string to the driver.
 
       Args:
          rid: The index of the request, i.e. the replica that
@@ -378,7 +378,7 @@ class InterfaceSocket(object):
    """
 
    def __init__(self, address="localhost", port=31415, slots=4, mode="unix", latency=1e-3, timeout=1.0, dopbc=True):
-      """Initializes interface.
+      """Initialises interface.
 
       Args:
          address: An optional string giving the name of the host server.
@@ -456,13 +456,13 @@ class InterfaceSocket(object):
       """Adds a request.
 
       Note that the pars dictionary need to be sent as a string of a
-      standard format so that the initialization of the driver can be done.
+      standard format so that the initialisation of the driver can be done.
 
       Args:
          atoms: An Atoms object giving the atom positions.
          cell: A Cell object giving the system box.
          pars: An optional dictionary giving the parameters to be sent to the
-            driver for initialization. Defaults to {}.
+            driver for initialisation. Defaults to {}.
          reqid: An optional integer that identifies requests of the same type,
             e.g. the bead index
 
@@ -556,7 +556,7 @@ class InterfaceSocket(object):
 
       Deals with maintaining the jobs list. Gets data from drivers that have
       finished their calculation and removes that job from the list of running
-      jobs, adds jobs to free clients and initializes the forcefields of new
+      jobs, adds jobs to free clients and initialises the forcefields of new
       clients.
       """
 

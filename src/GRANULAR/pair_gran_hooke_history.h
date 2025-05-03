@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(gran/hooke/history,PairGranHookeHistory);
-// clang-format on
+
+PairStyle(gran/hooke/history,PairGranHookeHistory)
+
 #else
 
 #ifndef LMP_PAIR_GRAN_HOOKE_HISTORY_H
@@ -32,6 +32,7 @@ class PairGranHookeHistory : public Pair {
   virtual void settings(int, char **);
   void coeff(int, char **);
   void init_style();
+  void init_list(int, class NeighList *);
   double init_one(int, int);
   void write_restart(FILE *);
   void read_restart(FILE *);
@@ -42,36 +43,30 @@ class PairGranHookeHistory : public Pair {
   int pack_forward_comm(int, int *, double *, int, int *);
   void unpack_forward_comm(int, int, double *);
   double memory_usage();
-  double atom2cut(int);
-  double radii2cut(double, double);
 
  protected:
-  double kn, kt, gamman, gammat, xmu;
+  double kn,kt,gamman,gammat,xmu;
   int dampflag;
   double dt;
   int freeze_group_bit;
   int history;
-  int limit_damping;
 
   int neighprev;
-  double *onerad_dynamic, *onerad_frozen;
-  double *maxrad_dynamic, *maxrad_frozen;
+  double *onerad_dynamic,*onerad_frozen;
+  double *maxrad_dynamic,*maxrad_frozen;
 
-  int size_history;
-
-  class FixDummy *fix_dummy;
-  class FixNeighHistory *fix_history;
+  class FixShearHistory *fix_history;
 
   // storage of rigid body masses for use in granular interactions
 
-  class Fix *fix_rigid;    // ptr to rigid body fix, null pointer if none
+  class Fix *fix_rigid;    // ptr to rigid body fix, NULL if none
   double *mass_rigid;      // rigid mass for owned+ghost atoms
   int nmax;                // allocated size of mass_rigid
 
   void allocate();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -96,16 +91,12 @@ E: Pair granular requires ghost atoms store velocity
 
 Use the comm_modify vel yes command to enable this.
 
-E: Could not find pair fix neigh history ID
-
-UNDOCUMENTED
-
-U: Pair granular with shear history requires newton pair off
+E: Pair granular with shear history requires newton pair off
 
 This is a current restriction of the implementation of pair
 granular styles with history.
 
-U: Could not find pair fix ID
+E: Could not find pair fix ID
 
 A fix is created internally by the pair style to store shear
 history information.  You cannot delete it.

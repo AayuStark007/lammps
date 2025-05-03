@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(rigid/local,ComputeRigidLocal);
-// clang-format on
+
+ComputeStyle(rigid/local,ComputeRigidLocal)
+
 #else
 
 #ifndef LMP_COMPUTE_RIGID_LOCAL_H
@@ -41,14 +41,12 @@ class ComputeRigidLocal : public Compute {
   class FixRigidSmall *fixrigid;
 
   int nmax;
-  double *vlocal;
-  double **alocal;
 
   int compute_rigid(int);
   void reallocate(int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -61,27 +59,15 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Invalid keyword in compute rigid/local command
-
-UNDOCUMENTED
-
-E: FixRigidSmall ID for compute rigid/local does not exist
-
-UNDOCUMENTED
-
-E: Compute rigid/local does not use fix rigid/small fix
-
-UNDOCUMENTED
-
-U: Compute bond/local used when bonds are not allowed
+E: Compute bond/local used when bonds are not allowed
 
 The atom style does not support bonds.
 
-U: Invalid keyword in compute bond/local command
+E: Invalid keyword in compute bond/local command
 
 Self-explanatory.
 
-U: No bond style is defined for compute bond/local
+E: No bond style is defined for compute bond/local
 
 Self-explanatory.
 

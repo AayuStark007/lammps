@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(ave/atom,FixAveAtom);
-// clang-format on
+
+FixStyle(ave/atom,FixAveAtom)
+
 #else
 
 #ifndef LMP_FIX_AVE_ATOM_H
 #define LMP_FIX_AVE_ATOM_H
 
+#include <stdio.h>
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -41,16 +42,16 @@ class FixAveAtom : public Fix {
 
  private:
   int nvalues;
-  int nrepeat, irepeat;
-  bigint nvalid, nvalid_last;
-  int *which, *argindex, *value2index;
+  int nrepeat,irepeat;
+  bigint nvalid,nvalid_last;
+  int *which,*argindex,*value2index;
   char **ids;
   double **array;
 
   bigint nextvalid();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

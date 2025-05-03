@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -17,10 +16,9 @@
      K-space terms added by Stan Moore (BYU)
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <string.h>
 #include "compute_group_group.h"
-
-#include <cstring>
-#include <cmath>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
@@ -31,6 +29,7 @@
 #include "group.h"
 #include "kspace.h"
 #include "error.h"
+#include <math.h>
 #include "comm.h"
 #include "domain.h"
 #include "math_const.h"
@@ -40,13 +39,11 @@ using namespace MathConst;
 
 #define SMALL 0.00001
 
-enum{OFF,INTER,INTRA};
-
 /* ---------------------------------------------------------------------- */
 
 ComputeGroupGroup::ComputeGroupGroup(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  group2(nullptr)
+  group2(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute group/group command");
 
@@ -55,7 +52,10 @@ ComputeGroupGroup::ComputeGroupGroup(LAMMPS *lmp, int narg, char **arg) :
   extscalar = 1;
   extvector = 1;
 
-  group2 = utils::strdup(arg[3]);
+  int n = strlen(arg[3]) + 1;
+  group2 = new char[n];
+  strcpy(group2,arg[3]);
+
   jgroup = group->find(group2);
   if (jgroup == -1)
     error->all(FLERR,"Compute group/group group ID does not exist");
@@ -64,7 +64,6 @@ ComputeGroupGroup::ComputeGroupGroup(LAMMPS *lmp, int narg, char **arg) :
   pairflag = 1;
   kspaceflag = 0;
   boundaryflag = 1;
-  molflag = OFF;
 
   int iarg = 4;
   while (iarg < narg) {
@@ -89,20 +88,10 @@ ComputeGroupGroup::ComputeGroupGroup(LAMMPS *lmp, int narg, char **arg) :
       else if (strcmp(arg[iarg+1],"no") == 0) boundaryflag  = 0;
       else error->all(FLERR,"Illegal compute group/group command");
       iarg += 2;
-    } else if (strcmp(arg[iarg],"molecule") == 0) {
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute group/group command");
-      if (strcmp(arg[iarg+1],"off") == 0) molflag = OFF;
-      else if (strcmp(arg[iarg+1],"inter") == 0) molflag = INTER;
-      else if (strcmp(arg[iarg+1],"intra") == 0) molflag  = INTRA;
-      else error->all(FLERR,"Illegal compute group/group command");
-      if (molflag != OFF && atom->molecule_flag == 0)
-        error->all(FLERR,"Compute group/group molecule requires molecule IDs");
-      iarg += 2;
     } else error->all(FLERR,"Illegal compute group/group command");
   }
 
-  vector = new double[size_vector];
+  vector = new double[3];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -120,15 +109,14 @@ void ComputeGroupGroup::init()
   // if non-hybrid, then error if single_enable = 0
   // if hybrid, let hybrid determine if sub-style sets single_enable = 0
 
-  if (pairflag && force->pair == nullptr)
+  if (pairflag && force->pair == NULL)
     error->all(FLERR,"No pair style defined for compute group/group");
-  if (force->pair_match("^hybrid",0) == nullptr
-      && force->pair->single_enable == 0)
+  if (force->pair_match("hybrid",0) == NULL && force->pair->single_enable == 0)
     error->all(FLERR,"Pair style does not support compute group/group");
 
   // error if Kspace style does not compute group/group interactions
 
-  if (kspaceflag && force->kspace == nullptr)
+  if (kspaceflag && force->kspace == NULL)
     error->all(FLERR,"No Kspace style defined for compute group/group");
   if (kspaceflag && force->kspace->group_group_enable == 0)
     error->all(FLERR,"Kspace style does not support compute group/group");
@@ -136,18 +124,21 @@ void ComputeGroupGroup::init()
   if (pairflag) {
     pair = force->pair;
     cutsq = force->pair->cutsq;
-  } else pair = nullptr;
+  } else pair = NULL;
 
   if (kspaceflag) kspace = force->kspace;
-  else kspace = nullptr;
+  else kspace = NULL;
 
   // compute Kspace correction terms
 
   if (kspaceflag) {
     kspace_correction();
-    if ((fabs(e_correction) > SMALL) && (comm->me == 0))
-      error->warning(FLERR,"Both groups in compute group/group have a net charge; "
-                     "the Kspace boundary correction to energy will be non-zero");
+    if (fabs(e_correction) > SMALL && comm->me == 0) {
+      char str[128];
+      sprintf(str,"Both groups in compute group/group have a net charge; "
+              "the Kspace boundary correction to energy will be non-zero");
+      error->warning(FLERR,str);
+    }
   }
 
   // recheck that group 2 has not been deleted
@@ -169,7 +160,7 @@ void ComputeGroupGroup::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeGroupGroup::init_list(int /*id*/, NeighList *ptr)
+void ComputeGroupGroup::init_list(int id, NeighList *ptr)
 {
   list = ptr;
 }
@@ -212,7 +203,6 @@ void ComputeGroupGroup::pair_contribution()
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   double **x = atom->x;
-  tagint *molecule = atom->molecule;
   int *type = atom->type;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
@@ -253,27 +243,13 @@ void ComputeGroupGroup::pair_contribution()
       factor_coul = special_coul[sbmask(j)];
       j &= NEIGHMASK;
 
-      // skip if atom J is not in either group
-
-      if (!(mask[j] & groupbit || mask[j] & jgroupbit)) continue;
-
-      // skip if atoms I,J are only in the same group
+      if (!(mask[j] & groupbit || mask[j] & jgroupbit)) continue; // skip if atom J is not in either group
 
       int ij_flag = 0;
       int ji_flag = 0;
       if (mask[i] & groupbit && mask[j] & jgroupbit) ij_flag = 1;
       if (mask[j] & groupbit && mask[i] & jgroupbit) ji_flag = 1;
-      if (!ij_flag && !ji_flag) continue;
-
-      // skip if molecule IDs of atoms I,J do not satisfy molflag setting
-
-      if (molflag != OFF) {
-        if (molflag == INTER) {
-          if (molecule[i] == molecule[j]) continue;
-        } else {
-          if (molecule[i] != molecule[j]) continue;
-        }
-      }
+      if (!ij_flag && !ji_flag) continue; // skip if atoms I,J are only in the same group
 
       delx = xtmp - x[j][0];
       dely = ytmp - x[j][1];

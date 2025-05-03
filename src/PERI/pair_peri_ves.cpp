@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,22 +15,24 @@
    Contributing authors: Rezwanur Rahman, J.T. Foster (UTSA)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_peri_ves.h"
-
 #include "atom.h"
-#include "comm.h"
 #include "domain.h"
-#include "error.h"
-#include "fix_peri_neigh.h"
-#include "force.h"
 #include "lattice.h"
-#include "memory.h"
-#include "modify.h"
-#include "neigh_list.h"
-#include "neighbor.h"
+#include "force.h"
 #include "update.h"
-
-#include <cmath>
+#include "modify.h"
+#include "fix.h"
+#include "fix_peri_neigh.h"
+#include "comm.h"
+#include "neighbor.h"
+#include "neigh_list.h"
+#include "memory.h"
+#include "error.h"
+#include "update.h"
 
 using namespace LAMMPS_NS;
 
@@ -46,15 +47,15 @@ PairPeriVES::PairPeriVES(LAMMPS *lmp) : Pair(lmp)
   ifix_peri = -1;
 
   nmax = 0;
-  s0_new = nullptr;
-  theta = nullptr;
+  s0_new = NULL;
+  theta = NULL;
 
-  bulkmodulus = nullptr;
-  shearmodulus = nullptr;
-  s00 = alpha = nullptr;
-  cut = nullptr;
-  m_lambdai = nullptr;
-  m_taubi = nullptr;
+  bulkmodulus = NULL;
+  shearmodulus = NULL;
+  s00 = alpha = NULL;
+  cut = NULL;
+  m_lambdai = NULL;
+  m_taubi = NULL;
 
   // set comm size needed by this Pair
   // comm_reverse not needed
@@ -97,7 +98,8 @@ void PairPeriVES::compute(int eflag, int vflag)
   double d_ij,delta,stretch;
 
   evdwl = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = eflag_global = eflag_atom = 0;
 
   double **f = atom->f;
   double **x = atom->x;
@@ -316,7 +318,7 @@ void PairPeriVES::compute(int eflag, int vflag)
         dr - (theta[i]* r0[i][jj] / 3.0);
       deltaed = deviatoric_extension-deviatorextention[i][jj];
 
-      // back extension at current step
+      // back extention at current step
 
       edbNp1 = deviatorextention[i][jj]*(1-decay) +
         deviatorBackextention[i][jj]*decay+betai*deltaed;
@@ -356,7 +358,7 @@ void PairPeriVES::compute(int eflag, int vflag)
       // find stretch in bond I-J and break if necessary
       // use s0 from previous timestep
 
-      // store current deviatoric extension
+      // store current deviatoric extention
 
       deviatorextention[i][jj]=deviatoric_extension;
       deviatorBackextention[i][jj]=edbNp1;
@@ -409,7 +411,7 @@ void PairPeriVES::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairPeriVES::settings(int narg, char **/*arg*/)
+void PairPeriVES::settings(int narg, char **arg)
 {
   if (narg) error->all(FLERR,"Illegal pair_style command");
 }
@@ -424,16 +426,16 @@ void PairPeriVES::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
-  double bulkmodulus_one = utils::numeric(FLERR,arg[2],false,lmp);
-  double shearmodulus_one = utils::numeric(FLERR,arg[3],false,lmp);
-  double cut_one = utils::numeric(FLERR,arg[4],false,lmp);
-  double s00_one = utils::numeric(FLERR,arg[5],false,lmp);
-  double alpha_one = utils::numeric(FLERR,arg[6],false,lmp);
-  double mlambdai_one = utils::numeric(FLERR,arg[7],false,lmp);
-  double mtaui_one = utils::numeric(FLERR,arg[8],false,lmp);
+  double bulkmodulus_one = atof(arg[2]);
+  double shearmodulus_one = atof(arg[3]);
+  double cut_one = atof(arg[4]);
+  double s00_one = atof(arg[5]);
+  double alpha_one = atof(arg[6]);
+  double mlambdai_one = atof(arg[7]);
+  double mtaui_one = atof(arg[8]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -482,10 +484,10 @@ void PairPeriVES::init_style()
 
   if (!atom->peri_flag)
     error->all(FLERR,"Pair style peri requires atom style peri");
-  if (atom->map_style == Atom::MAP_NONE)
+  if (atom->map_style == 0)
     error->all(FLERR,"Pair peri requires an atom map, see atom_modify");
 
-  if (domain->lattice == nullptr)
+  if (domain->lattice == NULL)
     error->all(FLERR,"Pair peri requires a lattice be defined");
   if (domain->lattice->xlattice != domain->lattice->ylattice ||
       domain->lattice->xlattice != domain->lattice->zlattice ||
@@ -494,14 +496,21 @@ void PairPeriVES::init_style()
 
   // if first init, create Fix needed for storing fixed neighbors
 
-  if (ifix_peri == -1) modify->add_fix("PERI_NEIGH all PERI_NEIGH");
+  if (ifix_peri == -1) {
+    char **fixarg = new char*[3];
+    fixarg[0] = (char *) "PERI_NEIGH";
+    fixarg[1] = (char *) "all";
+    fixarg[2] = (char *) "PERI_NEIGH";
+    modify->add_fix(3,fixarg);
+    delete [] fixarg;
+  }
 
   // find associated PERI_NEIGH fix that must exist
   // could have changed locations in fix list since created
 
-  ifix_peri = modify->find_fix_by_style("^PERI_NEIGH");
-  if (ifix_peri == -1)
-    error->all(FLERR,"Fix peri neigh does not exist");
+  for (int i = 0; i < modify->nfix; i++)
+    if (strcmp(modify->fix[i]->style,"PERI_NEIGH") == 0) ifix_peri = i;
+  if (ifix_peri == -1) error->all(FLERR,"Fix peri neigh does not exist");
 
   neighbor->request(this,instance_me);
 }
@@ -540,17 +549,17 @@ void PairPeriVES::read_restart(FILE *fp)
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++)
     for (j = i; j <= atom->ntypes; j++) {
-      if (me == 0) utils::sfread(FLERR,&setflag[i][j],sizeof(int),1,fp,nullptr,error);
+      if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
       if (setflag[i][j]) {
         if (me == 0) {
-          utils::sfread(FLERR,&bulkmodulus[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&shearmodulus[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&s00[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&alpha[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&cut[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&m_lambdai[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&m_taubi[i][j],sizeof(double),1,fp,nullptr,error);
+          fread(&bulkmodulus[i][j],sizeof(double),1,fp);
+          fread(&shearmodulus[i][j],sizeof(double),1,fp);
+          fread(&s00[i][j],sizeof(double),1,fp);
+          fread(&alpha[i][j],sizeof(double),1,fp);
+          fread(&cut[i][j],sizeof(double),1,fp);
+          fread(&m_lambdai[i][j],sizeof(double),1,fp);
+          fread(&m_taubi[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&bulkmodulus[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&shearmodulus[i][j],1,MPI_DOUBLE,0,world);
@@ -688,7 +697,7 @@ void PairPeriVES::compute_dilatation()
 ---------------------------------------------------------------------- */
 
 int PairPeriVES::pack_forward_comm(int n, int *list, double *buf,
-                                   int /*pbc_flag*/, int * /*pbc*/)
+                                   int pbc_flag, int *pbc)
 {
   int i,j,m;
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python -i
-# preceding line should have path for Python on your machine
+# preceeding line should have path for Python on your machine
 
 # viz_atomeye.py
 # Purpose: viz running LAMMPS simulation via AtomEye
@@ -28,10 +28,10 @@ nfreq = int(sys.argv[2])
 nsteps = int(sys.argv[3])
 
 me = 0
-# uncomment this if running in parallel via mpi4py
-#from mpi4py import MPI
-#me = MPI.COMM_WORLD.Get_rank()
-#nprocs = MPI.COMM_WORLD.Get_size()
+# uncomment if running in parallel via Pypar
+#import pypar
+#me = pypar.rank()
+#nprocs = pypar.size()
 
 from lammps import lammps
 lmp = lammps()
@@ -42,7 +42,7 @@ lmp = lammps()
 
 lmp.file(infile)
 lmp.command("thermo %d" % nfreq)
-lmp.command("dump python all cfg %d tmp.cfg.* mass type xs ys zs id" % nfreq)
+lmp.command("dump python all cfg %d tmp.cfg.* id type xs ys zs" % nfreq)
 
 # initial 0-step run to generate dump file and image
 
@@ -68,5 +68,6 @@ while ntimestep < nsteps:
 
 lmp.command("run 0 pre no post yes")
 
-# uncomment if running in parallel via mpi4py
+# uncomment if running in parallel via Pypar
 #print("Proc %d out of %d procs has" % (me,nprocs), lmp)
+#pypar.finalize()

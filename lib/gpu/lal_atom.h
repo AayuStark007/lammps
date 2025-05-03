@@ -16,7 +16,7 @@
 #ifndef PAIR_GPU_ATOM_H
 #define PAIR_GPU_ATOM_H
 
-#include <cmath>
+#include <math.h>
 #include "mpi.h"
 
 #if defined(USE_OPENCL)
@@ -24,19 +24,11 @@
 #include "geryon/ocl_mat.h"
 #include "geryon/ocl_kernel.h"
 using namespace ucl_opencl;
-#ifndef LAL_NO_OCL_EV_JIT
-#define LAL_OCL_EV_JIT
-#endif
 #elif defined(USE_CUDART)
 #include "geryon/nvc_timer.h"
 #include "geryon/nvc_mat.h"
 #include "geryon/nvc_kernel.h"
 using namespace ucl_cudart;
-#elif defined(USE_HIP)
-#include "geryon/hip_timer.h"
-#include "geryon/hip_mat.h"
-#include "geryon/hip_kernel.h"
-using namespace ucl_hip;
 #else
 #include "geryon/nvd_timer.h"
 #include "geryon/nvd_mat.h"
@@ -181,7 +173,7 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view_offset(0,buffer,m_size*m_size);
+    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
     ucl_copy(dev_v,view,false);
   }
 
@@ -200,26 +192,7 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view_offset(0,buffer,m_size*m_size);
-    ucl_copy(dev_v,view,false);
-  }
-
-  /// Pack LAMMPS atom type constants into 2 vectors and copy to device
-  template <class dev_typ, class t1, class t2>
-  inline void type_pack2(const int n, UCL_D_Vec<dev_typ> &dev_v,
-                         UCL_H_Vec<numtyp> &buffer, t1 ***one, t2 ***two) {
-    int ii=0;
-    for (int i=0; i<n; i++) {
-      for (int j=0; j<n; j++) {
-        for (int k=0; k<n; k++) {
-          buffer[ii*2]=static_cast<numtyp>(one[i][j][k]);
-          buffer[ii*2+1]=static_cast<numtyp>(two[i][j][k]);
-          ii++;
-        }
-      }
-    }
-    UCL_H_Vec<dev_typ> view;
-    view.view_offset(0,buffer,n*n*n);
+    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
     ucl_copy(dev_v,view,false);
   }
 
@@ -239,7 +212,7 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view_offset(0,buffer,m_size*m_size);
+    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
     ucl_copy(dev_v,view,false);
   }
 
@@ -260,7 +233,7 @@ class Atom {
       ii+=m_size-n;
     }
     UCL_H_Vec<dev_typ> view;
-    view.view_offset(0,buffer,m_size*m_size);
+    view.view((dev_typ*)buffer.begin(),m_size*m_size,*dev);
     ucl_copy(dev_v,view,false);
   }
 
@@ -273,7 +246,7 @@ class Atom {
       buffer[i*2+1]=static_cast<numtyp>(two[i][i]);
     }
     UCL_H_Vec<dev_typ> view;
-    view.view_offset(0,buffer,n);
+    view.view((dev_typ*)buffer.begin(),n,*dev);
     ucl_copy(dev_v,view,false);
   }
 
@@ -283,9 +256,6 @@ class Atom {
   inline void data_unavail()
     { _x_avail=false; _q_avail=false; _quat_avail=false; _v_avail=false; _resized=false; }
 
-  typedef struct { double x,y,z; } vec3d;
-  typedef struct { numtyp x,y,z,w; } vec4d_t;
-
   /// Cast positions and types to write buffer
   inline void cast_x_data(double **host_ptr, const int *host_type) {
     if (_x_avail==false) {
@@ -294,16 +264,13 @@ class Atom {
       memcpy(host_x_cast.begin(),host_ptr[0],_nall*3*sizeof(double));
       memcpy(host_type_cast.begin(),host_type,_nall*sizeof(int));
       #else
-      vec3d *host_p=reinterpret_cast<vec3d*>(&(host_ptr[0][0]));
-      vec4d_t *xp=reinterpret_cast<vec4d_t*>(&(x[0]));
-      #if (LAL_USE_OMP == 1)
-      #pragma omp parallel for schedule(static)
-      #endif
+      int wl=0;
       for (int i=0; i<_nall; i++) {
-        xp[i].x=host_p[i].x;
-        xp[i].y=host_p[i].y;
-        xp[i].z=host_p[i].z;
-        xp[i].w=host_type[i];
+        x[wl]=host_ptr[i][0];
+        x[wl+1]=host_ptr[i][1];
+        x[wl+2]=host_ptr[i][2];
+        x[wl+3]=host_type[i];
+        wl+=4;
       }
       #endif
       _time_cast+=MPI_Wtime()-t;
@@ -348,11 +315,6 @@ class Atom {
       } else if (sizeof(numtyp)==sizeof(double))
         memcpy(q.host.begin(),host_ptr,_nall*sizeof(numtyp));
       else
-        #if (LAL_USE_OMP == 1) && (LAL_USE_OMP_SIMD == 1)
-        #pragma omp parallel for simd schedule(static)
-        #elif (LAL_USE_OMP_SIMD == 1)
-        #pragma omp simd
-        #endif
         for (int i=0; i<_nall; i++) q[i]=host_ptr[i];
       _time_cast+=MPI_Wtime()-t;
     }
@@ -360,12 +322,10 @@ class Atom {
 
   // Copy charges to device asynchronously
   inline void add_q_data() {
-    time_q.start();
     if (_q_avail==false) {
       q.update_device(_nall,true);
       _q_avail=true;
     }
-    time_q.stop();
   }
 
   // Cast quaternions to write buffer
@@ -379,11 +339,6 @@ class Atom {
       } else if (sizeof(numtyp)==sizeof(double))
         memcpy(quat.host.begin(),host_ptr,_nall*4*sizeof(numtyp));
       else
-        #if (LAL_USE_OMP == 1) && (LAL_USE_OMP_SIMD == 1)
-        #pragma omp parallel for simd schedule(static)
-        #elif (LAL_USE_OMP_SIMD == 1)
-        #pragma omp simd
-        #endif
         for (int i=0; i<_nall*4; i++) quat[i]=host_ptr[i];
       _time_cast+=MPI_Wtime()-t;
     }
@@ -392,12 +347,10 @@ class Atom {
   // Copy quaternions to device
   /** Copies nall()*4 elements **/
   inline void add_quat_data() {
-    time_quat.start();
     if (_quat_avail==false) {
       quat.update_device(_nall*4,true);
       _quat_avail=true;
     }
-    time_quat.stop();
   }
 
   /// Cast velocities and tags to write buffer
@@ -408,16 +361,13 @@ class Atom {
       memcpy(host_v_cast.begin(),host_ptr[0],_nall*3*sizeof(double));
       memcpy(host_tag_cast.begin(),host_tag,_nall*sizeof(int));
       #else
-      vec3d *host_p=reinterpret_cast<vec3d*>(&(host_ptr[0][0]));
-      vec4d_t *vp=reinterpret_cast<vec4d_t*>(&(v[0]));
-      #if (LAL_USE_OMP == 1)
-      #pragma omp parallel for schedule(static)
-      #endif
+      int wl=0;
       for (int i=0; i<_nall; i++) {
-        vp[i].x=host_p[i].x;
-        vp[i].y=host_p[i].y;
-        vp[i].z=host_p[i].z;
-        vp[i].w=host_tag[i];
+        v[wl]=host_ptr[i][0];
+        v[wl+1]=host_ptr[i][1];
+        v[wl+2]=host_ptr[i][2];
+        v[wl+3]=host_tag[i];
+        wl+=4;
       }
       #endif
       _time_cast+=MPI_Wtime()-t;
@@ -522,14 +472,6 @@ class Atom {
   #ifdef USE_CUDPP
   CUDPPConfiguration sort_config;
   CUDPPHandle sort_plan;
-  #endif
-
-  #ifdef USE_HIP_DEVICE_SORT
-  unsigned* sort_out_keys = nullptr;
-  int* sort_out_values = nullptr;
-  void* sort_temp_storage = nullptr;
-  size_t sort_temp_storage_size = 0;
-  size_t sort_out_size = 0;
   #endif
 };
 

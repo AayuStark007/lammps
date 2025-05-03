@@ -1,7 +1,7 @@
 #ifndef LAMMPS_DATA_WRITE_H
 #define LAMMPS_DATA_WRITE_H
 
-#include <cstdio>
+#include <stdio.h>
 #include "send2one.h"
 
 class LAMMPSDataWrite : public Send2One {

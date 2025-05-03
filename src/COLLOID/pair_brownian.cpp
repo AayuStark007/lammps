@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,19 +15,23 @@
    Contributing authors: Amit Kumar and Michael Bybee (UIUC)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_brownian.h"
-
-#include <cmath>
-#include <cstring>
 #include "atom.h"
+#include "atom_vec.h"
 #include "comm.h"
 #include "force.h"
 #include "neighbor.h"
 #include "neigh_list.h"
+#include "neigh_request.h"
 #include "domain.h"
 #include "update.h"
 #include "modify.h"
 #include "fix.h"
+#include "fix_deform.h"
 #include "fix_wall.h"
 #include "input.h"
 #include "variable.h"
@@ -37,7 +40,6 @@
 #include "math_special.h"
 #include "memory.h"
 #include "error.h"
-
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -52,7 +54,7 @@ enum{EDGE,CONSTANT,VARIABLE};
 PairBrownian::PairBrownian(LAMMPS *lmp) : Pair(lmp)
 {
   single_enable = 0;
-  random = nullptr;
+  random = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -78,7 +80,8 @@ void PairBrownian::compute(int eflag, int vflag)
   double rsq,r,h_sep,radi;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -100,20 +103,20 @@ void PairBrownian::compute(int eflag, int vflag)
 
   double dims[3], wallcoord;
   if (flagVF) // Flag for volume fraction corrections
-    if (flagdeform || flagwall == 2) { // Possible changes in volume fraction
+    if (flagdeform || flagwall == 2){ // Possible changes in volume fraction
       if (flagdeform && !flagwall)
         for (j = 0; j < 3; j++)
           dims[j] = domain->prd[j];
-      else if (flagwall == 2 || (flagdeform && flagwall == 1)) {
+      else if (flagwall == 2 || (flagdeform && flagwall == 1)){
         double wallhi[3], walllo[3];
-        for (int j = 0; j < 3; j++) {
+        for (int j = 0; j < 3; j++){
           wallhi[j] = domain->prd[j];
           walllo[j] = 0;
         }
-        for (int m = 0; m < wallfix->nwall; m++) {
+        for (int m = 0; m < wallfix->nwall; m++){
           int dim = wallfix->wallwhich[m] / 2;
           int side = wallfix->wallwhich[m] % 2;
-          if (wallfix->xstyle[m] == VARIABLE) {
+          if (wallfix->xstyle[m] == VARIABLE){
             wallcoord = input->variable->compute_equal(wallfix->xindex[m]);
           }
           else wallcoord = wallfix->coord0[m];
@@ -371,18 +374,18 @@ void PairBrownian::settings(int narg, char **arg)
 {
   if (narg != 7 && narg != 9) error->all(FLERR,"Illegal pair_style command");
 
-  mu = utils::numeric(FLERR,arg[0],false,lmp);
-  flaglog = utils::inumeric(FLERR,arg[1],false,lmp);
-  flagfld = utils::inumeric(FLERR,arg[2],false,lmp);
-  cut_inner_global = utils::numeric(FLERR,arg[3],false,lmp);
-  cut_global = utils::numeric(FLERR,arg[4],false,lmp);
-  t_target = utils::numeric(FLERR,arg[5],false,lmp);
-  seed = utils::inumeric(FLERR,arg[6],false,lmp);
+  mu = force->numeric(FLERR,arg[0]);
+  flaglog = force->inumeric(FLERR,arg[1]);
+  flagfld = force->inumeric(FLERR,arg[2]);
+  cut_inner_global = force->numeric(FLERR,arg[3]);
+  cut_global = force->numeric(FLERR,arg[4]);
+  t_target = force->numeric(FLERR,arg[5]);
+  seed = force->inumeric(FLERR,arg[6]);
 
   flagHI = flagVF = 1;
   if (narg == 9) {
-    flagHI = utils::inumeric(FLERR,arg[7],false,lmp);
-    flagVF = utils::inumeric(FLERR,arg[8],false,lmp);
+    flagHI = force->inumeric(FLERR,arg[7]);
+    flagVF = force->inumeric(FLERR,arg[8]);
   }
 
   if (flaglog == 1 && flagHI == 0) {
@@ -400,7 +403,7 @@ void PairBrownian::settings(int narg, char **arg)
 
   if (allocated) {
     for (int i = 1; i <= atom->ntypes; i++)
-      for (int j = i; j <= atom->ntypes; j++)
+      for (int j = i+1; j <= atom->ntypes; j++)
         if (setflag[i][j]) {
           cut_inner[i][j] = cut_inner_global;
           cut[i][j] = cut_global;
@@ -420,15 +423,15 @@ void PairBrownian::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double cut_inner_one = cut_inner_global;
   double cut_one = cut_global;
 
   if (narg == 4) {
-    cut_inner_one = utils::numeric(FLERR,arg[2],false,lmp);
-    cut_one = utils::numeric(FLERR,arg[3],false,lmp);
+    cut_inner_one = force->numeric(FLERR,arg[2]);
+    cut_one = force->numeric(FLERR,arg[3]);
   }
 
   int count = 0;
@@ -495,10 +498,10 @@ void PairBrownian::init_style()
   // are re-calculated at every step.
 
   flagdeform = flagwall = 0;
-  for (int i = 0; i < modify->nfix; i++) {
+  for (int i = 0; i < modify->nfix; i++){
     if (strcmp(modify->fix[i]->style,"deform") == 0)
       flagdeform = 1;
-    else if (strstr(modify->fix[i]->style,"wall") != nullptr) {
+    else if (strstr(modify->fix[i]->style,"wall") != NULL) {
       if (flagwall)
         error->all(FLERR,
                    "Cannot use multiple fix wall commands with pair brownian");
@@ -515,14 +518,14 @@ void PairBrownian::init_style()
   if (!flagwall) vol_T = domain->xprd*domain->yprd*domain->zprd;
   else {
     double wallhi[3], walllo[3];
-    for (int j = 0; j < 3; j++) {
+    for (int j = 0; j < 3; j++){
       wallhi[j] = domain->prd[j];
       walllo[j] = 0;
     }
-    for (int m = 0; m < wallfix->nwall; m++) {
+    for (int m = 0; m < wallfix->nwall; m++){
       int dim = wallfix->wallwhich[m] / 2;
       int side = wallfix->wallwhich[m] % 2;
-      if (wallfix->xstyle[m] == VARIABLE) {
+      if (wallfix->xstyle[m] == VARIABLE){
         wallfix->xindex[m] = input->variable->find(wallfix->xstr[m]);
         // Since fix->wall->init happens after pair->init_style
         wallcoord = input->variable->compute_equal(wallfix->xindex[m]);
@@ -604,12 +607,12 @@ void PairBrownian::read_restart(FILE *fp)
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++)
     for (j = i; j <= atom->ntypes; j++) {
-      if (me == 0) utils::sfread(FLERR,&setflag[i][j],sizeof(int),1,fp,nullptr,error);
+      if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
       if (setflag[i][j]) {
         if (me == 0) {
-          utils::sfread(FLERR,&cut_inner[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&cut[i][j],sizeof(double),1,fp,nullptr,error);
+          fread(&cut_inner[i][j],sizeof(double),1,fp);
+          fread(&cut[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&cut_inner[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&cut[i][j],1,MPI_DOUBLE,0,world);
@@ -644,17 +647,17 @@ void PairBrownian::read_restart_settings(FILE *fp)
 {
   int me = comm->me;
   if (me == 0) {
-    utils::sfread(FLERR,&mu,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&flaglog,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&flagfld,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&cut_inner_global,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&cut_global,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&t_target, sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&seed, sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&offset_flag,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&mix_flag,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&flagHI,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&flagVF,sizeof(int),1,fp,nullptr,error);
+    fread(&mu,sizeof(double),1,fp);
+    fread(&flaglog,sizeof(int),1,fp);
+    fread(&flagfld,sizeof(int),1,fp);
+    fread(&cut_inner_global,sizeof(double),1,fp);
+    fread(&cut_global,sizeof(double),1,fp);
+    fread(&t_target, sizeof(double),1,fp);
+    fread(&seed, sizeof(int),1,fp);
+    fread(&offset_flag,sizeof(int),1,fp);
+    fread(&mix_flag,sizeof(int),1,fp);
+    fread(&flagHI,sizeof(int),1,fp);
+    fread(&flagVF,sizeof(int),1,fp);
   }
   MPI_Bcast(&mu,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&flaglog,1,MPI_INT,0,world);

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,13 +15,27 @@
    Contributing author: Hendrik Heenen (hendrik.heenen@mytum.de)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_lj_cut_coul_long_cs.h"
-#include <cmath>
 #include "atom.h"
+#include "comm.h"
 #include "force.h"
+#include "kspace.h"
+#include "update.h"
+#include "integrate.h"
+#include "respa.h"
+#include "neighbor.h"
 #include "neigh_list.h"
+#include "neigh_request.h"
+#include "math_const.h"
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
+using namespace MathConst;
 
 #define EWALD_F   1.12837917
 #define EWALD_P   9.95473818e-1
@@ -42,10 +55,9 @@ using namespace LAMMPS_NS;
 PairLJCutCoulLongCS::PairLJCutCoulLongCS(LAMMPS *lmp) : PairLJCutCoulLong(lmp)
 {
   ewaldflag = pppmflag = 1;
-  respa_enable = 0;  // TODO: r-RESPA handling is inconsistent and thus disabled until fixed
-  single_enable = 0; // TODO: single function does not match compute
+  respa_enable = 1;
   writedata = 1;
-  ftable = nullptr;
+  ftable = NULL;
   qdist = 0.0;
 }
 
@@ -62,7 +74,8 @@ void PairLJCutCoulLongCS::compute(int eflag, int vflag)
   double rsq;
 
   evdwl = ecoul = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -175,6 +188,7 @@ void PairLJCutCoulLongCS::compute(int eflag, int vflag)
             }
             if (factor_coul < 1.0) ecoul -= (1.0-factor_coul)*prefactor;
           } else ecoul = 0.0;
+
           if (rsq < cut_ljsq[itype][jtype]) {
             evdwl = r6inv*(lj3[itype][jtype]*r6inv-lj4[itype][jtype]) -
               offset[itype][jtype];
@@ -211,10 +225,10 @@ void PairLJCutCoulLongCS::compute_inner()
   int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
-  inum = list->inum_inner;
-  ilist = list->ilist_inner;
-  numneigh = list->numneigh_inner;
-  firstneigh = list->firstneigh_inner;
+  inum = listinner->inum;
+  ilist = listinner->ilist;
+  numneigh = listinner->numneigh;
+  firstneigh = listinner->firstneigh;
 
   double cut_out_on = cut_respa[0];
   double cut_out_off = cut_respa[1];
@@ -297,10 +311,10 @@ void PairLJCutCoulLongCS::compute_middle()
   int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
-  inum = list->inum_middle;
-  ilist = list->ilist_middle;
-  numneigh = list->numneigh_middle;
-  firstneigh = list->firstneigh_middle;
+  inum = listmiddle->inum;
+  ilist = listmiddle->ilist;
+  numneigh = listmiddle->numneigh;
+  firstneigh = listmiddle->firstneigh;
 
   double cut_in_off = cut_respa[0];
   double cut_in_on = cut_respa[1];
@@ -385,7 +399,8 @@ void PairLJCutCoulLongCS::compute_outer(int eflag, int vflag)
   double rsq;
 
   evdwl = ecoul = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -397,10 +412,10 @@ void PairLJCutCoulLongCS::compute_outer(int eflag, int vflag)
   int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
-  inum = list->inum;
-  ilist = list->ilist;
-  numneigh = list->numneigh;
-  firstneigh = list->firstneigh;
+  inum = listouter->inum;
+  ilist = listouter->ilist;
+  numneigh = listouter->numneigh;
+  firstneigh = listouter->firstneigh;
 
   double cut_in_off = cut_respa[2];
   double cut_in_on = cut_respa[3];
@@ -434,6 +449,7 @@ void PairLJCutCoulLongCS::compute_outer(int eflag, int vflag)
       jtype = type[j];
 
       if (rsq < cutsq[itype][jtype]) {
+        rsq += EPSILON; // Add Epsilon for case: r = 0; Interaction must be removed by special bond;
         r2inv = 1.0/rsq;
 
         if (rsq < cut_coulsq) {
@@ -442,8 +458,9 @@ void PairLJCutCoulLongCS::compute_outer(int eflag, int vflag)
             grij = g_ewald * r;
             expm2 = exp(-grij*grij);
             t = 1.0 / (1.0 + EWALD_P*grij);
-            u = 1. - t;
+	        u = 1. - t;
             erfc = t * (1.+u*(B0+u*(B1+u*(B2+u*(B3+u*(B4+u*B5)))))) * expm2;
+            //erfc = t * (A1+t*(A2+t*(A3+t*(A4+t*A5)))) * expm2;
             prefactor = qqrd2e * qtmp*q[j]/r;
             forcecoul = prefactor * (erfc + EWALD_F*grij*expm2 - 1.0);
             if (rsq > cut_in_off_sq) {
@@ -542,6 +559,7 @@ void PairLJCutCoulLongCS::compute_outer(int eflag, int vflag)
             r6inv = r2inv*r2inv*r2inv;
             forcelj = r6inv * (lj1[itype][jtype]*r6inv - lj2[itype][jtype]);
           }
+
           fpair = (forcecoul + factor_lj*forcelj) * r2inv;
         }
 

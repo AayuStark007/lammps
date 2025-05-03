@@ -70,7 +70,7 @@ class InitBase(dobject):
       Args:
          value: A string which specifies what value to initialize the
             simulation property to.
-         mode: A string specifying what style of initialization should be
+         mode: A string specifiying what style of initialization should be
             used to read the data.
          units: A string giving which unit the value is in.
       """
@@ -97,7 +97,7 @@ class InitIndexed(InitBase):
       Args:
          value: A string which specifies what value to initialize the
             simulation property to.
-         mode: A string specifying what style of initialization should be
+         mode: A string specifiying what style of initialization should be
             used to read the data.
          units: A string giving which unit the value is in.
          index: Which atom to initialize the value of.
@@ -493,7 +493,7 @@ class Initializer(dobject):
             rv *= np.sqrt(self.nbeads/nbeads)
             set_vector(v, simul.beads.p, rv)
             fmom = True
-         elif k == "thermostat": pass   # thermostats must be initialized in a second stage
+         elif k == "thermostat": pass   # thermostats must be initialised in a second stage
 
       if simul.beads.natoms == 0:
          raise ValueError("Initializer could not initialize the atomic positions")

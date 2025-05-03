@@ -16,7 +16,7 @@
 #ifndef LAL_TERSOFF_ZBL_EXTRA_H
 #define LAL_TERSOFF_ZBL_EXTRA_H
 
-#if defined(NV_KERNEL) || defined(USE_HIP)
+#ifdef NV_KERNEL
 #include "lal_aux_fun1.h"
 #else
 #endif

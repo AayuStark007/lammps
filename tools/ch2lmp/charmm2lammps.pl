@@ -12,7 +12,7 @@
 #               - $project.psf          ; CHARMM configs
 #               - top_$forcefield.rtf   ;
 #               - par_$forcefield.prm   ;
-#               Output:
+#               Ouput:
 #               - $project.data         ; LAMMPS data file
 #               - $project.in           ; LAMMPS input file
 #               - $project_ctrl.pdb     ; PDB control file
@@ -39,15 +39,14 @@
 #    20161001   Added instructions in CMAP section to fix problem if 'ter'
 #                 is not designated in the .pdb file to identify last amino acid
 #    20161005   Added tweak to embed command line in generated LAMMPS input
-#    20181120   Fix topology parsing bug
 #
 #    General    Many thanks to Paul S. Crozier for checking script validity
 #               against his projects.
 #               Also thanks to Xiaohu Hu (hux2@ornl.gov) and Robert A. Latour
-#               (latourr@clemson.edu), David Hyde-Volpe, and Tigran Abramyan,
-#               Clemson University and Chris Lorenz (chris.lorenz@kcl.ac.uk),
-#               King's College London for their efforts to add CMAP sections,
-#               which is implemented using the option flag "-cmap".
+#                 (latourr@clemson.edu), David Hyde-Volpe, and Tigran Abramyan,
+#                 Clemson University and Chris Lorenz (chris.lorenz@kcl.ac.uk),
+#                 King's College London for their efforts to add CMAP sections,
+#                 which is implemented using the option flag "-cmap".
 
 # Initialization
 
@@ -87,8 +86,8 @@
     my $notes;
 
     $program            = "charmm2lammps";
-    $version            = "1.9.2";
-    $year               = "2018";
+    $version            = "1.9.1";
+    $year               = "2016";
     $add                = 1;
     $water_dens         = 0;
     $ions               = 0;
@@ -329,7 +328,7 @@
   }
 
 
-  sub PSFDihedrals                                      # hack to accommodate
+  sub PSFDihedrals                                      # hack to accomodate
   {                                                     # LAMMPS' way of calc
     $idihedral          = 0;                            # LJ 1-4 interactions
     return $ndihedral if (($dihedral_flag = $ndihedral ? 1 : 0));
@@ -795,10 +794,9 @@
         $ids{$tmp[1]}           = $tmp[2];
         $masses{$tmp[1]}        = $tmp[3];
         $max_id                 = $tmp[1] if ($max_id<$tmp[1]);
-      } elsif ($read&&($tmp[0] eq "ATOM")) {
-        # quit reading when hitting the "ATOM" section
-        last;
       }
+      # $names{$tmp[1]} = $tmp[4] if ($read&&($tmp[0] eq "MASS"));
+      last if ($read&&!scalar(@tmp));                   # quit reading
     }
     AddMass(HT, 1.00800);
     AddMass(OT, 15.99940);
@@ -1785,7 +1783,7 @@
 		$C_flag = 0;
 	}
 
-	# Quit if one of the atom types doesn't exist
+	# Quit if one of the atom types dosen't exist
 	if ( $C_counter == 0 or
 	    ($CA_counter == 0 and $CA_GLY_counter == 0 and $CA_PRO_counter == 0) or
 	    ($N_counter == 0 and $N_PRO_counter == 0) ) {

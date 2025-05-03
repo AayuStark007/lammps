@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,17 +11,18 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "fix_nve_limit.h"
-
 #include "atom.h"
+#include "force.h"
+#include "update.h"
+#include "respa.h"
+#include "modify.h"
 #include "comm.h"
 #include "error.h"
-#include "force.h"
-#include "modify.h"
-#include "respa.h"
-#include "update.h"
-
-#include <cmath>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -38,9 +38,8 @@ FixNVELimit::FixNVELimit(LAMMPS *lmp, int narg, char **arg) :
   scalar_flag = 1;
   global_freq = 1;
   extscalar = 1;
-  dynamic_group_allow = 1;
 
-  xlimit = utils::numeric(FLERR,arg[3],false,lmp);
+  xlimit = force->numeric(FLERR,arg[3]);
 
   ncount = 0;
 }
@@ -66,14 +65,14 @@ void FixNVELimit::init()
   vlimitsq = (xlimit/dtv) * (xlimit/dtv);
   ncount = 0;
 
-  if (utils::strmatch(update->integrate_style,"^respa"))
+  if (strstr(update->integrate_style,"respa"))
     step_respa = ((Respa *) update->integrate)->step;
 
   // warn if using fix shake, which will lead to invalid constraint forces
 
   for (int i = 0; i < modify->nfix; i++)
-    if (utils::strmatch(modify->fix[i]->style,"^shake")
-        || utils::strmatch(modify->fix[i]->style,"^rattle")) {
+    if ((strcmp(modify->fix[i]->style,"shake") == 0)
+        || (strcmp(modify->fix[i]->style,"rattle") == 0)) {
       if (comm->me == 0)
         error->warning(FLERR,"Should not use fix nve/limit with fix shake or fix rattle");
     }
@@ -83,7 +82,7 @@ void FixNVELimit::init()
    allow for both per-type and per-atom mass
 ------------------------------------------------------------------------- */
 
-void FixNVELimit::initial_integrate(int /*vflag*/)
+void FixNVELimit::initial_integrate(int vflag)
 {
   double dtfm,vsq,scale;
 
@@ -202,7 +201,7 @@ void FixNVELimit::final_integrate()
 
 /* ---------------------------------------------------------------------- */
 
-void FixNVELimit::initial_integrate_respa(int vflag, int ilevel, int /*iloop*/)
+void FixNVELimit::initial_integrate_respa(int vflag, int ilevel, int iloop)
 {
   dtv = step_respa[ilevel];
   dtf = 0.5 * step_respa[ilevel] * force->ftm2v;
@@ -213,7 +212,7 @@ void FixNVELimit::initial_integrate_respa(int vflag, int ilevel, int /*iloop*/)
 
 /* ---------------------------------------------------------------------- */
 
-void FixNVELimit::final_integrate_respa(int ilevel, int /*iloop*/)
+void FixNVELimit::final_integrate_respa(int ilevel, int iloop)
 {
   dtf = 0.5 * step_respa[ilevel] * force->ftm2v;
   final_integrate();

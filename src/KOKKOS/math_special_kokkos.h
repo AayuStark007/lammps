@@ -1,7 +1,6 @@
-// clang-format off
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -15,7 +14,7 @@
 #ifndef LMP_MATH_SPECIAL_KOKKOS_H
 #define LMP_MATH_SPECIAL_KOKKOS_H
 
-#include <cmath>
+#include <math.h>
 #include "kokkos_type.h"
 
 namespace LAMMPS_NS {
@@ -38,16 +37,17 @@ namespace MathSpecialKokkos {
   }
 
   // exp(-x*x) for coul/long styles
-
+  
   static inline double expmsq(double x)
   {
     x *= x;
     x *= 1.4426950408889634074; // log_2(e)
-#if defined(__BYTE_ORDER__) &&  __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#if defined(__BYTE_ORDER__)
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return (x < 1023.0) ? exp2_x86(-x) : 0.0;
-#else
-    return (x < 1023.0) ? exp2(-x) : 0.0;
 #endif
+#endif
+    return (x < 1023.0) ? exp2(-x) : 0.0;
   }
 
   // x**2, use instead of pow(x,2.0)

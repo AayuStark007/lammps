@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(external,FixExternal);
-// clang-format on
+
+FixStyle(external,FixExternal)
+
 #else
 
 #ifndef LMP_FIX_EXTERNAL_H
@@ -33,20 +33,12 @@ class FixExternal : public Fix {
   int setmask();
   void init();
   void setup(int);
-  void setup_pre_reverse(int, int);
   void min_setup(int);
-  void pre_reverse(int, int);
   void post_force(int);
   void min_post_force(int);
   double compute_scalar();
-  double compute_vector(int);
 
-  void set_energy_global(double);
-  void set_virial_global(double *);
-  void set_energy_peratom(double *);
-  void set_virial_peratom(double **);
-  void set_vector_length(int);
-  void set_vector(int, double);
+  void set_energy(double eng);
 
   double memory_usage();
   void grow_arrays(int);
@@ -57,18 +49,14 @@ class FixExternal : public Fix {
   typedef void (*FnPtr)(void *, bigint, int, tagint *, double **, double **);
   void set_callback(FnPtr, void *);
 
-  void *extract(const char *, int &);
-
  private:
-  int mode, ncall, napply, eflag_caller;
+  int mode,ncall,napply;
   FnPtr callback;
   void *ptr_caller;
   double user_energy;
-  double user_virial[6];
-  double *caller_vector;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -84,9 +72,5 @@ command-line option when running LAMMPS to see the offending line.
 E: Fix external callback function not set
 
 This must be done by an external program in order to use this fix.
-
-E: Invalid set_vector index in fix external
-
-UNDOCUMENTED
 
 */

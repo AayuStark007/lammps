@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,8 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
 #include "fix_balance.h"
-#include <cstring>
 #include "balance.h"
 #include "update.h"
 #include "atom.h"
@@ -26,22 +26,23 @@
 #include "modify.h"
 #include "fix_store.h"
 #include "rcb.h"
+#include "timer.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
 enum{SHIFT,BISECTION};
+enum{LAYOUT_UNIFORM,LAYOUT_NONUNIFORM,LAYOUT_TILED};    // several files
 
 /* ---------------------------------------------------------------------- */
 
 FixBalance::FixBalance(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg), balance(nullptr), irregular(nullptr)
+  Fix(lmp, narg, arg), balance(NULL), irregular(NULL)
 {
   if (narg < 6) error->all(FLERR,"Illegal fix balance command");
 
-  box_change = BOX_CHANGE_DOMAIN;
-  pre_exchange_migrate = 1;
+  box_change_domain = 1;
   scalar_flag = 1;
   extscalar = 0;
   vector_flag = 1;
@@ -53,9 +54,9 @@ FixBalance::FixBalance(LAMMPS *lmp, int narg, char **arg) :
 
   int dimension = domain->dimension;
 
-  nevery = utils::inumeric(FLERR,arg[3],false,lmp);
+  nevery = force->inumeric(FLERR,arg[3]);
   if (nevery < 0) error->all(FLERR,"Illegal fix balance command");
-  thresh = utils::numeric(FLERR,arg[4],false,lmp);
+  thresh = force->numeric(FLERR,arg[4]);
 
   if (strcmp(arg[5],"shift") == 0) lbstyle = SHIFT;
   else if (strcmp(arg[5],"rcb") == 0) lbstyle = BISECTION;
@@ -64,15 +65,14 @@ FixBalance::FixBalance(LAMMPS *lmp, int narg, char **arg) :
   int iarg = 5;
   if (lbstyle == SHIFT) {
     if (iarg+4 > narg) error->all(FLERR,"Illegal fix balance command");
-    if (strlen(arg[iarg+1]) > Balance::BSTR_SIZE)
+    if (strlen(arg[iarg+1]) > 3)
       error->all(FLERR,"Illegal fix balance command");
-    strncpy(bstr,arg[iarg+1], Balance::BSTR_SIZE+1);
-    nitermax = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
+    strcpy(bstr,arg[iarg+1]);
+    nitermax = force->inumeric(FLERR,arg[iarg+2]);
     if (nitermax <= 0) error->all(FLERR,"Illegal fix balance command");
-    stopthresh = utils::numeric(FLERR,arg[iarg+3],false,lmp);
+    stopthresh = force->numeric(FLERR,arg[iarg+3]);
     if (stopthresh < 1.0) error->all(FLERR,"Illegal fix balance command");
     iarg += 4;
-
   } else if (lbstyle == BISECTION) {
     iarg++;
   }
@@ -115,8 +115,7 @@ FixBalance::FixBalance(LAMMPS *lmp, int narg, char **arg) :
 
   if (nevery) force_reneighbor = 1;
   lastbalance = -1;
-  next_reneighbor = -1;
-
+  
   // compute initial outputs
 
   itercount = 0;
@@ -161,7 +160,7 @@ void FixBalance::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixBalance::setup(int /*vflag*/)
+void FixBalance::setup(int vflag)
 {
   // compute final imbalance factor if setup_pre_exchange() invoked balancer
   // this is called at end of run setup, before output
@@ -190,7 +189,7 @@ void FixBalance::setup_pre_exchange()
   domain->reset_box();
   if (domain->triclinic) domain->lamda2x(atom->nlocal);
 
-  // perform a rebalance if threshold exceeded
+  // perform a rebalance if threshhold exceeded
 
   balance->set_weights();
   imbnow = balance->imbalance_factor(maxloadperproc);
@@ -225,7 +224,7 @@ void FixBalance::pre_exchange()
   domain->reset_box();
   if (domain->triclinic) domain->lamda2x(atom->nlocal);
 
-  // perform a rebalance if threshold exceeded
+  // perform a rebalance if threshhold exceeded
   // if weight variable is used, wrap weight setting in clear/add compute
 
   if (balance->varflag) modify->clearstep_compute();
@@ -242,7 +241,7 @@ void FixBalance::pre_exchange()
 
 /* ----------------------------------------------------------------------
    compute final imbalance factor based on nlocal after comm->exchange()
-   only do this if rebalancing just occurred
+   only do this if rebalancing just occured
 ------------------------------------------------------------------------- */
 
 void FixBalance::pre_neighbor()
@@ -250,10 +249,6 @@ void FixBalance::pre_neighbor()
   if (!pending) return;
   imbfinal = balance->imbalance_factor(maxloadperproc);
   pending = 0;
-
-  // set disable = 1, so weights no longer migrate with atoms
-
-  if (wtflag) balance->fixstore->disable = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -269,36 +264,33 @@ void FixBalance::rebalance()
   int *sendproc;
   if (lbstyle == SHIFT) {
     itercount = balance->shift();
-    comm->layout = Comm::LAYOUT_NONUNIFORM;
+    comm->layout = LAYOUT_NONUNIFORM;
   } else if (lbstyle == BISECTION) {
     sendproc = balance->bisection();
-    comm->layout = Comm::LAYOUT_TILED;
+    comm->layout = LAYOUT_TILED;
   }
-
-  // reset proc sub-domains
-  // check and warn if any proc's subbox is smaller than neigh skin
-  //   since may lead to lost atoms in comm->exchange()
-
-  if (domain->triclinic) domain->set_lamda_box();
-  domain->set_local_box();
-  domain->subbox_too_small_check(neighbor->skin);
 
   // output of new decomposition
 
   if (balance->outflag) balance->dumpout(update->ntimestep);
 
+  // reset proc sub-domains
+  // check and warn if any proc's subbox is smaller than neigh skin
+  //   since may lead to lost atoms in exchange()
+
+  if (domain->triclinic) domain->set_lamda_box();
+  domain->set_local_box();
+  domain->subbox_too_small_check(neighbor->skin);
+
   // move atoms to new processors via irregular()
-  // for non-RCB only needed if migrate_check() says an atom moves too far
+  // only needed if migrate_check() says an atom moves to far
   // else allow caller's comm->exchange() to do it
-  // set disable = 0, so weights migrate with atoms
-  //   important to delay disable = 1 until after pre_neighbor imbfinal calc
-  //   b/c atoms may migrate again in comm->exchange()
-  // NOTE: for reproducible debug runs, set 1st arg of migrate_atoms() to 1
 
   if (domain->triclinic) domain->x2lamda(atom->nlocal);
   if (wtflag) balance->fixstore->disable = 0;
   if (lbstyle == BISECTION) irregular->migrate_atoms(0,1,sendproc);
   else if (irregular->migrate_check()) irregular->migrate_atoms();
+  if (wtflag) balance->fixstore->disable = 1;
   if (domain->triclinic) domain->lamda2x(atom->nlocal);
 
   // invoke KSpace setup_grid() to adjust to new proc sub-domains

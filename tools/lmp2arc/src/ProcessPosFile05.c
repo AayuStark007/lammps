@@ -147,7 +147,7 @@ fprintf(stderr,"HERE 1\n");
 
     } /* end while over LINES*/
     
-    fclose(PosFile);
+    close(PosFile);
    
   } /* end for loop over POS FILES */
   

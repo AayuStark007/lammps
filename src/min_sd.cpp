@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +11,13 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <mpi.h>
 #include "min_sd.h"
-
-#include "error.h"
+#include "atom.h"
+#include "update.h"
 #include "output.h"
 #include "timer.h"
-#include "update.h"
-
-#include <cmath>
 
 using namespace LAMMPS_NS;
 
@@ -81,14 +79,8 @@ int MinSD::iterate(int maxiter)
 
     // force tolerance criterion
 
-    fdotf = 0.0;
-    if (update->ftol > 0.0) {
-      if (normstyle == MAX) fdotf = fnorm_max();        // max force norm
-      else if (normstyle == INF) fdotf = fnorm_inf();   // infinite force norm
-      else if (normstyle == TWO) fdotf = fnorm_sqr();   // Euclidean force 2-norm
-      else error->all(FLERR,"Illegal min_modify command");
-      if (fdotf < update->ftol*update->ftol) return FTOL;
-    }
+    fdotf = fnorm_sqr();
+    if (fdotf < update->ftol*update->ftol) return FTOL;
 
     // set new search direction h to f = -Grad(x)
 

@@ -6,10 +6,10 @@
 //         in.lammps = LAMMPS input script
 //         in.quest = Quest input script
 
-#include <mpi.h>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include "mpi.h"
+#include "stdio.h"
+#include "stdlib.h"
+#include "string.h"
 #include "stdint.h"
 
 #include "many2one.h"
@@ -84,7 +84,7 @@ int main(int narg, char **arg)
 
   lmp->input->file(lammps_input);
 
-  // make info available to callback function
+  // make info avaiable to callback function
 
   Info info;
   info.me = me;

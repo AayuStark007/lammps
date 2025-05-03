@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,18 +11,19 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <stdlib.h>
+#include <string.h>
 #include "delete_bonds.h"
-
 #include "atom.h"
 #include "atom_vec.h"
-#include "comm.h"
 #include "domain.h"
-#include "error.h"
+#include "neighbor.h"
+#include "comm.h"
 #include "force.h"
 #include "group.h"
 #include "special.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -31,7 +31,7 @@ enum{MULTI,ATOM,BOND,ANGLE,DIHEDRAL,IMPROPER,STATS};
 
 /* ---------------------------------------------------------------------- */
 
-DeleteBonds::DeleteBonds(LAMMPS *lmp) : Command(lmp) {}
+DeleteBonds::DeleteBonds(LAMMPS *lmp) : Pointers(lmp) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -41,7 +41,7 @@ void DeleteBonds::command(int narg, char **arg)
     error->all(FLERR,"Delete_bonds command before simulation box is defined");
   if (atom->natoms == 0)
     error->all(FLERR,"Delete_bonds command with no atoms existing");
-  if (atom->molecular != Atom::MOLECULAR)
+  if (atom->molecular != 1)
     error->all(FLERR,"Cannot use delete_bonds with non-molecular system");
 
   if (narg < 2) error->all(FLERR,"Illegal delete_bonds command");
@@ -49,10 +49,11 @@ void DeleteBonds::command(int narg, char **arg)
   // init entire system since comm->borders is done
   // comm::init needs neighbor::init needs pair::init needs kspace::init, etc
 
-  if (comm->me == 0) utils::logmesg(lmp,"System init for delete_bonds ...\n");
+  if (comm->me == 0 && screen)
+    fprintf(screen,"System init for delete_bonds ...\n");
   lmp->init();
 
-  if (comm->me == 0) utils::logmesg(lmp,"Deleting bonds ...\n");
+  if (comm->me == 0 && screen) fprintf(screen,"Deleting bonds ...\n");
 
   // identify group
 
@@ -73,10 +74,10 @@ void DeleteBonds::command(int narg, char **arg)
   else error->all(FLERR,"Illegal delete_bonds command");
 
   // setup list of types (atom,bond,etc) to consider
-  // use utils::bounds(FLERR,) to allow setting of range of types
+  // use force->bounds(FLERR,) to allow setting of range of types
   // range can be 0 to ntypes inclusive
 
-  int *tlist = nullptr;
+  int *tlist = NULL;
 
   int iarg = 2;
   if (style != MULTI && style != STATS) {
@@ -92,7 +93,7 @@ void DeleteBonds::command(int narg, char **arg)
     tlist = new int[n+1];
     for (int i = 0; i <= n; i++) tlist[i] = 0;
     int nlo,nhi;
-    utils::bounds(FLERR,arg[2],0,n,nlo,nhi,error);
+    force->bounds(FLERR,arg[2],n,nlo,nhi,0);
     for (int i = nlo; i <= nhi; i++) tlist[i] = 1;
 
     iarg++;
@@ -535,21 +536,50 @@ void DeleteBonds::command(int narg, char **arg)
   }
 
   if (comm->me == 0) {
-    if (atom->avec->bonds_allow)
-      utils::logmesg(lmp,"  {} total bonds, {} turned on, {} turned off\n",
-                     atom->nbonds,bond_on,bond_off);
-
-    if (atom->avec->angles_allow)
-      utils::logmesg(lmp,"  {} total angles, {} turned on, {} turned off\n",
-                     atom->nangles,angle_on,angle_off);
-
-    if (atom->avec->dihedrals_allow)
-      utils::logmesg(lmp,"  {} total dihedrals, {} turned on, {} turned off\n",
-                     atom->ndihedrals,dihedral_on,dihedral_off);
-
-    if (atom->avec->impropers_allow)
-      utils::logmesg(lmp,"  {} total impropers, {} turned on, {} turned off\n",
-                     atom->nimpropers,improper_on,improper_off);
+    if (atom->avec->bonds_allow) {
+      if (screen) fprintf(screen,
+                          "  " BIGINT_FORMAT " total bonds, " BIGINT_FORMAT
+                          " turned on, " BIGINT_FORMAT " turned off\n",
+                          atom->nbonds,bond_on,bond_off);
+      if (logfile) fprintf(logfile,
+                           "  " BIGINT_FORMAT " total bonds, " BIGINT_FORMAT
+                           " turned on, " BIGINT_FORMAT " turned off\n",
+                           atom->nbonds,bond_on,bond_off);
+    }
+    if (atom->avec->angles_allow) {
+      if (screen) fprintf(screen,
+                          "  " BIGINT_FORMAT " total angles, " BIGINT_FORMAT
+                          " turned on, " BIGINT_FORMAT " turned off\n",
+                          atom->nangles,angle_on,angle_off);
+      if (logfile) fprintf(logfile,
+                          "  " BIGINT_FORMAT " total angles, " BIGINT_FORMAT
+                           " turned on, " BIGINT_FORMAT " turned off\n",
+                           atom->nangles,angle_on,angle_off);
+    }
+    if (atom->avec->dihedrals_allow) {
+      if (screen) fprintf(screen,
+                          "  " BIGINT_FORMAT " total dihedrals, "
+                          BIGINT_FORMAT " turned on, " BIGINT_FORMAT
+                          " turned off\n",
+                          atom->ndihedrals,dihedral_on,dihedral_off);
+      if (logfile) fprintf(logfile,
+                          "  " BIGINT_FORMAT " total dihedrals, "
+                          BIGINT_FORMAT " turned on, " BIGINT_FORMAT
+                          " turned off\n",
+                          atom->ndihedrals,dihedral_on,dihedral_off);
+    }
+    if (atom->avec->impropers_allow) {
+      if (screen) fprintf(screen,
+                          "  " BIGINT_FORMAT " total impropers, "
+                          BIGINT_FORMAT " turned on, " BIGINT_FORMAT
+                          " turned off\n",
+                          atom->nimpropers,improper_on,improper_off);
+      if (logfile) fprintf(logfile,
+                          "  " BIGINT_FORMAT " total impropers, "
+                          BIGINT_FORMAT " turned on, " BIGINT_FORMAT
+                          " turned off\n",
+                          atom->nimpropers,improper_on,improper_off);
+    }
   }
 
   // re-compute special list if requested

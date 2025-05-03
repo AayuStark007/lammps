@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(centro/atom,ComputeCentroAtom);
-// clang-format on
+
+ComputeStyle(centro/atom,ComputeCentroAtom)
+
 #else
 
 #ifndef COMPUTE_CENTRO_ATOM_H
@@ -34,18 +34,18 @@ class ComputeCentroAtom : public Compute {
   double memory_usage();
 
  private:
-  int nmax, maxneigh, nnn;
+  int nmax,maxneigh,nnn;
   double *distsq;
   int *nearest;
   class NeighList *list;
   double *centro;
   int axes_flag;
-
+  
   void select(int, int, double *);
   void select2(int, int, double *, int *);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -57,18 +57,6 @@ E: Illegal ... command
 Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
-
-E: Illegal compute centro/atom command3
-
-UNDOCUMENTED
-
-E: Illegal compute centro/atom command2
-
-UNDOCUMENTED
-
-E: Illegal compute centro/atom command1
-
-UNDOCUMENTED
 
 E: Compute centro/atom requires a pair style be defined
 

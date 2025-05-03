@@ -47,120 +47,81 @@ depend () {
 
 if (test $1 = "ASPHERE") then
   depend GPU
-  depend OPENMP
-  depend CG-DNA
-  depend INTEL
+  depend USER-OMP
+  depend USER-INTEL
 fi
 
 if (test $1 = "CLASS2") then
   depend GPU
   depend KOKKOS
-  depend OPENMP
+  depend USER-OMP
 fi
 
 if (test $1 = "COLLOID") then
   depend GPU
-  depend OPENMP
-fi
-
-if (test $1 = "DIELECTRIC") then
-  depend OPENMP
+  depend USER-OMP
 fi
 
 if (test $1 = "DIPOLE") then
-  depend OPENMP
-fi
-
-if (test $1 = "DPD-BASIC") then
-  depend GPU
-  depend OPENMP
-  depend INTEL
-fi
-
-if (test $1 = "EXTRA-MOLECULE") then
-  depend GPU
-  depend OPENMP
-fi
-
-if (test $1 = "EXTRA-PAIR") then
-  depend GPU
-  depend OPENMP
+  depend USER-MISC
+  depend USER-OMP
 fi
 
 if (test $1 = "GRANULAR") then
-  depend KOKKOS
-  depend OPENMP
+  depend USER-OMP
 fi
 
 if (test $1 = "KSPACE") then
-  depend CG-SDK
   depend CORESHELL
-  depend DIELECTRIC
   depend GPU
   depend KOKKOS
   depend OPT
-  depend OPENMP
-  depend INTEL
-  depend PHONON
-  depend FEP
+  depend USER-OMP
+  depend USER-INTEL
+  depend USER-PHONON
+  depend USER-FEP
 fi
 
 if (test $1 = "MANYBODY") then
-  depend ATC
   depend GPU
   depend KOKKOS
   depend OPT
-  depend QEQ
-  depend OPENMP
+  depend USER-MISC
+  depend USER-OMP
 fi
 
 if (test $1 = "MOLECULE") then
-  depend EXTRA-MOLECULE
   depend GPU
   depend KOKKOS
-  depend FEP
-  depend OPENMP
-  depend INTEL
+  depend USER-MISC
+  depend USER-OMP
+  depend USER-FEP
+  depend USER-INTEL
 fi
 
 if (test $1 = "PERI") then
-  depend OPENMP
-fi
-
-if (test $1 = "PYTHON") then
-  depend ML-IAP
+  depend USER-OMP
 fi
 
 if (test $1 = "RIGID") then
-  depend KOKKOS
-  depend OPENMP
-  depend DPD-SMOOTH
+  depend USER-OMP
 fi
 
-if (test $1 = "ML-SNAP") then
-  depend KOKKOS
-  depend ML-IAP
-fi
-
-if (test $1 = "CG-SDK") then
+if (test $1 = "USER-CG-CMM") then
   depend GPU
   depend KOKKOS
-  depend OPENMP
+  depend USER-OMP
 fi
 
-if (test $1 = "DPD-REACT") then
+if (test $1 = "USER-FEP") then
+  depend USER-OMP
+fi
+
+if (test $1 = "USER-MISC") then
+  depend GPU
+  depend USER-OMP
+fi
+
+if (test $1 = "USER-REAXC") then
   depend KOKKOS
-fi
-
-if (test $1 = "DRUDE") then
-  depend OPENMP
-fi
-
-if (test $1 = "FEP") then
-  depend OPENMP
-fi
-
-if (test $1 = "REAXFF") then
-  depend KOKKOS
-  depend OPENMP
 fi

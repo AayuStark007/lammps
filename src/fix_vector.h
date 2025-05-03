@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(vector,FixVector);
-// clang-format on
+
+FixStyle(vector,FixVector)
+
 #else
 
 #ifndef LMP_FIX_VECTOR_H
@@ -33,22 +33,22 @@ class FixVector : public Fix {
   void setup(int);
   void end_of_step();
   double compute_vector(int);
-  double compute_array(int, int);
+  double compute_array(int,int);
 
  private:
   int nvalues;
-  int *which, *argindex, *value2index;
+  int *which,*argindex,*value2index;
   char **ids;
 
-  bigint nextstep, initialstep;
+  bigint nextstep,initialstep;
 
-  int ncount;       // # of values currently in growing vector or array
-  int ncountmax;    // max # of values vector/array can hold
+  int ncount;        // # of values currently in growing vector or array
+  int ncountmax;     // max # of values vector/array can hold
   double *vector;
   double **array;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -105,10 +105,6 @@ Self-explanatory.
 E: Fix vector variable is not equal-style variable
 
 Self-explanatory.
-
-E: Fix vector variable is not vector-style variable
-
-UNDOCUMENTED
 
 E: Fix vector cannot set output array intensive/extensive from these inputs
 

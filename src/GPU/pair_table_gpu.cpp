@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,20 +15,30 @@
    Contributing authors: Trung Dac Nguyen (ORNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "pair_table_gpu.h"
-
 #include "atom.h"
-#include "domain.h"
-#include "error.h"
+#include "atom_vec.h"
+#include "comm.h"
 #include "force.h"
-#include "gpu_extra.h"
-#include "memory.h"
-#include "neigh_list.h"
-#include "neigh_request.h"
 #include "neighbor.h"
-#include "suffix.h"
+#include "neigh_list.h"
+#include "integrate.h"
+#include "memory.h"
+#include "error.h"
+#include "neigh_request.h"
+#include "universe.h"
+#include "update.h"
+#include "domain.h"
+#include <string.h>
+#include "gpu_extra.h"
 
-#include <cmath>
+#define LOOKUP 0
+#define LINEAR 1
+#define SPLINE 2
+#define BITMAP 3
 
 using namespace LAMMPS_NS;
 
@@ -64,7 +73,6 @@ PairTableGPU::PairTableGPU(LAMMPS *lmp) : PairTable(lmp),
   respa_enable = 0;
   reinitflag = 0;
   cpu_time = 0.0;
-  suffix_flag |= Suffix::GPU;
   GPU_EXTRA::gpu_ready(lmp->modify, lmp->error);
 }
 
@@ -81,7 +89,8 @@ PairTableGPU::~PairTableGPU()
 
 void PairTableGPU::compute(int eflag, int vflag)
 {
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   int nall = atom->nlocal + atom->nghost;
   int inum, host_start;
@@ -89,20 +98,9 @@ void PairTableGPU::compute(int eflag, int vflag)
   bool success = true;
   int *ilist, *numneigh, **firstneigh;
   if (gpu_mode != GPU_FORCE) {
-    double sublo[3],subhi[3];
-    if (domain->triclinic == 0) {
-      sublo[0] = domain->sublo[0];
-      sublo[1] = domain->sublo[1];
-      sublo[2] = domain->sublo[2];
-      subhi[0] = domain->subhi[0];
-      subhi[1] = domain->subhi[1];
-      subhi[2] = domain->subhi[2];
-    } else {
-      domain->bbox(domain->sublo_lamda,domain->subhi_lamda,sublo,subhi);
-    }
     inum = atom->nlocal;
     firstneigh = table_gpu_compute_n(neighbor->ago, inum, nall, atom->x,
-                                     atom->type, sublo, subhi,
+                                     atom->type, domain->sublo, domain->subhi,
                                      atom->tag, atom->nspecial, atom->special,
                                      eflag, vflag, eflag_atom, vflag_atom,
                                      host_start, &ilist, &numneigh, cpu_time,
@@ -133,7 +131,7 @@ void PairTableGPU::compute(int eflag, int vflag)
 void PairTableGPU::init_style()
 {
   if (force->newton_pair)
-    error->all(FLERR,"Pair style table/gpu requires newton pair off");
+    error->all(FLERR,"Cannot use newton pair with table/gpu pair style");
 
   int ntypes = atom->ntypes;
 
@@ -155,8 +153,8 @@ void PairTableGPU::init_style()
   double cell_size = sqrt(maxcut) + neighbor->skin;
 
   // pack tables and send them to device
-  double ***table_coeffs = nullptr;
-  double **table_data = nullptr;
+  double ***table_coeffs = NULL;
+  double **table_data = NULL;
   memory->create(table_coeffs, ntypes+1, ntypes+1, 6, "table:coeffs");
 
   Table *tb;
@@ -219,12 +217,11 @@ void PairTableGPU::init_style()
   }
 
   int maxspecial=0;
-  if (atom->molecular != Atom::ATOMIC)
+  if (atom->molecular)
     maxspecial=atom->maxspecial;
-  int mnf = 5e-2 * neighbor->oneatom;
   int success = table_gpu_init(atom->ntypes+1, cutsq, table_coeffs, table_data,
                                force->special_lj, atom->nlocal,
-                               atom->nlocal+atom->nghost, mnf, maxspecial,
+                               atom->nlocal+atom->nghost, 300, maxspecial,
                                cell_size, gpu_mode, screen, tabstyle, ntables,
                                tablength);
   GPU_EXTRA::check_flag(success,error,world);
@@ -234,6 +231,7 @@ void PairTableGPU::init_style()
     neighbor->requests[irequest]->half = 0;
     neighbor->requests[irequest]->full = 1;
   }
+
   memory->destroy(table_coeffs);
   memory->destroy(table_data);
 }
@@ -248,7 +246,7 @@ double PairTableGPU::memory_usage()
 
 /* ---------------------------------------------------------------------- */
 
-void PairTableGPU::cpu_compute(int start, int inum, int eflag, int /* vflag */,
+void PairTableGPU::cpu_compute(int start, int inum, int eflag, int vflag,
                                int *ilist, int *numneigh, int **firstneigh) {
   int i,j,ii,jj,jnum,itype,jtype,itable;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;

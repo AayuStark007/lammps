@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(improper/local,ComputeImproperLocal);
-// clang-format on
+
+ComputeStyle(improper/local,ComputeImproperLocal)
+
 #else
 
 #ifndef LMP_COMPUTE_IMPROPER_LOCAL_H
@@ -33,18 +33,16 @@ class ComputeImproperLocal : public Compute {
   double memory_usage();
 
  private:
-  int nvalues, cflag;
+  int nvalues,cflag;
   int ncount;
 
   int nmax;
-  double *vlocal;
-  double **alocal;
 
   int compute_impropers(int);
   void reallocate(int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

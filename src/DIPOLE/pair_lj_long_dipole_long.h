@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(lj/long/dipole/long,PairLJLongDipoleLong);
-// clang-format on
+
+PairStyle(lj/long/dipole/long,PairLJLongDipoleLong)
+
 #else
 
 #ifndef LMP_PAIR_LJ_LONG_DIPOLE_LONG_H
@@ -34,6 +34,7 @@ class PairLJLongDipoleLong : public Pair {
   virtual void settings(int, char **);
   void coeff(int, char **);
   void init_style();
+  void init_list(int, class NeighList *);
   double init_one(int, int);
   void write_restart(FILE *);
   void read_restart(FILE *);
@@ -56,7 +57,7 @@ class PairLJLongDipoleLong : public Pair {
   void allocate();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -113,13 +114,13 @@ E: Pair style requires use of kspace_style ewald/disp
 
 Self-explanatory.
 
+E: Pair style lj/long/dipole/long does not currently support respa
+
+This feature is not yet supported.
+
 E: Pair cutoff < Respa interior cutoff
 
 One or more pairwise cutoffs are too short to use with the specified
 rRESPA cutoffs.
-
-U: Pair style lj/long/dipole/long does not currently support respa
-
-This feature is not yet supported.
 
 */

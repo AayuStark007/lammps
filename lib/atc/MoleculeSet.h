@@ -33,7 +33,7 @@ namespace ATC {
     virtual void clear();
 
     /** initialize global data */
-    virtual void initialize(std::map<int, double> * globalAtomsPerMolecule = nullptr);
+    virtual void initialize(std::map<int, double> * globalAtomsPerMolecule = NULL);
 
     /** reset the number of atoms/molecules on this processor */
     void reset_nlocal() {this->set_reset();};
@@ -108,16 +108,16 @@ namespace ATC {
   public:
 
     SmallMoleculeSet(ATC_Method * atc, int groupBit,
-                     PerAtomQuantity<int> * bondList = nullptr,
-                     PerAtomQuantity<int> * numBond = nullptr);
+                     PerAtomQuantity<int> * bondList = NULL,
+                     PerAtomQuantity<int> * numBond = NULL);
 
     virtual ~SmallMoleculeSet();
-
+    
     /** reset all data */
     virtual void clear();
 
     /** initialize global data */
-    virtual void initialize(std::map<int, double> * globalAtomsPerMolecule = nullptr);
+    virtual void initialize(std::map<int, double> * globalAtomsPerMolecule = NULL);
 
     /** access molecule atoms by lammps id */
     std::set<int> atoms_by_global_molecule(int id) const;

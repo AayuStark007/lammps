@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,9 +15,9 @@
    Contributing author: Mike Brown (SNL)
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <string.h>
 #include "compute_temp_asphere.h"
-
-#include <cstring>
 #include "math_extra.h"
 #include "atom.h"
 #include "atom_vec_ellipsoid.h"
@@ -27,6 +26,7 @@
 #include "domain.h"
 #include "modify.h"
 #include "group.h"
+#include "memory.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
@@ -39,7 +39,7 @@ enum{ROTATE,ALL};
 
 ComputeTempAsphere::ComputeTempAsphere(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  id_bias(nullptr), tbias(nullptr), avec(nullptr)
+  id_bias(NULL), tbias(NULL), avec(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute temp/asphere command");
 
@@ -50,7 +50,7 @@ ComputeTempAsphere::ComputeTempAsphere(LAMMPS *lmp, int narg, char **arg) :
   tempflag = 1;
 
   tempbias = 0;
-  id_bias = nullptr;
+  id_bias = NULL;
   mode = ALL;
 
   int iarg = 3;
@@ -59,7 +59,9 @@ ComputeTempAsphere::ComputeTempAsphere(LAMMPS *lmp, int narg, char **arg) :
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute temp/asphere command");
       tempbias = 1;
-      id_bias = utils::strdup(arg[iarg+1]);
+      int n = strlen(arg[iarg+1]) + 1;
+      id_bias = new char[n];
+      strcpy(id_bias,arg[iarg+1]);
       iarg += 2;
     } else if (strcmp(arg[iarg],"dof") == 0) {
       if (iarg+2 > narg)
@@ -71,12 +73,7 @@ ComputeTempAsphere::ComputeTempAsphere(LAMMPS *lmp, int narg, char **arg) :
     } else error->all(FLERR,"Illegal compute temp/asphere command");
   }
 
-  // when computing only the rotational temperature,
-  // do not remove DOFs for translation as set by default
-
-  if (mode == ROTATE) extra_dof = 0;
-
-  vector = new double[size_vector];
+  vector = new double[6];
 
 }
 
@@ -395,15 +392,6 @@ void ComputeTempAsphere::remove_bias(int i, double *v)
 }
 
 /* ----------------------------------------------------------------------
-   remove velocity bias from atom I to leave thermal velocity
-------------------------------------------------------------------------- */
-
-void ComputeTempAsphere::remove_bias_thr(int i, double *v, double *b)
-{
-  if (tbias) tbias->remove_bias_thr(i,v,b);
-}
-
-/* ----------------------------------------------------------------------
    add back in velocity bias to atom I removed by remove_bias()
    assume remove_bias() was previously called
 ------------------------------------------------------------------------- */
@@ -411,14 +399,4 @@ void ComputeTempAsphere::remove_bias_thr(int i, double *v, double *b)
 void ComputeTempAsphere::restore_bias(int i, double *v)
 {
   if (tbias) tbias->restore_bias(i,v);
-}
-
-/* ----------------------------------------------------------------------
-   add back in velocity bias to atom I removed by remove_bias_thr()
-   assume remove_bias_thr() was previously called with the same buffer b
-------------------------------------------------------------------------- */
-
-void ComputeTempAsphere::restore_bias_thr(int i, double *v, double *b)
-{
-  if (tbias) tbias->restore_bias_thr(i,v,b);
 }

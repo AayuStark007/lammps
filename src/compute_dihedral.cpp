@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,13 +11,13 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <string.h>
 #include "compute_dihedral.h"
-
-#include "dihedral.h"
+#include "update.h"
+#include "force.h"
 #include "dihedral_hybrid.h"
 #include "error.h"
-#include "force.h"
-#include "update.h"
 
 using namespace LAMMPS_NS;
 
@@ -26,7 +25,7 @@ using namespace LAMMPS_NS;
 
 ComputeDihedral::ComputeDihedral(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  emine(nullptr)
+  emine(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal compute dihedral command");
 
@@ -42,7 +41,7 @@ ComputeDihedral::ComputeDihedral(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR,
                "Dihedral style for compute dihedral command is not hybrid");
   size_vector = nsub = dihedral->nstyles;
-
+  
   emine = new double[nsub];
   vector = new double[nsub];
 }
@@ -65,7 +64,7 @@ void ComputeDihedral::init()
   if (!dihedral)
     error->all(FLERR,
                "Dihedral style for compute dihedral command is not hybrid");
-  if (dihedral->nstyles != nsub)
+  if (dihedral->nstyles != nsub) 
     error->all(FLERR,"Dihedral style for compute dihedral command has changed");
 }
 

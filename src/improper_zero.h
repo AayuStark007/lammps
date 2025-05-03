@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef IMPROPER_CLASS
-// clang-format off
-ImproperStyle(zero,ImproperZero);
-// clang-format on
+
+ImproperStyle(zero,ImproperZero)
+
 #else
 
 #ifndef LMP_IMPROPER_ZERO_H
 #define LMP_IMPROPER_ZERO_H
 
+#include <stdio.h>
 #include "improper.h"
 
 namespace LAMMPS_NS {
@@ -42,16 +43,12 @@ class ImproperZero : public Improper {
   virtual void allocate();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
 
 /* ERROR/WARNING messages:
-
-E: Illegal ... command
-
-UNDOCUMENTED
 
 E: Incorrect args for improper coefficients
 

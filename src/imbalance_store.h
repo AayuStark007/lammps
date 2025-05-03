@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -25,24 +25,16 @@ class ImbalanceStore : public Imbalance {
 
  public:
   // parse options, return number of arguments consumed
-  virtual int options(int, char **) override;
+  virtual int options(int, char **);
   // compute per-atom imbalance and apply to weight array
-  virtual void compute(double *) override;
+  virtual void compute(double *);
   // print information about the state of this imbalance compute (required)
-  virtual std::string info() override;
+  virtual void info(FILE *);
 
  private:
-  char *name;    // property name
+  char *name;                  // property name
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
-
-/* ERROR/WARNING messages:
-
-E: Illegal ... command
-
-UNDOCUMENTED
-
-*/

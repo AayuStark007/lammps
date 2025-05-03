@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,24 +11,27 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "output.h"
-#include "style_dump.h"         // IWYU pragma: keep
-
-#include "comm.h"
-#include "domain.h"
-#include "dump.h"
-#include "error.h"
-#include "group.h"
-#include "info.h"
+#include "style_dump.h"
+#include "atom.h"
+#include "neighbor.h"
 #include "input.h"
-#include "memory.h"
-#include "modify.h"
-#include "thermo.h"
-#include "update.h"
 #include "variable.h"
+#include "comm.h"
+#include "update.h"
+#include "group.h"
+#include "domain.h"
+#include "thermo.h"
+#include "modify.h"
+#include "compute.h"
+#include "force.h"
+#include "dump.h"
 #include "write_restart.h"
-
-#include <cstring>
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -43,42 +45,57 @@ Output::Output(LAMMPS *lmp) : Pointers(lmp)
 {
   // create default computes for temp,pressure,pe
 
-  modify->add_compute("thermo_temp all temp");
-  modify->add_compute("thermo_press all pressure thermo_temp");
-  modify->add_compute("thermo_pe all pe");
+  char **newarg = new char*[4];
+  newarg[0] = (char *) "thermo_temp";
+  newarg[1] = (char *) "all";
+  newarg[2] = (char *) "temp";
+  modify->add_compute(3,newarg,1);
+
+  newarg[0] = (char *) "thermo_press";
+  newarg[1] = (char *) "all";
+  newarg[2] = (char *) "pressure";
+  newarg[3] = (char *) "thermo_temp";
+  modify->add_compute(4,newarg,1);
+
+  newarg[0] = (char *) "thermo_pe";
+  newarg[1] = (char *) "all";
+  newarg[2] = (char *) "pe";
+  modify->add_compute(3,newarg,1);
+
+  delete [] newarg;
 
   // create default Thermo class
 
-  char **newarg = new char*[1];
+  newarg = new char*[1];
   newarg[0] = (char *) "one";
   thermo = new Thermo(lmp,1,newarg);
   delete [] newarg;
 
   thermo_every = 0;
-  var_thermo = nullptr;
+  var_thermo = NULL;
 
   ndump = 0;
   max_dump = 0;
-  every_dump = nullptr;
-  next_dump = nullptr;
-  last_dump = nullptr;
-  var_dump = nullptr;
-  ivar_dump = nullptr;
-  dump = nullptr;
+  every_dump = NULL;
+  next_dump = NULL;
+  last_dump = NULL;
+  var_dump = NULL;
+  ivar_dump = NULL;
+  dump = NULL;
 
   restart_flag = restart_flag_single = restart_flag_double = 0;
   restart_every_single = restart_every_double = 0;
   last_restart = -1;
-  restart1 = restart2a = restart2b = nullptr;
-  var_restart_single = var_restart_double = nullptr;
-  restart = nullptr;
+  restart1 = restart2a = restart2b = NULL;
+  var_restart_single = var_restart_double = NULL;
+  restart = NULL;
 
   dump_map = new DumpCreatorMap();
 
 #define DUMP_CLASS
 #define DumpStyle(key,Class) \
   (*dump_map)[#key] = &dump_creator<Class>;
-#include "style_dump.h"         // IWYU pragma: keep
+#include "style_dump.h"
 #undef DumpStyle
 #undef DUMP_CLASS
 }
@@ -315,14 +332,13 @@ void Output::write(bigint ntimestep)
 
   if (next_restart == ntimestep) {
     if (next_restart_single == ntimestep) {
-
-      std::string file = restart1;
-      std::size_t found = file.find('*');
-      if (found != std::string::npos)
-        file.replace(found,1,fmt::format("{}",update->ntimestep));
-
+      char *file = new char[strlen(restart1) + 16];
+      char *ptr = strchr(restart1,'*');
+      *ptr = '\0';
+      sprintf(file,"%s" BIGINT_FORMAT "%s",restart1,ntimestep,ptr+1);
+      *ptr = '*';
       if (last_restart != ntimestep) restart->write(file);
-
+      delete [] file;
       if (restart_every_single) next_restart_single += restart_every_single;
       else {
         modify->clearstep_compute();
@@ -404,11 +420,13 @@ void Output::write_dump(bigint ntimestep)
 void Output::write_restart(bigint ntimestep)
 {
   if (restart_flag_single) {
-    std::string file = restart1;
-    std::size_t found = file.find('*');
-    if (found != std::string::npos)
-      file.replace(found,1,fmt::format("{}",update->ntimestep));
+    char *file = new char[strlen(restart1) + 16];
+    char *ptr = strchr(restart1,'*');
+    *ptr = '\0';
+    sprintf(file,"%s" BIGINT_FORMAT "%s",restart1,ntimestep,ptr+1);
+    *ptr = '*';
     restart->write(file);
+    delete [] file;
   }
 
   if (restart_flag_double) {
@@ -538,7 +556,7 @@ void Output::add_dump(int narg, char **arg)
       error->all(FLERR,"Reuse of dump ID");
   int igroup = group->find(arg[1]);
   if (igroup == -1) error->all(FLERR,"Could not find dump group ID");
-  if (utils::inumeric(FLERR,arg[3],false,lmp) <= 0)
+  if (force->inumeric(FLERR,arg[3]) <= 0)
     error->all(FLERR,"Invalid dump frequency");
 
   // extend Dump list if necessary
@@ -559,20 +577,21 @@ void Output::add_dump(int narg, char **arg)
 
   every_dump[ndump] = 0;
   last_dump[ndump] = -1;
-  var_dump[ndump] = nullptr;
+  var_dump[ndump] = NULL;
   ivar_dump[ndump] = -1;
 
   // create the Dump
 
   if (dump_map->find(arg[2]) != dump_map->end()) {
-    DumpCreator &dump_creator = (*dump_map)[arg[2]];
+    DumpCreator dump_creator = (*dump_map)[arg[2]];
     dump[ndump] = dump_creator(lmp, narg, arg);
-  } else error->all(FLERR,utils::check_packages_for_style("dump",arg[2],lmp));
+  }
+  else error->all(FLERR,"Unknown dump style");
 
-  every_dump[ndump] = utils::inumeric(FLERR,arg[3],false,lmp);
+  every_dump[ndump] = force->inumeric(FLERR,arg[3]);
   if (every_dump[ndump] <= 0) error->all(FLERR,"Illegal dump command");
   last_dump[ndump] = -1;
-  var_dump[ndump] = nullptr;
+  var_dump[ndump] = NULL;
   ndump++;
 }
 
@@ -634,21 +653,6 @@ void Output::delete_dump(char *id)
 }
 
 /* ----------------------------------------------------------------------
-   find a dump by ID
-   return index of dump or -1 if not found
-------------------------------------------------------------------------- */
-
-int Output::find_dump(const char *id)
-{
-  if (id == nullptr) return -1;
-  int idump;
-  for (idump = 0; idump < ndump; idump++)
-    if (strcmp(id,dump[idump]->id) == 0) break;
-  if (idump == ndump) return -1;
-  return idump;
-}
-
-/* ----------------------------------------------------------------------
    set thermo output frequency from input script
 ------------------------------------------------------------------------- */
 
@@ -656,16 +660,13 @@ void Output::set_thermo(int narg, char **arg)
 {
   if (narg != 1) error->all(FLERR,"Illegal thermo command");
 
-  // always reset var_thermo, so it is possible to switch back from
-  // variable spaced thermo outputs to constant spaced ones.
-
-  delete [] var_thermo;
-  var_thermo = nullptr;
-
-  if (utils::strmatch(arg[0],"^v_")) {
-    var_thermo = utils::strdup(arg[0]+2);
+  if (strstr(arg[0],"v_") == arg[0]) {
+    delete [] var_thermo;
+    int n = strlen(&arg[0][2]) + 1;
+    var_thermo = new char[n];
+    strcpy(var_thermo,&arg[0][2]);
   } else {
-    thermo_every = utils::inumeric(FLERR,arg[0],false,lmp);
+    thermo_every = force->inumeric(FLERR,arg[0]);
     if (thermo_every < 0) error->all(FLERR,"Illegal thermo command");
   }
 }
@@ -689,10 +690,10 @@ void Output::create_thermo(int narg, char **arg)
     error->warning(FLERR,"New thermo_style command, "
                    "previous thermo_modify settings will be lost");
 
-  // set thermo = nullptr in case new Thermo throws an error
+  // set thermo = NULL in case new Thermo throws an error
 
   delete thermo;
-  thermo = nullptr;
+  thermo = NULL;
   thermo = new Thermo(lmp,narg,arg);
 }
 
@@ -708,8 +709,8 @@ void Output::create_restart(int narg, char **arg)
   int every = 0;
   int varflag = 0;
 
-  if (utils::strmatch(arg[0],"^v_")) varflag = 1;
-  else every = utils::inumeric(FLERR,arg[0],false,lmp);
+  if (strstr(arg[0],"v_") == arg[0]) varflag = 1;
+  else every = force->inumeric(FLERR,arg[0]);
 
   if (!varflag && every == 0) {
     if (narg != 1) error->all(FLERR,"Illegal restart command");
@@ -718,14 +719,14 @@ void Output::create_restart(int narg, char **arg)
     last_restart = -1;
 
     delete restart;
-    restart = nullptr;
+    restart = NULL;
     delete [] restart1;
     delete [] restart2a;
     delete [] restart2b;
-    restart1 = restart2a = restart2b = nullptr;
+    restart1 = restart2a = restart2b = NULL;
     delete [] var_restart_single;
     delete [] var_restart_double;
-    var_restart_single = var_restart_double = nullptr;
+    var_restart_single = var_restart_double = NULL;
 
     return;
   }
@@ -741,7 +742,9 @@ void Output::create_restart(int narg, char **arg)
 
     if (varflag) {
       delete [] var_restart_single;
-      var_restart_single = utils::strdup(arg[0]+2);
+      int n = strlen(&arg[0][2]) + 1;
+      var_restart_single = new char[n];
+      strcpy(var_restart_single,&arg[0][2]);
       restart_every_single = 0;
     } else restart_every_single = every;
 
@@ -749,7 +752,7 @@ void Output::create_restart(int narg, char **arg)
     delete [] restart1;
     restart1 = new char[n];
     strcpy(restart1,arg[1]);
-    if (strchr(restart1,'*') == nullptr) strcat(restart1,".*");
+    if (strchr(restart1,'*') == NULL) strcat(restart1,".*");
   }
 
   if (nfile == 2) {
@@ -757,15 +760,21 @@ void Output::create_restart(int narg, char **arg)
 
     if (varflag) {
       delete [] var_restart_double;
-      var_restart_double = utils::strdup(arg[0]+2);
+      int n = strlen(&arg[0][2]) + 1;
+      var_restart_double = new char[n];
+      strcpy(var_restart_double,&arg[0][2]);
       restart_every_double = 0;
     } else restart_every_double = every;
 
     delete [] restart2a;
     delete [] restart2b;
     restart_toggle = 0;
-    restart2a = utils::strdup(arg[1]);
-    restart2b = utils::strdup(arg[2]);
+    int n = strlen(arg[1]) + 3;
+    restart2a = new char[n];
+    strcpy(restart2a,arg[1]);
+    n = strlen(arg[2]) + 1;
+    restart2b = new char[n];
+    strcpy(restart2b,arg[2]);
   }
 
   // check for multiproc output and an MPI-IO filename
@@ -806,18 +815,21 @@ void Output::create_restart(int narg, char **arg)
 
 void Output::memory_usage()
 {
-  double meminfo[3];
-  Info info(lmp);
+  bigint bytes = 0;
+  bytes += atom->memory_usage();
+  bytes += neighbor->memory_usage();
+  bytes += comm->memory_usage();
+  bytes += update->memory_usage();
+  bytes += force->memory_usage();
+  bytes += modify->memory_usage();
+  for (int i = 0; i < ndump; i++) bytes += dump[i]->memory_usage();
 
-  info.get_memory_info(meminfo);
-  double mbytes = meminfo[0];
-  double mbmin,mbavg,mbmax;
-  MPI_Reduce(&mbytes,&mbavg,1,MPI_DOUBLE,MPI_SUM,0,world);
-  MPI_Reduce(&mbytes,&mbmin,1,MPI_DOUBLE,MPI_MIN,0,world);
-  MPI_Reduce(&mbytes,&mbmax,1,MPI_DOUBLE,MPI_MAX,0,world);
-  mbavg /= comm->nprocs;
+  double mbytes = bytes/1024.0/1024.0;
 
-  if (comm->me == 0)
-    utils::logmesg(lmp,"Per MPI rank memory allocation (min/avg/max) = "
-                   "{:.4} | {:.4} | {:.4} Mbytes\n",mbmin,mbavg,mbmax);
+  if (comm->me == 0) {
+    if (screen)
+      fprintf(screen,"Memory usage per processor = %g Mbytes\n",mbytes);
+    if (logfile)
+      fprintf(logfile,"Memory usage per processor = %g Mbytes\n",mbytes);
+  }
 }

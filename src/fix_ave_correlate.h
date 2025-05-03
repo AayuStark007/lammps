@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(ave/correlate,FixAveCorrelate);
-// clang-format on
+
+FixStyle(ave/correlate,FixAveCorrelate)
+
 #else
 
 #ifndef LMP_FIX_AVE_CORRELATE_H
 #define LMP_FIX_AVE_CORRELATE_H
 
+#include <stdio.h>
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -32,36 +33,36 @@ class FixAveCorrelate : public Fix {
   void init();
   void setup(int);
   void end_of_step();
-  double compute_array(int, int);
+  double compute_array(int,int);
 
  private:
-  int me, nvalues;
-  int nrepeat, nfreq;
-  bigint nvalid, nvalid_last;
-  int *which, *argindex, *value2index;
+  int me,nvalues;
+  int nrepeat,nfreq;
+  bigint nvalid,nvalid_last;
+  int *which,*argindex,*value2index;
   char **ids;
   FILE *fp;
 
-  int type, ave, startstep, overwrite;
+  int type,ave,startstep,overwrite;
   double prefactor;
   long filepos;
 
-  int firstindex;    // index in values ring of earliest time sample
-  int lastindex;     // index in values ring of latest time sample
-  int nsample;       // number of time samples in values ring
+  int firstindex;      // index in values ring of earliest time sample
+  int lastindex;       // index in values ring of latest time sample
+  int nsample;         // number of time samples in values ring
 
-  int npair;    // number of correlation pairs to calculate
+  int npair;           // number of correlation pairs to calculate
   int *count;
-  double **values, **corr;
+  double **values,**corr;
 
-  int *save_count;    // saved values at Nfreq for output via compute_array()
+  int *save_count;     // saved values at Nfreq for output via compute_array()
   double **save_corr;
 
   void accumulate();
   bigint nextvalid();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -123,10 +124,6 @@ Self-explanatory.
 E: Fix ave/correlate variable is not equal-style variable
 
 Self-explanatory.
-
-E: Fix ave/correlate variable is not vector-style variable
-
-UNDOCUMENTED
 
 E: Error writing file header
 

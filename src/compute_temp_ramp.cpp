@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,13 +11,15 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <stdlib.h>
+#include <string.h>
 #include "compute_temp_ramp.h"
-
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "group.h"
+#include "fix.h"
 #include "domain.h"
 #include "lattice.h"
 #include "memory.h"
@@ -72,14 +73,14 @@ ComputeTempRamp::ComputeTempRamp(LAMMPS *lmp, int narg, char **arg) :
   else error->all(FLERR,"Illegal compute temp/ramp command");
 
   if (v_dim == 0) {
-    v_lo = xscale*utils::numeric(FLERR,arg[4],false,lmp);
-    v_hi = xscale*utils::numeric(FLERR,arg[5],false,lmp);
+    v_lo = xscale*force->numeric(FLERR,arg[4]);
+    v_hi = xscale*force->numeric(FLERR,arg[5]);
   } else if (v_dim == 1) {
-    v_lo = yscale*utils::numeric(FLERR,arg[4],false,lmp);
-    v_hi = yscale*utils::numeric(FLERR,arg[5],false,lmp);
+    v_lo = yscale*force->numeric(FLERR,arg[4]);
+    v_hi = yscale*force->numeric(FLERR,arg[5]);
   } else if (v_dim == 2) {
-    v_lo = zscale*utils::numeric(FLERR,arg[4],false,lmp);
-    v_hi = zscale*utils::numeric(FLERR,arg[5],false,lmp);
+    v_lo = zscale*force->numeric(FLERR,arg[4]);
+    v_hi = zscale*force->numeric(FLERR,arg[5]);
   }
 
   if (strcmp(arg[6],"x") == 0) coord_dim = 0;
@@ -88,19 +89,19 @@ ComputeTempRamp::ComputeTempRamp(LAMMPS *lmp, int narg, char **arg) :
   else error->all(FLERR,"Illegal compute temp/ramp command");
 
   if (coord_dim == 0) {
-    coord_lo = xscale*utils::numeric(FLERR,arg[7],false,lmp);
-    coord_hi = xscale*utils::numeric(FLERR,arg[8],false,lmp);
+    coord_lo = xscale*force->numeric(FLERR,arg[7]);
+    coord_hi = xscale*force->numeric(FLERR,arg[8]);
   } else if (coord_dim == 1) {
-    coord_lo = yscale*utils::numeric(FLERR,arg[7],false,lmp);
-    coord_hi = yscale*utils::numeric(FLERR,arg[8],false,lmp);
+    coord_lo = yscale*force->numeric(FLERR,arg[7]);
+    coord_hi = yscale*force->numeric(FLERR,arg[8]);
   } else if (coord_dim == 2) {
-    coord_lo = zscale*utils::numeric(FLERR,arg[7],false,lmp);
-    coord_hi = zscale*utils::numeric(FLERR,arg[8],false,lmp);
+    coord_lo = zscale*force->numeric(FLERR,arg[7]);
+    coord_hi = zscale*force->numeric(FLERR,arg[8]);
   }
 
   maxbias = 0;
-  vbiasall = nullptr;
-  vector = new double[size_vector];
+  vbiasall = NULL;
+  vector = new double[6];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -234,19 +235,6 @@ void ComputeTempRamp::remove_bias(int i, double *v)
 }
 
 /* ----------------------------------------------------------------------
-   remove velocity bias from atom I to leave thermal velocity
-------------------------------------------------------------------------- */
-
-void ComputeTempRamp::remove_bias_thr(int i, double *v, double *b)
-{
-  double fraction = (atom->x[i][coord_dim] - coord_lo) / (coord_hi - coord_lo);
-  fraction = MAX(fraction,0.0);
-  fraction = MIN(fraction,1.0);
-  b[v_dim] = v_lo + fraction*(v_hi - v_lo);
-  v[v_dim] -= b[v_dim];
-}
-
-/* ----------------------------------------------------------------------
    remove velocity bias from all atoms to leave thermal velocity
 ------------------------------------------------------------------------- */
 
@@ -278,19 +266,9 @@ void ComputeTempRamp::remove_bias_all()
    assume remove_bias() was previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempRamp::restore_bias(int /*i*/, double *v)
+void ComputeTempRamp::restore_bias(int i, double *v)
 {
   v[v_dim] += vbias[v_dim];
-}
-
-/* ----------------------------------------------------------------------
-   add back in velocity bias to atom I removed by remove_bias_thr()
-   assume remove_bias_thr() was previously called with the same buffer b
-------------------------------------------------------------------------- */
-
-void ComputeTempRamp::restore_bias_thr(int /*i*/, double *v, double *b)
-{
-  v[v_dim] += b[v_dim];
 }
 
 /* ----------------------------------------------------------------------

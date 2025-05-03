@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,74 +12,55 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(info,Info);
-// clang-format on
+
+CommandStyle(info,Info)
+
 #else
 
 #ifndef LMP_INFO_H
 #define LMP_INFO_H
 
-#include "command.h"
-
-#include <vector>
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class Info : public Command {
+class Info : protected Pointers {
  public:
-  Info(class LAMMPS *lmp) : Command(lmp){};
+  Info(class LAMMPS *lmp) : Pointers(lmp) {};
   void command(int, char **);
 
   bool is_active(const char *, const char *);
   bool is_defined(const char *, const char *);
   bool is_available(const char *, const char *);
 
-  bool has_style(const std::string &category, const std::string &name);
-  std::vector<std::string> get_available_styles(const std::string &category);
+  bool has_gzip_support() const;
+  bool has_png_support() const;
+  bool has_jpeg_support() const;
+  bool has_ffmpeg_support() const;
+  bool has_exceptions() const;
 
-  static bool has_gzip_support();
-  static bool has_png_support();
-  static bool has_jpeg_support();
-  static bool has_ffmpeg_support();
-  static bool has_exceptions();
-  static bool has_package(const std::string &);
-  static bool has_accelerator_feature(const std::string &, const std::string &,
-                                      const std::string &);
-  static bool has_gpu_device();
-  static std::string get_gpu_device_info();
-
-  static std::string get_os_info();
-  static std::string get_compiler_info();
-  static std::string get_openmp_info();
-  static std::string get_mpi_vendor();
-  static std::string get_mpi_info(int &, int &);
-  static std::string get_cxx_info();
-  static std::string get_accelerator_info(const std::string &pkg = "");
-
-  void get_memory_info(double *);
   char **get_variable_names(int &num);
 
- private:
-  void available_styles(FILE *out, int flags);
+private:
+  void available_styles(FILE * out, int flags);
 
-  void atom_styles(FILE *out);
-  void integrate_styles(FILE *out);
-  void minimize_styles(FILE *out);
-  void pair_styles(FILE *out);
-  void bond_styles(FILE *out);
-  void angle_styles(FILE *out);
-  void dihedral_styles(FILE *out);
-  void improper_styles(FILE *out);
-  void kspace_styles(FILE *out);
-  void fix_styles(FILE *out);
-  void compute_styles(FILE *out);
-  void region_styles(FILE *out);
-  void dump_styles(FILE *out);
-  void command_styles(FILE *out);
+  void atom_styles(FILE * out);
+  void integrate_styles(FILE * out);
+  void minimize_styles(FILE * out);
+  void pair_styles(FILE * out);
+  void bond_styles(FILE * out);
+  void angle_styles(FILE * out);
+  void dihedral_styles(FILE * out);
+  void improper_styles(FILE * out);
+  void kspace_styles(FILE * out);
+  void fix_styles(FILE * out);
+  void compute_styles(FILE * out);
+  void region_styles(FILE * out);
+  void dump_styles(FILE * out);
+  void command_styles(FILE * out);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

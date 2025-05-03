@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,16 +11,18 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <string.h>
 #include "compute_body_local.h"
-
 #include "atom.h"
 #include "atom_vec_body.h"
 #include "body.h"
-#include "error.h"
-#include "memory.h"
 #include "update.h"
-
-#include <cstring>
+#include "domain.h"
+#include "force.h"
+#include "bond.h"
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -32,12 +33,14 @@ enum{ID,TYPE,INDEX};
 /* ---------------------------------------------------------------------- */
 
 ComputeBodyLocal::ComputeBodyLocal(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg), which(nullptr), index(nullptr), avec(nullptr), bptr(nullptr)
+  Compute(lmp, narg, arg), which(NULL), index(NULL), avec(NULL), bptr(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute body/local command");
 
   local_flag = 1;
   nvalues = narg - 3;
+  if (nvalues == 1) size_local_cols = 0;
+  else size_local_cols = nvalues;
 
   which = new int[nvalues];
   index = new int[nvalues];
@@ -48,7 +51,7 @@ ComputeBodyLocal::ComputeBodyLocal(LAMMPS *lmp, int narg, char **arg) :
     else if (strcmp(arg[iarg],"type") == 0) which[nvalues++] = TYPE;
     else {
       which[nvalues] = INDEX;
-      index[nvalues] = utils::inumeric(FLERR,arg[iarg],false,lmp) - 1;
+      index[nvalues] = force->inumeric(FLERR,arg[iarg]) - 1;
       nvalues++;
     }
   }
@@ -59,16 +62,13 @@ ComputeBodyLocal::ComputeBodyLocal(LAMMPS *lmp, int narg, char **arg) :
 
   int indexmax = bptr->noutcol();
   for (int i = 0; i < nvalues; i++) {
-    if (which[i] == INDEX && (index[i] < 0 || index[i] >= indexmax))
+    if (which[i] == INDEX && (index[i] < 0 || index[i] >= indexmax)) 
       error->all(FLERR,"Invalid index in compute body/local command");
   }
 
-  if (nvalues == 1) size_local_cols = 0;
-  else size_local_cols = nvalues;
-
   nmax = 0;
-  vector = nullptr;
-  array = nullptr;
+  vector = NULL;
+  array = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -93,7 +93,7 @@ void ComputeBodyLocal::init()
   int nlocal = atom->nlocal;
 
   for (int i = 0; i < nlocal; i++)
-    if (mask[i] & groupbit)
+    if (mask[i] & groupbit) 
       if (body[i] < 0) nonbody = 1;
 
   int flag;
@@ -124,7 +124,7 @@ void ComputeBodyLocal::compute_local()
   int ncount = compute_body(0);
   if (ncount > nmax) reallocate(ncount);
   size_local_rows = ncount;
-  compute_body(1);
+  ncount = compute_body(1);
 }
 
 /* ----------------------------------------------------------------------
@@ -227,6 +227,6 @@ void ComputeBodyLocal::reallocate(int n)
 
 double ComputeBodyLocal::memory_usage()
 {
-  double bytes = (double)nmax*nvalues * sizeof(double);
+  double bytes = nmax*nvalues * sizeof(double);
   return bytes;
 }

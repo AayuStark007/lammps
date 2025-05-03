@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,14 +15,15 @@
    Contributing author: Carsten Svaneborg (SDU)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "bond_zero.h"
-
 #include "atom.h"
+#include "force.h"
 #include "comm.h"
-#include "error.h"
 #include "memory.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -45,7 +45,8 @@ BondZero::~BondZero()
 
 void BondZero::compute(int eflag, int vflag)
 {
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -85,11 +86,11 @@ void BondZero::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  utils::bounds(FLERR,arg[0],1,atom->nbondtypes,ilo,ihi,error);
+  force->bounds(FLERR,arg[0],atom->nbondtypes,ilo,ihi);
 
   double r0_one = 0.0;
   if (coeffflag && (narg == 2))
-    r0_one = utils::numeric(FLERR,arg[1],false,lmp);
+    r0_one = force->numeric(FLERR,arg[1]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -127,7 +128,7 @@ void BondZero::read_restart(FILE *fp)
   allocate();
 
   if (comm->me == 0) {
-    utils::sfread(FLERR,&r0[1],sizeof(double),atom->nbondtypes,fp,nullptr,error);
+    fread(&r0[1],sizeof(double),atom->nbondtypes,fp);
   }
   MPI_Bcast(&r0[1],atom->nbondtypes,MPI_DOUBLE,0,world);
 
@@ -144,19 +145,12 @@ void BondZero::write_data(FILE *fp)
     fprintf(fp,"%d %g\n",i,r0[i]);
 }
 
+
+
 /* ---------------------------------------------------------------------- */
 
-double BondZero::single(int /*type*/, double /*rsq*/, int /*i*/, int /*j*/,
-                        double & /*fforce*/)
+double BondZero::single(int type, double rsq, int i, int j,
+                        double &fforce)
 {
   return 0.0;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void *BondZero::extract(const char *str, int &dim)
-{
-  dim = 1;
-  if (strcmp(str,"r0")==0) return (void*) r0;
-  return nullptr;
 }

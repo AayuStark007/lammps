@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,13 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <stdlib.h>
+#include <string.h>
 #include "compute_temp_com.h"
-
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "group.h"
 #include "domain.h"
+#include "lattice.h"
 #include "error.h"
 
 using namespace LAMMPS_NS;
@@ -37,7 +39,7 @@ ComputeTempCOM::ComputeTempCOM(LAMMPS *lmp, int narg, char **arg) :
   tempflag = 1;
   tempbias = 1;
 
-  vector = new double[size_vector];
+  vector = new double[6];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -161,18 +163,7 @@ void ComputeTempCOM::compute_vector()
    remove velocity bias from atom I to leave thermal velocity
 ------------------------------------------------------------------------- */
 
-void ComputeTempCOM::remove_bias(int /*i*/, double *v)
-{
-  v[0] -= vbias[0];
-  v[1] -= vbias[1];
-  v[2] -= vbias[2];
-}
-
-/* ----------------------------------------------------------------------
-   remove velocity bias from atom I to leave thermal velocity
-------------------------------------------------------------------------- */
-
-void ComputeTempCOM::remove_bias_thr(int, double *v, double *)
+void ComputeTempCOM::remove_bias(int i, double *v)
 {
   v[0] -= vbias[0];
   v[1] -= vbias[1];
@@ -202,19 +193,7 @@ void ComputeTempCOM::remove_bias_all()
    assume remove_bias() was previously called
 ------------------------------------------------------------------------- */
 
-void ComputeTempCOM::restore_bias(int /*i*/, double *v)
-{
-  v[0] += vbias[0];
-  v[1] += vbias[1];
-  v[2] += vbias[2];
-}
-
-/* ----------------------------------------------------------------------
-   add back in velocity bias to atom I removed by remove_bias_thr()
-   assume remove_bias_thr() was previously called
-------------------------------------------------------------------------- */
-
-void ComputeTempCOM::restore_bias_thr(int, double *v, double *)
+void ComputeTempCOM::restore_bias(int i, double *v)
 {
   v[0] += vbias[0];
   v[1] += vbias[1];

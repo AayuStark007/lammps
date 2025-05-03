@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef REGION_CLASS
-// clang-format off
-RegionStyle(cylinder,RegCylinder);
-// clang-format on
+
+RegionStyle(cylinder,RegCylinder)
+
 #else
 
 #ifndef LMP_REGION_CYLINDER_H
@@ -40,27 +40,22 @@ class RegCylinder : public Region {
 
  private:
   char axis;
-  double c1, c2;
+  double c1,c2;
   double radius;
-  double lo, hi;
-  int c1style, c1var;
-  int c2style, c2var;
-  int rstyle, rvar;
-  char *c1str, *c2str, *rstr;
+  double lo,hi;
+  int rstyle,rvar;
+  char *rstr;
 
   void variable_check();
+
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
 
 /* ERROR/WARNING messages:
-
-E: Invalid region cylinder open setting
-
-UNDOCUMENTED
 
 E: Illegal ... command
 
@@ -83,6 +78,6 @@ Self-explanatory.
 
 E: Variable for region cylinder is invalid style
 
-Only equal-style variables are allowed.
+Only equal-style varaibles are allowed.
 
 */

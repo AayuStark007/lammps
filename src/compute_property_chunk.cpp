@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "compute_property_chunk.h"
-
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "modify.h"
@@ -28,15 +26,17 @@ using namespace LAMMPS_NS;
 
 ComputePropertyChunk::ComputePropertyChunk(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  idchunk(nullptr), count_one(nullptr), count_all(nullptr)
+  idchunk(NULL), count_one(NULL), count_all(NULL)
 {
   if (narg < 5) error->all(FLERR,"Illegal compute property/chunk command");
 
   // ID of compute chunk/atom
 
-  idchunk = utils::strdup(arg[3]);
+  int n = strlen(arg[3]) + 1;
+  idchunk = new char[n];
+  strcpy(idchunk,arg[3]);
 
-  ComputePropertyChunk::init();
+  init();
 
   // parse values
 
@@ -53,22 +53,22 @@ ComputePropertyChunk::ComputePropertyChunk(LAMMPS *lmp, int narg, char **arg) :
       countflag = 1;
     } else if (strcmp(arg[iarg],"id") == 0) {
       if (!cchunk->compress)
-        error->all(FLERR,"Compute chunk/atom stores no IDs for "
+	error->all(FLERR,"Compute chunk/atom stores no IDs for "
                    "compute property/chunk");
       pack_choice[i] = &ComputePropertyChunk::pack_id;
     } else if (strcmp(arg[iarg],"coord1") == 0) {
       if (cchunk->ncoord < 1)
-        error->all(FLERR,"Compute chunk/atom stores no coord1 for "
+	error->all(FLERR,"Compute chunk/atom stores no coord1 for "
                    "compute property/chunk");
       pack_choice[i] = &ComputePropertyChunk::pack_coord1;
     } else if (strcmp(arg[iarg],"coord2") == 0) {
       if (cchunk->ncoord < 2)
-        error->all(FLERR,"Compute chunk/atom stores no coord2 for "
+	error->all(FLERR,"Compute chunk/atom stores no coord2 for "
                    "compute property/chunk");
       pack_choice[i] = &ComputePropertyChunk::pack_coord2;
     } else if (strcmp(arg[iarg],"coord3") == 0) {
       if (cchunk->ncoord < 3)
-        error->all(FLERR,"Compute chunk/atom stores no coord3 for "
+	error->all(FLERR,"Compute chunk/atom stores no coord3 for "
                    "compute property/chunk");
       pack_choice[i] = &ComputePropertyChunk::pack_coord3;
     } else error->all(FLERR,
@@ -255,7 +255,7 @@ void ComputePropertyChunk::allocate()
 double ComputePropertyChunk::memory_usage()
 {
   double bytes = (bigint) nchunk * nvalues * sizeof(double);
-  if (countflag) bytes += (double) nchunk * 2 * sizeof(int);
+  if (countflag) bytes += (bigint) nchunk * 2 * sizeof(int);
   return bytes;
 }
 

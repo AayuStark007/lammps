@@ -68,7 +68,7 @@ def Find_dump_files():
 
 class Snapshot:
     def __init__(self, The_trajectory):
-        'Initialize the Snapshot class'
+        'Initialise the Snapshot class'
         
         self.atoms = The_trajectory.atoms
         self.xlo = The_trajectory.xlo

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(pair/local,ComputePairLocal);
-// clang-format on
+
+ComputeStyle(pair/local,ComputePairLocal)
+
 #else
 
 #ifndef LMP_COMPUTE_PAIR_LOCAL_H
@@ -34,15 +34,13 @@ class ComputePairLocal : public Compute {
   double memory_usage();
 
  private:
-  int nvalues, ncount, cutstyle;
+  int nvalues,ncount,cutstyle;
 
-  int *pstyle;    // style of each requested output
-  int *pindex;    // for pI, index of the output (0 to M-1)
+  int *pstyle;              // style of each requested output
+  int *pindex;              // for pI, index of the output (0 to M-1)
   int singleflag;
 
   int nmax;
-  double *vlocal;
-  double **alocal;
 
   class NeighList *list;
 
@@ -50,7 +48,7 @@ class ComputePairLocal : public Compute {
   void reallocate(int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -66,10 +64,6 @@ command-line option when running LAMMPS to see the offending line.
 E: Invalid keyword in compute pair/local command
 
 Self-explanatory.
-
-E: Compute pair/local requires atom attribute radius
-
-UNDOCUMENTED
 
 E: No pair style is defined for compute pair/local
 

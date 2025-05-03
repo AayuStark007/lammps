@@ -44,7 +44,7 @@ class Cell(dobject):
    """
 
    def __init__(self, h=None):
-      """Initializes base cell class.
+      """Initialises base cell class.
 
       Args:
          h: Optional array giving the initial lattice vector matrix. The

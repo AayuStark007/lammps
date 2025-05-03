@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -14,103 +14,93 @@
 #ifndef LMP_NEIGH_LIST_H
 #define LMP_NEIGH_LIST_H
 
-#include "pointers.h"    // IWYU pragma: export
+#include "pointers.h"
+#include "my_page.h"
 
 namespace LAMMPS_NS {
 
 class NeighList : protected Pointers {
  public:
-  enum RequestorType { NONE, PAIR, FIX, COMPUTE };
-  void *requestor;                 // object that made request
-  RequestorType requestor_type;    // type of requestor
+  int index;                       // index of which neigh list it is
+                                   // needed when a class invokes it directly
+                                   // also indexes the request it came from
 
-  int index;    // index of which neigh list this is
-                // also indexes the request it came from
-                // and the npair list of NPair classes
-
-  int bin_method;        // 0 if no binning, else 1-N index into binnames
-  int stencil_method;    // 0 if no stencil, else 1-N index into stencilnames
-  int pair_method;       // 0 if no pair, else 1-N index into pairnames
-
-  // settings from NeighRequest
-
-  int occasional;     // 0 if build every reneighbor, 1 if not
-  int ghost;          // 1 if list stores neighbors of ghosts
-  int ssa;            // 1 if list stores Shardlow data
-  int history;        // 1 if there is neigh history (FixNeighHist)
-  int respaouter;     // 1 if list is a rRespa outer list
-  int respamiddle;    // 1 if there is also a rRespa middle list
-  int respainner;     // 1 if there is also a rRespa inner list
-  int copy;           // 1 if this list is copied from another list
-  int kk2cpu;         // 1 if this list is copied from Kokkos to CPU
-  int copymode;       // 1 if this is a Kokkos on-device copy
-  int id;             // copied from neighbor list request
+  int buildflag;                   // 1 if pair_build invoked every reneigh
+  int growflag;                    // 1 if stores atom-based arrays & pages
+  int stencilflag;                 // 1 if stores stencil arrays
+  int ghostflag;                   // 1 if it stores neighbors of ghosts
 
   // data structs to store neighbor pairs I,J and associated values
 
-  int inum;            // # of I atoms neighbors are stored for
-  int gnum;            // # of ghost atoms neighbors are stored for
-  int *ilist;          // local indices of I atoms
-  int *numneigh;       // # of J neighbors for each I atom
-  int **firstneigh;    // ptr to 1st J int value of each I atom
-  int maxatom;         // size of allocated per-atom arrays
+  int inum;                        // # of I atoms neighbors are stored for
+  int gnum;                        // # of ghost atoms neighbors are stored for
+  int *ilist;                      // local indices of I atoms
+  int *numneigh;                   // # of J neighbors for each I atom
+  int **firstneigh;                // ptr to 1st J int value of each I atom
+  double **firstdouble;            // ptr to 1st J double value of each I atom
 
-  int pgsize;            // size of each page
-  int oneatom;           // max size for one atom
-  MyPage<int> *ipage;    // pages of neighbor indices
+  int pgsize;                      // size of each page
+  int oneatom;                     // max size for one atom
+  int dnum;                        // # of doubles per neighbor, 0 if none
+  MyPage<int> *ipage;              // pages of neighbor indices
+  MyPage<double> *dpage;           // pages of neighbor doubles, if dnum > 0
 
-  // data structs to store rRESPA neighbor pairs I,J and associated values
-
-  int inum_inner;            // # of I atoms neighbors are stored for
-  int gnum_inner;            // # of ghost atoms neighbors are stored for
-  int *ilist_inner;          // local indices of I atoms
-  int *numneigh_inner;       // # of J neighbors for each I atom
-  int **firstneigh_inner;    // ptr to 1st J int value of each I atom
-
-  int inum_middle;            // # of I atoms neighbors are stored for
-  int gnum_middle;            // # of ghost atoms neighbors are stored for
-  int *ilist_middle;          // local indices of I atoms
-  int *numneigh_middle;       // # of J neighbors for each I atom
-  int **firstneigh_middle;    // ptr to 1st J int value of each I atom
-
-  MyPage<int> *ipage_inner;     // pages of neighbor indices for inner
-  MyPage<int> *ipage_middle;    // pages of neighbor indices for middle
+  bigint last_build;           // timestep of last build for occasional lists
 
   // atom types to skip when building list
-  // copied info from corresponding request into realloced vec/array
+  // iskip,ijskip are just ptrs to corresponding request
 
-  int *iskip;      // iskip[i] = 1 if atoms of type I are not in list
-  int **ijskip;    // ijskip[i][j] = 1 if pairs of type I,J are not in list
+  int *iskip;         // iskip[i] = 1 if atoms of type I are not in list
+  int **ijskip;       // ijskip[i][j] = 1 if pairs of type I,J are not in list
 
   // settings and pointers for related neighbor lists and fixes
 
-  NeighList *listcopy;    // me = copy list, point to list I copy from
-  NeighList *listskip;    // me = skip list, point to list I skip from
-  NeighList *listfull;    // me = half list, point to full I derive from
+  NeighList *listgranhistory;          // point at list storing shear history
+  class FixShearHistory *fix_history;  // fix that stores history info
 
-  class Fix *fix_bond;    // fix that stores bond info
+  int respamiddle;              // 1 if this respaouter has middle list
+  NeighList *listinner;         // me = respaouter, point to respainner
+  NeighList *listmiddle;        // me = respaouter, point to respamiddle
+  NeighList *listfull;          // me = half list, point to full I derive from
+  NeighList *listcopy;          // me = copy list, point to list I copy from
+  NeighList *listskip;          // me = skip list, point to list I skip from
 
-  // Kokkos package
+  // USER-DPD package and Shardlow Splitting Algorithm (SSA) support
 
-  int kokkos;    // 1 if list stores Kokkos data
-  ExecutionSpace execution_space;
+  int ssaflag;               // 1 if the list has the ndxAIR_ssa array
+  uint16_t (*ndxAIR_ssa)[8]; // for each atom, last neighbor index of each AIR
+  int *bins_ssa;             // index of next atom in each bin
+  int maxbin_ssa;            // size of bins_ssa array
+  int *binhead_ssa;          // index of 1st local atom in each bin
+  int *gbinhead_ssa;         // index of 1st ghost atom in each bin
+  int maxhead_ssa;           // size of binhead_ssa and gbinhead_ssa arrays
 
-  // DPD-REACT package and Shardlow Splitting Algorithm (SSA) support
+  // stencils of bin indices for neighbor finding
 
-  class NPair *np;    // ptr to NPair instance I depend on
+  int maxstencil;                  // max size of stencil
+  int nstencil;                    // # of bins in stencil
+  int *stencil;                    // list of bin offsets
+  int **stencilxyz;                // bin offsets in xyz dims
 
-  // methods
+  int maxstencil_multi;            // max sizes of stencils
+  int *nstencil_multi;             // # bins in each type-based multi stencil
+  int **stencil_multi;             // list of bin offsets in each stencil
+  double **distsq_multi;           // sq distances to bins in each stencil
 
   NeighList(class LAMMPS *);
   virtual ~NeighList();
-  void post_constructor(class NeighRequest *);
-  void setup_pages(int, int);    // setup page data structures
-  void grow(int, int);           // grow all data structs
-  void print_attributes();       // debug routine
-  int get_maxlocal() { return maxatom; }
-  double memory_usage();
+  void setup_pages(int, int, int);      // setup page data structures
+  void grow(int);                       // grow maxlocal
+  void stencil_allocate(int, int);      // allocate stencil arrays
+  void copy_skip_info(int *, int **);   // copy skip info from a neigh request
+  void print_attributes();              // debug routine
+  int get_maxlocal() {return maxatoms;}
+  bigint memory_usage();
+
+ protected:
+  int maxatoms;                    // size of allocated atom arrays
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif

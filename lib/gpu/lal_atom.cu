@@ -11,9 +11,9 @@
 //
 //    begin                :
 //    email                : brownw@ornl.gov
-// ***************************************************************************
+// ***************************************************************************/
 
-#if defined(NV_KERNEL) || defined(USE_HIP)
+#ifdef NV_KERNEL
 #include "lal_preprocessor.h"
 #endif
 

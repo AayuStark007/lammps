@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,26 +12,26 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMMAND_CLASS
-// clang-format off
-CommandStyle(displace_atoms,DisplaceAtoms);
-// clang-format on
+
+CommandStyle(displace_atoms,DisplaceAtoms)
+
 #else
 
 #ifndef LMP_DISPLACE_ATOMS_H
 #define LMP_DISPLACE_ATOMS_H
 
-#include "command.h"
+#include "pointers.h"
 
 namespace LAMMPS_NS {
 
-class DisplaceAtoms : public Command {
+class DisplaceAtoms : protected Pointers {
  public:
   DisplaceAtoms(class LAMMPS *);
   ~DisplaceAtoms();
   void command(int, char **);
 
  private:
-  int igroup, groupbit;
+  int igroup,groupbit;
   int scaleflag;
   double *mvec;
 
@@ -39,7 +39,7 @@ class DisplaceAtoms : public Command {
   void options(int, char **);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -66,10 +66,6 @@ will assign the restart file info to actual atoms.
 E: Could not find displace_atoms group ID
 
 Group ID used in the displace_atoms command does not exist.
-
-W: Attempting to displace atoms in rigid bodies
-
-UNDOCUMENTED
 
 E: Invalid displace_atoms rotate axis for 2d
 

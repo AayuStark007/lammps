@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,9 +15,11 @@
    Contributing author: Mike Brown (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_gayberne.h"
-
-#include <cmath>
 #include "math_extra.h"
 #include "atom.h"
 #include "atom_vec_ellipsoid.h"
@@ -26,10 +27,10 @@
 #include "force.h"
 #include "neighbor.h"
 #include "neigh_list.h"
+#include "integrate.h"
 #include "citeme.h"
 #include "memory.h"
 #include "error.h"
-
 
 using namespace LAMMPS_NS;
 
@@ -93,7 +94,8 @@ void PairGayBerne::compute(int eflag, int vflag)
   double *iquat,*jquat;
 
   evdwl = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   AtomVecEllipsoid::Bonus *bonus = avec->bonus;
   int *ellipsoid = atom->ellipsoid;
@@ -269,17 +271,17 @@ void PairGayBerne::settings(int narg, char **arg)
 {
   if (narg != 4) error->all(FLERR,"Illegal pair_style command");
 
-  gamma = utils::numeric(FLERR,arg[0],false,lmp);
-  upsilon = utils::numeric(FLERR,arg[1],false,lmp)/2.0;
-  mu = utils::numeric(FLERR,arg[2],false,lmp);
-  cut_global = utils::numeric(FLERR,arg[3],false,lmp);
+  gamma = force->numeric(FLERR,arg[0]);
+  upsilon = force->numeric(FLERR,arg[1])/2.0;
+  mu = force->numeric(FLERR,arg[2]);
+  cut_global = force->numeric(FLERR,arg[3]);
 
   // reset cutoffs that have been explicitly set
 
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i; j <= atom->ntypes; j++)
+      for (j = i+1; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -295,20 +297,20 @@ void PairGayBerne::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
-  double epsilon_one = utils::numeric(FLERR,arg[2],false,lmp);
-  double sigma_one = utils::numeric(FLERR,arg[3],false,lmp);
-  double eia_one = utils::numeric(FLERR,arg[4],false,lmp);
-  double eib_one = utils::numeric(FLERR,arg[5],false,lmp);
-  double eic_one = utils::numeric(FLERR,arg[6],false,lmp);
-  double eja_one = utils::numeric(FLERR,arg[7],false,lmp);
-  double ejb_one = utils::numeric(FLERR,arg[8],false,lmp);
-  double ejc_one = utils::numeric(FLERR,arg[9],false,lmp);
+  double epsilon_one = force->numeric(FLERR,arg[2]);
+  double sigma_one = force->numeric(FLERR,arg[3]);
+  double eia_one = force->numeric(FLERR,arg[4]);
+  double eib_one = force->numeric(FLERR,arg[5]);
+  double eic_one = force->numeric(FLERR,arg[6]);
+  double eja_one = force->numeric(FLERR,arg[7]);
+  double ejb_one = force->numeric(FLERR,arg[8]);
+  double ejc_one = force->numeric(FLERR,arg[9]);
 
   double cut_one = cut_global;
-  if (narg == 11) cut_one = utils::numeric(FLERR,arg[10],false,lmp);
+  if (narg == 11) cut_one = force->numeric(FLERR,arg[10]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -389,7 +391,7 @@ double PairGayBerne::init_one(int i, int j)
   lj3[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],12.0);
   lj4[i][j] = 4.0 * epsilon[i][j] * pow(sigma[i][j],6.0);
 
-  if (offset_flag && (cut[i][j] > 0.0)) {
+  if (offset_flag) {
     double ratio = sigma[i][j] / cut[i][j];
     offset[i][j] = 4.0 * epsilon[i][j] * (pow(ratio,12.0) - pow(ratio,6.0));
   } else offset[i][j] = 0.0;
@@ -462,20 +464,20 @@ void PairGayBerne::read_restart(FILE *fp)
   int i,j;
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++) {
-    if (me == 0) utils::sfread(FLERR,&setwell[i],sizeof(int),1,fp,nullptr,error);
+    if (me == 0) fread(&setwell[i],sizeof(int),1,fp);
     MPI_Bcast(&setwell[i],1,MPI_INT,0,world);
     if (setwell[i]) {
-      if (me == 0) utils::sfread(FLERR,&well[i][0],sizeof(double),3,fp,nullptr,error);
+      if (me == 0) fread(&well[i][0],sizeof(double),3,fp);
       MPI_Bcast(&well[i][0],3,MPI_DOUBLE,0,world);
     }
     for (j = i; j <= atom->ntypes; j++) {
-      if (me == 0) utils::sfread(FLERR,&setflag[i][j],sizeof(int),1,fp,nullptr,error);
+      if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
       if (setflag[i][j]) {
         if (me == 0) {
-          utils::sfread(FLERR,&epsilon[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&sigma[i][j],sizeof(double),1,fp,nullptr,error);
-          utils::sfread(FLERR,&cut[i][j],sizeof(double),1,fp,nullptr,error);
+          fread(&epsilon[i][j],sizeof(double),1,fp);
+          fread(&sigma[i][j],sizeof(double),1,fp);
+          fread(&cut[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&epsilon[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&sigma[i][j],1,MPI_DOUBLE,0,world);
@@ -507,12 +509,12 @@ void PairGayBerne::read_restart_settings(FILE *fp)
 {
   int me = comm->me;
   if (me == 0) {
-    utils::sfread(FLERR,&gamma,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&upsilon,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&mu,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&cut_global,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&offset_flag,sizeof(int),1,fp,nullptr,error);
-    utils::sfread(FLERR,&mix_flag,sizeof(int),1,fp,nullptr,error);
+    fread(&gamma,sizeof(double),1,fp);
+    fread(&upsilon,sizeof(double),1,fp);
+    fread(&mu,sizeof(double),1,fp);
+    fread(&cut_global,sizeof(double),1,fp);
+    fread(&offset_flag,sizeof(int),1,fp);
+    fread(&mix_flag,sizeof(int),1,fp);
   }
   MPI_Bcast(&gamma,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&upsilon,1,MPI_DOUBLE,0,world);
@@ -645,10 +647,10 @@ double PairGayBerne::gayberne_analytic(const int i,const int j,double a1[3][3],
   dchi[2] = temp2*(iota[2]-temp1*r12hat[2]);
 
   temp1 = -eta*u_r;
-  temp3 = eta*chi;
-  fforce[0] = temp1*dchi[0]-temp3*dUr[0];
-  fforce[1] = temp1*dchi[1]-temp3*dUr[1];
-  fforce[2] = temp1*dchi[2]-temp3*dUr[2];
+  temp2 = eta*chi;
+  fforce[0] = temp1*dchi[0]-temp2*dUr[0];
+  fforce[1] = temp1*dchi[1]-temp2*dUr[1];
+  fforce[2] = temp1*dchi[2]-temp2*dUr[2];
 
   // torque for particle 1 and 2
   // compute dUr
@@ -669,17 +671,18 @@ double PairGayBerne::gayberne_analytic(const int i,const int j,double a1[3][3],
 
   MathExtra::vecmat(iota,b1,tempv);
   MathExtra::cross3(tempv,iota,dchi);
-  dchi[0] *= temp2;
-  dchi[1] *= temp2;
-  dchi[2] *= temp2;
+  temp1 = -4.0/rsq;
+  dchi[0] *= temp1;
+  dchi[1] *= temp1;
+  dchi[2] *= temp1;
   double dchi2[3];
 
   if (newton_pair || j < nlocal) {
     MathExtra::vecmat(iota,b2,tempv);
     MathExtra::cross3(tempv,iota,dchi2);
-    dchi2[0] *= temp2;
-    dchi2[1] *= temp2;
-    dchi2[2] *= temp2;
+    dchi2[0] *= temp1;
+    dchi2[1] *= temp1;
+    dchi2[2] *= temp1;
   }
 
   // compute d_eta

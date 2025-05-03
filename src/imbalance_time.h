@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -25,31 +25,19 @@ class ImbalanceTime : public Imbalance {
 
  public:
   // parse options, return number of arguments consumed
-  virtual int options(int, char **) override;
+  virtual int options(int, char **);
   // reinitialize internal data
-  virtual void init(int) override;
+  virtual void init(int);
   // compute and apply weight factors to local atom array
-  virtual void compute(double *) override;
+  virtual void compute(double *);
   // print information about the state of this imbalance compute
-  virtual std::string info() override;
+  virtual void info(FILE *);
 
  private:
-  double factor;    // weight factor for time imbalance
-  double last;      // combined wall time from last call
+  double factor;               // weight factor for time imbalance
+  double last;                 // combined wall time from last call
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
-
-/* ERROR/WARNING messages:
-
-E: Illegal ... command
-
-UNDOCUMENTED
-
-E: Balance weight <= 0.0
-
-UNDOCUMENTED
-
-*/

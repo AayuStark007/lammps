@@ -11,22 +11,22 @@
 //
 //    begin                :
 //    email                : brownw@ornl.gov
-// ***************************************************************************
+// ***************************************************************************/
 
-#if defined(NV_KERNEL) || defined(USE_HIP)
+#ifdef NV_KERNEL
 
 #include "lal_preprocessor.h"
 #ifndef _DOUBLE_DOUBLE
-_texture( pos_tex,float4);
-_texture( q_tex,float);
+texture<float4> pos_tex;
+texture<float> q_tex;
 #else
-_texture_2d( pos_tex,int4);
-_texture( q_tex,int2);
+texture<int4,1> pos_tex;
+texture<int2> q_tex;
 #endif
 
 // Allow PPPM to compile without atomics for NVIDIA 1.0 cards, error
 // generated at runtime with use of pppm/gpu
-#if defined(NV_KERNEL) && (__CUDA_ARCH__ < 110)
+#if (__CUDA_ARCH__ < 110)
 #define atomicAdd(x,y) *(x)+=0
 #endif
 
@@ -35,13 +35,10 @@ _texture( q_tex,int2);
 #define pos_tex x_
 #define q_tex q_
 #pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics: enable
-
-#ifdef GRD_DBL
 #if defined(cl_amd_fp64)
 #pragma OPENCL EXTENSION cl_amd_fp64 : enable
 #else
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable
-#endif
 #endif
 
 #endif

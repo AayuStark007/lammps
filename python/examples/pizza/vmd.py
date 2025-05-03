@@ -45,16 +45,17 @@ v.debug([True|False])	       display generated VMD script commands?
 
 # Imports and external programs
 
-import os
+import types, os
+import numpy
 
 try: from DEFAULTS import PIZZA_VMDNAME
-except ImportError: PIZZA_VMDNAME = "vmd"
+except: PIZZA_VMDNAME = "vmd"
 try: from DEFAULTS import PIZZA_VMDDIR
-except ImportError: PIZZA_VMDDIR = "/usr/local/lib/vmd"
+except: PIZZA_VMDDIR = "/usr/local/lib/vmd"
 try: from DEFAULTS import PIZZA_VMDDEV
-except ImportError: PIZZA_VMDDEV = "win"
+except: PIZZA_VMDDEV = "win"
 try: from DEFAULTS import PIZZA_VMDARCH
-except ImportError: PIZZA_VMDARCH = "LINUXAMD64"
+except: PIZZA_VMDARCH = "LINUXAMD64"
 
 # try these settings for a Mac
 #PIZZA_VMDNAME = "vmd"
@@ -63,7 +64,7 @@ except ImportError: PIZZA_VMDARCH = "LINUXAMD64"
 #PIZZA_VMDARCH = "MACOSXX86"
 
 try: import pexpect
-except ImportError:
+except: 
   print("pexpect from http://pypi.python.org/pypi/pexpect", \
       "is required for vmd tool")
   raise

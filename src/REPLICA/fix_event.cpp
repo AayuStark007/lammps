@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,11 +15,17 @@
    Contributing author: Mike Brown (SNL), Aidan Thompson (SNL)
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "fix_event.h"
 #include "atom.h"
+#include "update.h"
 #include "domain.h"
-#include "error.h"
+#include "neighbor.h"
+#include "comm.h"
+#include "universe.h"
 #include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -28,8 +33,8 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixEvent::FixEvent(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg), xevent(nullptr), xold(nullptr), vold(nullptr),
-  imageold(nullptr), xorig(nullptr), vorig(nullptr), imageorig(nullptr)
+  Fix(lmp, narg, arg), xevent(NULL), xold(NULL), vold(NULL),
+  imageold(NULL), xorig(NULL), vorig(NULL), imageorig(NULL)
 {
   if (narg != 3) error->all(FLERR,"Illegal fix event command");
 
@@ -39,7 +44,7 @@ FixEvent::FixEvent(LAMMPS *lmp, int narg, char **arg) :
   // register with Atom class
 
   grow_arrays(atom->nmax);
-  atom->add_callback(Atom::GROW);
+  atom->add_callback(0);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -48,7 +53,7 @@ FixEvent::~FixEvent()
 {
   // unregister callbacks to this fix from Atom class
 
-  atom->delete_callback(id,Atom::GROW);
+  atom->delete_callback(id,0);
 
   // delete locally stored array
 
@@ -209,7 +214,7 @@ void FixEvent::restore_state_dephase()
 double FixEvent::memory_usage()
 {
   double bytes = 12*atom->nmax * sizeof(double);
-  bytes += (double)atom->nmax*sizeof(int);
+  bytes += atom->nmax*sizeof(int);
   return bytes;
 }
 
@@ -236,7 +241,7 @@ void FixEvent::grow_arrays(int nmax)
    copy values within local atom-based array
 ------------------------------------------------------------------------- */
 
-void FixEvent::copy_arrays(int i, int j, int /*delflag*/)
+void FixEvent::copy_arrays(int i, int j, int delflag)
 {
   xevent[j][0] = xevent[i][0];
   xevent[j][1] = xevent[i][1];

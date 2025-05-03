@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,13 @@
 ------------------------------------------------------------------------- */
 
 #ifdef BOND_CLASS
-// clang-format off
-BondStyle(fene/kk,BondFENEKokkos<LMPDeviceType>);
-BondStyle(fene/kk/device,BondFENEKokkos<LMPDeviceType>);
-BondStyle(fene/kk/host,BondFENEKokkos<LMPHostType>);
-// clang-format on
+
+BondStyle(fene/kk,BondFENEKokkos<LMPDeviceType>)
+BondStyle(fene/kk/device,BondFENEKokkos<LMPDeviceType>)
+BondStyle(fene/kk/host,BondFENEKokkos<LMPHostType>)
+
 #else
 
-// clang-format off
 #ifndef LMP_BOND_FENE_KOKKOS_H
 #define LMP_BOND_FENE_KOKKOS_H
 
@@ -40,9 +39,8 @@ class BondFENEKokkos : public BondFENE {
 
   BondFENEKokkos(class LAMMPS *);
   virtual ~BondFENEKokkos();
-  void compute(int, int);
-  void coeff(int, char **);
-  void read_restart(FILE *);
+  virtual void compute(int, int);
+  virtual void coeff(int, char **);
 
   template<int NEWTON_BOND, int EVFLAG>
   KOKKOS_INLINE_FUNCTION
@@ -68,8 +66,8 @@ class BondFENEKokkos : public BondFENE {
 
   DAT::tdual_efloat_1d k_eatom;
   DAT::tdual_virial_array k_vatom;
-  typename ArrayTypes<DeviceType>::t_efloat_1d d_eatom;
-  typename ArrayTypes<DeviceType>::t_virial_array d_vatom;
+  DAT::t_efloat_1d d_eatom;
+  DAT::t_virial_array d_vatom;
 
   DAT::tdual_int_scalar k_warning_flag;
   typename AT::t_int_scalar d_warning_flag;
@@ -87,12 +85,12 @@ class BondFENEKokkos : public BondFENE {
   DAT::tdual_ffloat_1d k_epsilon;
   DAT::tdual_ffloat_1d k_sigma;
 
-  typename AT::t_ffloat_1d d_k;
-  typename AT::t_ffloat_1d d_r0;
-  typename AT::t_ffloat_1d d_epsilon;
-  typename AT::t_ffloat_1d d_sigma;
+  DAT::t_ffloat_1d d_k;
+  DAT::t_ffloat_1d d_r0;
+  DAT::t_ffloat_1d d_epsilon;
+  DAT::t_ffloat_1d d_sigma;
 
-  void allocate();
+  virtual void allocate();
 };
 
 }

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,8 +11,11 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_line_lj.h"
-#include <cmath>
 #include "atom.h"
 #include "atom_vec_line.h"
 #include "force.h"
@@ -21,7 +23,6 @@
 #include "neigh_list.h"
 #include "memory.h"
 #include "error.h"
-
 
 using namespace LAMMPS_NS;
 
@@ -32,8 +33,8 @@ using namespace LAMMPS_NS;
 PairLineLJ::PairLineLJ(LAMMPS *lmp) : Pair(lmp)
 {
   dmax = nmax = 0;
-  discrete = nullptr;
-  dnum = dfirst = nullptr;
+  discrete = NULL;
+  dnum = dfirst = NULL;
 
   single_enable = 0;
   restartinfo = 0;
@@ -75,7 +76,9 @@ void PairLineLJ::compute(int eflag, int vflag)
   double xi[2],xj[2],fi[2],dxi,dxj,dyi,dyj;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  ev_init(eflag,vflag);
+  evdwl = 0.0;
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -301,7 +304,8 @@ void PairLineLJ::compute(int eflag, int vflag)
         }
       }
 
-      if (evflag) ev_tally(i,j,nlocal,newton_pair,evdwl,0.0,fpair,delx,dely,delz);
+      if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                           evdwl,0.0,fpair,delx,dely,delz);
     }
   }
 
@@ -344,14 +348,14 @@ void PairLineLJ::settings(int narg, char **arg)
 {
   if (narg != 1) error->all(FLERR,"Illegal pair_style command");
 
-  cut_global = utils::numeric(FLERR,arg[0],false,lmp);
+  cut_global = force->numeric(FLERR,arg[0]);
 
   // reset cutoffs that have been explicitly set
 
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i; j <= atom->ntypes; j++)
+      for (j = i+1; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -367,17 +371,17 @@ void PairLineLJ::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
-  double size_itype = utils::numeric(FLERR,arg[2],false,lmp);
-  double size_jtype = utils::numeric(FLERR,arg[3],false,lmp);
-  double epsilon_one = utils::numeric(FLERR,arg[4],false,lmp);
-  double sigma_one = utils::numeric(FLERR,arg[5],false,lmp);
-  double cutsub_one = utils::numeric(FLERR,arg[6],false,lmp);
+  double size_itype = force->numeric(FLERR,arg[2]);
+  double size_jtype = force->numeric(FLERR,arg[3]);
+  double epsilon_one = force->numeric(FLERR,arg[4]);
+  double sigma_one = force->numeric(FLERR,arg[5]);
+  double cutsub_one = force->numeric(FLERR,arg[6]);
 
   double cut_one = cut_global;
-  if (narg == 8) cut_one = utils::numeric(FLERR,arg[7],false,lmp);
+  if (narg == 8) cut_one = force->numeric(FLERR,arg[7]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -446,7 +450,7 @@ void PairLineLJ::discretize(int i, double size)
   double length = bonus[atom->line[i]].length;
   double theta = bonus[atom->line[i]].theta;
   int n = static_cast<int> (length/size) + 1;
-
+  
   dnum[i] = n;
   dfirst[i] = ndiscrete;
 

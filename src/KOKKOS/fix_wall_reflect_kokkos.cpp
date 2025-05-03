@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,16 +11,21 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "fix_wall_reflect_kokkos.h"
-
 #include "atom_kokkos.h"
-#include "atom_masks.h"
-#include "input.h"
-#include "modify.h"
+#include "comm.h"
 #include "update.h"
+#include "modify.h"
+#include "domain.h"
+#include "lattice.h"
+#include "input.h"
 #include "variable.h"
+#include "error.h"
+#include "force.h"
+#include "atom_masks.h"
 
-#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -75,6 +79,7 @@ void FixWallReflectKokkos<DeviceType>::post_integrate()
 
     copymode = 1;
     Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagFixWallReflectPostIntegrate>(0,nlocal),*this);
+    DeviceType::fence();
     copymode = 0;
   }
 
@@ -103,7 +108,7 @@ void FixWallReflectKokkos<DeviceType>::operator()(TagFixWallReflectPostIntegrate
 
 namespace LAMMPS_NS {
 template class FixWallReflectKokkos<LMPDeviceType>;
-#ifdef LMP_KOKKOS_GPU
+#ifdef KOKKOS_HAVE_CUDA
 template class FixWallReflectKokkos<LMPHostType>;
 #endif
 }

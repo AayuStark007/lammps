@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(property/local,ComputePropertyLocal);
-// clang-format on
+
+ComputeStyle(property/local,ComputePropertyLocal)
+
 #else
 
 #ifndef LMP_COMPUTE_PROPERTY_LOCAL_H
@@ -34,11 +34,9 @@ class ComputePropertyLocal : public Compute {
   double memory_usage();
 
  private:
-  int nvalues, kindflag, cutstyle;
+  int nvalues,kindflag,cutstyle;
 
   int nmax;
-  double *vlocal;
-  double **alocal;
   double *buf;
 
   class NeighList *list;
@@ -54,7 +52,7 @@ class ComputePropertyLocal : public Compute {
   void reallocate(int);
 
   typedef void (ComputePropertyLocal::*FnPtrPack)(int);
-  FnPtrPack *pack_choice;    // ptrs to pack functions
+  FnPtrPack *pack_choice;              // ptrs to pack functions
 
   void pack_patom1(int);
   void pack_patom2(int);
@@ -83,7 +81,7 @@ class ComputePropertyLocal : public Compute {
   void pack_itype(int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -99,7 +97,11 @@ command-line option when running LAMMPS to see the offending line.
 E: Compute property/local cannot use these inputs together
 
 Only inputs that generate the same number of datums can be used
-together.  E.g. bond and angle quantities cannot be mixed.
+togther.  E.g. bond and angle quantities cannot be mixed.
+
+E: Invalid keyword in compute property/local command
+
+Self-explanatory.
 
 E: Compute property/local does not (yet) work with atom_style template
 
@@ -109,10 +111,6 @@ E: Compute property/local for property that isn't allocated
 
 Self-explanatory.
 
-E: Compute property/local requires atom attribute radius
-
-UNDOCUMENTED
-
 E: No pair style is defined for compute property/local
 
 Self-explanatory.
@@ -121,9 +119,5 @@ E: Pair style does not support compute property/local
 
 The pair style does not have a single() function, so it can
 not be invoked by fix bond/swap.
-
-U: Invalid keyword in compute property/local command
-
-Self-explanatory.
 
 */

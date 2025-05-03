@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,30 +15,35 @@
    Contributing author: Pieter in 't Veld (SNL)
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include "fix_deform_kokkos.h"
-
 #include "atom_kokkos.h"
-#include "atom_masks.h"
-#include "domain_kokkos.h"
-#include "error.h"
-#include "force.h"
-#include "input.h"
-#include "irregular.h"
-#include "kspace.h"
-#include "math_const.h"
-#include "modify.h"
 #include "update.h"
+#include "comm.h"
+#include "irregular.h"
+#include "domain_kokkos.h"
+#include "lattice.h"
+#include "force.h"
+#include "modify.h"
+#include "math_const.h"
+#include "kspace.h"
+#include "input.h"
 #include "variable.h"
-
-#include <cmath>
-#include <cstring>
+#include "error.h"
+#include "atom_masks.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
 using namespace MathConst;
 
-enum{NONE=0,FINAL,DELTA,SCALE,VEL,ERATE,TRATE,VOLUME,WIGGLE,VARIABLE};
+enum{NONE,FINAL,DELTA,SCALE,VEL,ERATE,TRATE,VOLUME,WIGGLE,VARIABLE};
 enum{ONE_FROM_ONE,ONE_FROM_TWO,TWO_FROM_ONE};
+
+// same as domain.cpp, fix_nvt_sllod.cpp, compute_temp_deform.cpp
+
+enum{NO_REMAP,X_REMAP,V_REMAP};
 
 /* ---------------------------------------------------------------------- */
 
@@ -143,7 +147,7 @@ void FixDeformKokkos::end_of_step()
   // set new box size for VOLUME dims that are linked to other dims
   // NOTE: still need to set h_rate for these dims
 
-  for (i = 0; i < 3; i++) {
+  for (int i = 0; i < 3; i++) {
     if (set[i].style != VOLUME) continue;
 
     if (set[i].substyle == ONE_FROM_ONE) {
@@ -227,7 +231,7 @@ void FixDeformKokkos::end_of_step()
       // tilt_target can be large positive or large negative value
       // add/subtract box lengths until tilt_target is closest to current value
 
-      int idenom = 0;
+      int idenom;
       if (i == 5) idenom = 0;
       else if (i == 4) idenom = 0;
       else if (i == 3) idenom = 1;
@@ -311,7 +315,7 @@ void FixDeformKokkos::end_of_step()
 
   // convert atoms and rigid bodies to lamda coords
 
-  if (remapflag == Domain::X_REMAP) {
+  if (remapflag == X_REMAP) {
     int nlocal = atom->nlocal;
 
     domainKK->x2lamda(nlocal);
@@ -351,7 +355,7 @@ void FixDeformKokkos::end_of_step()
 
   // convert atoms and rigid bodies back to box coords
 
-  if (remapflag == Domain::X_REMAP) {
+  if (remapflag == X_REMAP) {
     int nlocal = atom->nlocal;
 
     domainKK->lamda2x(nlocal);

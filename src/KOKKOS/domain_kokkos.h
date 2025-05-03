@@ -1,7 +1,6 @@
-// clang-format off
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -15,9 +14,8 @@
 #ifndef LMP_DOMAIN_KOKKOS_H
 #define LMP_DOMAIN_KOKKOS_H
 
-#include "domain.h"             // IWYU pragma: export
+#include "domain.h"
 #include "kokkos_type.h"
-#include "kokkos_few.h"
 
 namespace LAMMPS_NS {
 
@@ -30,18 +28,13 @@ class DomainKokkos : public Domain {
  public:
   DomainKokkos(class LAMMPS *);
   ~DomainKokkos() {}
+  void init();
   void reset_box();
   void pbc();
   void remap_all();
   void image_flip(int, int, int);
   void x2lamda(int);
   void lamda2x(int);
-  // forward remaining x2lamda() and lambda2x() variants to parent class
-  void x2lamda(double *a, double *b) { Domain::x2lamda(a,b); }
-  void lamda2x(double *a, double *b) { Domain::lamda2x(a,b); }
-  void x2lamda(double *a, double *b, double *c, double *d) {
-    Domain::x2lamda(a,b,c,d);
-  }
 
   int closest_image(const int, int) const;
 
@@ -57,36 +50,12 @@ class DomainKokkos : public Domain {
   KOKKOS_INLINE_FUNCTION
   void operator()(TagDomain_x2lamda, const int&) const;
 
-  static KOKKOS_INLINE_FUNCTION
-  Few<double,3> unmap(Few<double,3> prd, Few<double,6> h, int triclinic,
-      Few<double,3> x, imageint image);
-
  private:
   double lo[3],hi[3],period[3];
   int n_flip, m_flip, p_flip;
   ArrayTypes<LMPDeviceType>::t_x_array x;
   ArrayTypes<LMPDeviceType>::t_imageint_1d image;
 };
-
-KOKKOS_INLINE_FUNCTION
-Few<double,3> DomainKokkos::unmap(Few<double,3> prd, Few<double,6> h,
-    int triclinic, Few<double,3> x, imageint image)
-{
-  int xbox = (image & IMGMASK) - IMGMAX;
-  int ybox = (image >> IMGBITS & IMGMASK) - IMGMAX;
-  int zbox = (image >> IMG2BITS) - IMGMAX;
-  Few<double,3> y;
-  if (triclinic == 0) {
-    y[0] = x[0] + xbox*prd[0];
-    y[1] = x[1] + ybox*prd[1];
-    y[2] = x[2] + zbox*prd[2];
-  } else {
-    y[0] = x[0] + h[0]*xbox + h[5]*ybox + h[4]*zbox;
-    y[1] = x[1] + h[1]*ybox + h[3]*zbox;
-    y[2] = x[2] + h[2]*zbox;
-  }
-  return y;
-}
 
 }
 

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(heat,FixHeat);
-// clang-format on
+
+FixStyle(heat,FixHeat)
+
 #else
 
 #ifndef LMP_FIX_HEAT_H
@@ -41,14 +41,14 @@ class FixHeat : public Fix {
   double scale;
   char *idregion;
   char *hstr;
-  int hstyle, hvar;
+  int hstyle,hvar;
 
   int maxatom;
   double *vheat;
   double *vscale;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -73,17 +73,9 @@ E: Variable for fix heat is invalid style
 
 Only equal-style or atom-style variables can be used.
 
-W: Cannot apply fix heat to atoms in rigid bodies
-
-UNDOCUMENTED
-
 E: Fix heat group has no atoms
 
 Self-explanatory.
-
-E: Fix heat group has invalid mass
-
-UNDOCUMENTED
 
 E: Fix heat kinetic energy went negative
 

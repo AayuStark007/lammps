@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(table,PairTable);
-// clang-format on
+
+PairStyle(table,PairTable)
+
 #else
 
 #ifndef LMP_PAIR_TABLE_H
@@ -30,60 +30,60 @@ class PairTable : public Pair {
   virtual ~PairTable();
 
   virtual void compute(int, int);
-  virtual void settings(int, char **);
+  void settings(int, char **);
   void coeff(int, char **);
-  virtual double init_one(int, int);
+  double init_one(int, int);
   void write_restart(FILE *);
   void read_restart(FILE *);
   void write_restart_settings(FILE *);
   void read_restart_settings(FILE *);
-  virtual double single(int, int, int, int, double, double, double, double &);
+  double single(int, int, int, int, double, double, double, double &);
   void *extract(const char *, int &);
 
-  enum { LOOKUP, LINEAR, SPLINE, BITMAP };
-
  protected:
-  int tabstyle, tablength;
+  enum{LOOKUP,LINEAR,SPLINE,BITMAP};
+
+  int tabstyle,tablength;
   struct Table {
-    int ninput, rflag, fpflag, match, ntablebits;
-    int nshiftbits, nmask;
-    double rlo, rhi, fplo, fphi, cut;
-    double *rfile, *efile, *ffile;
-    double *e2file, *f2file;
-    double innersq, delta, invdelta, deltasq6;
-    double *rsq, *drsq, *e, *de, *f, *df, *e2, *f2;
+    int ninput,rflag,fpflag,match,ntablebits;
+    int nshiftbits,nmask;
+    double rlo,rhi,fplo,fphi,cut;
+    double *rfile,*efile,*ffile;
+    double *e2file,*f2file;
+    double innersq,delta,invdelta,deltasq6;
+    double *rsq,*drsq,*e,*de,*f,*df,*e2,*f2;
   };
   int ntables;
   Table *tables;
 
   int **tabindex;
 
-  virtual void allocate();
+  void allocate();
   void read_table(Table *, char *, char *);
   void param_extract(Table *, char *);
   void bcast_table(Table *);
   void spline_table(Table *);
-  virtual void compute_table(Table *);
+  void compute_table(Table *);
   void null_table(Table *);
   void free_table(Table *);
-  static void spline(double *, double *, int, double, double, double *);
-  static double splint(double *, double *, double *, int, double);
+  void spline(double *, double *, int, double, double, double *);
+  double splint(double *, double *, double *, int, double);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
 
 /* ERROR/WARNING messages:
 
-E: Pair distance < table inner cutoff: ijtype %d %d dist %g
+E: Pair distance < table inner cutoff
 
-UNDOCUMENTED
+Two atoms are closer together than the pairwise table allows.
 
-E: Pair distance > table outer cutoff: ijtype %d %d dist %g
+E: Pair distance > table outer cutoff
 
-UNDOCUMENTED
+Two atoms are further apart than the pairwise table allows.
 
 E: Illegal ... command
 
@@ -131,22 +131,6 @@ E: Bitmapped table is incorrect length in table file
 
 Number of table entries is not a correct power of 2.
 
-E: Premature end of file in pair table
-
-UNDOCUMENTED
-
-W: %d of %d force values in table are inconsistent with -dE/dr.\n  Should only be flagged at inflection points
-
-UNDOCUMENTED
-
-W: %d of %d distance values in table with relative error\n  over %g to re-computed values
-
-UNDOCUMENTED
-
-W: %d of %d lines in table were incomplete\n  or could not be parsed completely
-
-UNDOCUMENTED
-
 E: Invalid keyword in pair table parameters
 
 Keyword used in list of table parameters is not recognized.
@@ -154,14 +138,6 @@ Keyword used in list of table parameters is not recognized.
 E: Pair table parameters did not set N
 
 List of pair table parameters must include N setting.
-
-E: Pair distance < table inner cutoff
-
-Two atoms are closer together than the pairwise table allows.
-
-E: Pair distance > table outer cutoff
-
-Two atoms are further apart than the pairwise table allows.
 
 E: Pair table cutoffs must all be equal to use with KSpace
 

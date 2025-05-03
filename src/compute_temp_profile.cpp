@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,13 +11,15 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <stdlib.h>
+#include <string.h>
 #include "compute_temp_profile.h"
-
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "force.h"
 #include "group.h"
+#include "fix.h"
 #include "domain.h"
 #include "memory.h"
 #include "error.h"
@@ -31,7 +32,7 @@ enum{TENSOR,BIN};
 
 ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  bin(nullptr), vbin(nullptr), binave(nullptr), tbin(nullptr), tbinall(nullptr)
+  bin(NULL), vbin(NULL), binave(NULL), tbin(NULL), tbinall(NULL)
 {
   if (narg < 7) error->all(FLERR,"Illegal compute temp/profile command");
 
@@ -40,9 +41,9 @@ ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
   tempflag = 1;
   tempbias = 1;
 
-  xflag = utils::inumeric(FLERR,arg[3],false,lmp);
-  yflag = utils::inumeric(FLERR,arg[4],false,lmp);
-  zflag = utils::inumeric(FLERR,arg[5],false,lmp);
+  xflag = force->inumeric(FLERR,arg[3]);
+  yflag = force->inumeric(FLERR,arg[4]);
+  zflag = force->inumeric(FLERR,arg[5]);
   if (zflag && domain->dimension == 2)
     error->all(FLERR,"Compute temp/profile cannot use vz for 2d systemx");
 
@@ -58,44 +59,44 @@ ComputeTempProfile::ComputeTempProfile(LAMMPS *lmp, int narg, char **arg) :
   int iarg = 6;
   if (strcmp(arg[iarg],"x") == 0) {
     if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/profile command");
-    nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+    nbinx = force->inumeric(FLERR,arg[iarg+1]);
     iarg += 2;
   } else if (strcmp(arg[iarg],"y") == 0) {
     if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/profile command");
-    nbiny = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+    nbiny = force->inumeric(FLERR,arg[iarg+1]);
     iarg += 2;
   } else if (strcmp(arg[iarg],"z") == 0) {
     if (iarg+2 > narg) error->all(FLERR,"Illegal compute temp/profile command");
     if (domain->dimension == 2)
       error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
-    nbinz = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+    nbinz = force->inumeric(FLERR,arg[iarg+1]);
     iarg += 2;
   } else if (strcmp(arg[iarg],"xy") == 0) {
     if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/profile command");
-    nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-    nbiny = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
+    nbinx = force->inumeric(FLERR,arg[iarg+1]);
+    nbiny = force->inumeric(FLERR,arg[iarg+2]);
     iarg += 3;
   } else if (strcmp(arg[iarg],"yz") == 0) {
     if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/profile command");
     if (domain->dimension == 2)
       error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
-    nbiny = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-    nbinz = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
+    nbiny = force->inumeric(FLERR,arg[iarg+1]);
+    nbinz = force->inumeric(FLERR,arg[iarg+2]);
     iarg += 3;
   } else if (strcmp(arg[iarg],"xz") == 0) {
     if (iarg+3 > narg) error->all(FLERR,"Illegal compute temp/profile command");
     if (domain->dimension == 2)
       error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
-    nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-    nbinz = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
+    nbinx = force->inumeric(FLERR,arg[iarg+1]);
+    nbinz = force->inumeric(FLERR,arg[iarg+2]);
     iarg += 3;
   } else if (strcmp(arg[iarg],"xyz") == 0) {
     if (iarg+4 > narg) error->all(FLERR,"Illegal compute temp/profile command");
     if (domain->dimension == 2)
       error->all(FLERR,"Compute temp/profile cannot bin z for 2d systems");
-    nbinx = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
-    nbiny = utils::inumeric(FLERR,arg[iarg+2],false,lmp);
-    nbinz = utils::inumeric(FLERR,arg[iarg+3],false,lmp);
+    nbinx = force->inumeric(FLERR,arg[iarg+1]);
+    nbiny = force->inumeric(FLERR,arg[iarg+2]);
+    nbinz = force->inumeric(FLERR,arg[iarg+3]);
     iarg += 4;
   } else error->all(FLERR,"Illegal compute temp/profile command");
 
@@ -314,7 +315,7 @@ void ComputeTempProfile::compute_array()
 
   for (i = 0; i < nbins; i++) tbin[i] = 0.0;
 
-  for (i = 0; i < nlocal; i++)
+  for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       ibin = bin[i];
       if (xflag) vthermal[0] = v[i][0] - binave[ibin][ivx];
@@ -359,15 +360,6 @@ void ComputeTempProfile::remove_bias(int i, double *v)
 }
 
 /* ----------------------------------------------------------------------
-   remove velocity bias from atom I to leave thermal velocity
-------------------------------------------------------------------------- */
-
-void ComputeTempProfile::remove_bias_thr(int i, double *v, double *)
-{
-  remove_bias(i,v);
-}
-
-/* ----------------------------------------------------------------------
    remove velocity bias from all atoms to leave thermal velocity
 ------------------------------------------------------------------------- */
 
@@ -398,16 +390,6 @@ void ComputeTempProfile::restore_bias(int i, double *v)
   if (xflag) v[0] += binave[ibin][ivx];
   if (yflag) v[1] += binave[ibin][ivy];
   if (zflag) v[2] += binave[ibin][ivz];
-}
-
-/* ----------------------------------------------------------------------
-   add back in velocity bias to atom I removed by remove_bias_thr()
-   assume remove_bias_thr() was previously called
-------------------------------------------------------------------------- */
-
-void ComputeTempProfile::restore_bias_thr(int i, double *v, double *)
-{
-  restore_bias(i,v);
 }
 
 /* ----------------------------------------------------------------------
@@ -578,7 +560,7 @@ void ComputeTempProfile::bin_assign()
 
 double ComputeTempProfile::memory_usage()
 {
-  double bytes = (double)maxatom * sizeof(int);
-  bytes += (double)nbins*ncount * sizeof(double);
+  double bytes = maxatom * sizeof(int);
+  bytes += nbins*ncount * sizeof(double);
   return bytes;
 }

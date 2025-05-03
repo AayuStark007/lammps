@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,7 +11,11 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "region_block_kokkos.h"
+#include "domain.h"
+#include "force.h"
 #include "atom_kokkos.h"
 #include "atom_masks.h"
 
@@ -43,7 +46,7 @@ RegBlockKokkos<DeviceType>::~RegBlockKokkos()
 
 template<class DeviceType>
 KOKKOS_INLINE_FUNCTION
-int RegBlockKokkos<DeviceType>::k_inside(double x, double y, double z) const
+int RegBlockKokkos<DeviceType>::inside(double x, double y, double z) const
 {
   if (x >= xlo && x <= xhi && y >= ylo && y <= yhi && z >= zlo && z <= zhi)
     return 1;
@@ -51,10 +54,10 @@ int RegBlockKokkos<DeviceType>::k_inside(double x, double y, double z) const
 }
 
 template<class DeviceType>
-void RegBlockKokkos<DeviceType>::match_all_kokkos(int groupbit_in, DAT::tdual_int_1d k_match_in)
+void RegBlockKokkos<DeviceType>::match_all_kokkos(int groupbit_in, DAT::t_int_1d d_match_in)
 {
   groupbit = groupbit_in;
-  d_match = k_match_in.template view<DeviceType>();
+  d_match = d_match_in;
 
   atomKK->sync(Device, X_MASK | MASK_MASK);
 
@@ -64,9 +67,8 @@ void RegBlockKokkos<DeviceType>::match_all_kokkos(int groupbit_in, DAT::tdual_in
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagRegBlockMatchAll>(0,nlocal),*this);
+  DeviceType::fence();
   copymode = 0;
-
-  k_match_in.template modify<DeviceType>();
 }
 
 template<class DeviceType>
@@ -83,7 +85,7 @@ void RegBlockKokkos<DeviceType>::operator()(TagRegBlockMatchAll, const int &i) c
 /* ----------------------------------------------------------------------
    determine if point x,y,z is a match to region volume
    XOR computes 0 if 2 args are the same, 1 if different
-   note that k_inside() returns 1 for points on surface of region
+   note that inside() returns 1 for points on surface of region
    thus point on surface of exterior region will not match
    if region has variable shape, invoke shape_update() once per timestep
    if region is dynamic, apply inverse transform to x,y,z
@@ -97,7 +99,7 @@ KOKKOS_INLINE_FUNCTION
 int RegBlockKokkos<DeviceType>::match(double x, double y, double z) const
 {
   if (dynamic) inverse_transform(x,y,z);
-  return !(k_inside(x,y,z) ^ interior);
+  return !(inside(x,y,z) ^ interior);
 }
 
 /* ----------------------------------------------------------------------
@@ -164,7 +166,7 @@ void RegBlockKokkos<DeviceType>::rotate(double &x, double &y, double &z, double 
 
 namespace LAMMPS_NS {
 template class RegBlockKokkos<LMPDeviceType>;
-#ifdef LMP_KOKKOS_GPU
+#ifdef KOKKOS_HAVE_CUDA
 template class RegBlockKokkos<LMPHostType>;
 #endif
 }

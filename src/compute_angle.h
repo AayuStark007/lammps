@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(angle,ComputeAngle);
-// clang-format on
+
+ComputeStyle(angle,ComputeAngle)
+
 #else
 
 #ifndef LMP_COMPUTE_ANGLE_H
@@ -37,7 +37,7 @@ class ComputeAngle : public Compute {
   double *emine;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -50,26 +50,18 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Angle style for compute angle command is not hybrid
+E: Compute bond must use group all
 
-UNDOCUMENTED
+Bond styles accumlate energy on all atoms.
 
-E: Angle style for compute angle command has changed
+E: Unrecognized bond style in compute bond command
 
-UNDOCUMENTED
+Self-explanatory.
 
 E: Energy was not tallied on needed timestep
 
 You are using a thermo keyword that requires potentials to
 have tallied energy, but they didn't on this timestep.  See the
 variable doc page for ideas on how to make this work.
-
-U: Compute bond must use group all
-
-Bond styles accumulate energy on all atoms.
-
-U: Unrecognized bond style in compute bond command
-
-Self-explanatory.
 
 */

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,22 +15,21 @@
    Contributing author: Wan Liang (Chinese Academy of Sciences)
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
 #include "compute_cna_atom.h"
-
 #include "atom.h"
-#include "comm.h"
-#include "error.h"
+#include "update.h"
 #include "force.h"
-#include "memory.h"
+#include "pair.h"
 #include "modify.h"
+#include "neighbor.h"
 #include "neigh_list.h"
 #include "neigh_request.h"
-#include "neighbor.h"
-#include "pair.h"
-#include "update.h"
-
-#include <cstring>
-#include <cmath>
+#include "comm.h"
+#include "memory.h"
+#include "error.h"
+#include <math.h>
 
 using namespace LAMMPS_NS;
 
@@ -45,14 +43,14 @@ enum{NCOMMON,NBOND,MAXBOND,MINBOND};
 
 ComputeCNAAtom::ComputeCNAAtom(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  list(nullptr), nearest(nullptr), nnearest(nullptr), pattern(nullptr)
+  nearest(NULL), nnearest(NULL), pattern(NULL)
 {
   if (narg != 4) error->all(FLERR,"Illegal compute cna/atom command");
 
   peratom_flag = 1;
   size_peratom_cols = 0;
 
-  double cutoff = utils::numeric(FLERR,arg[3],false,lmp);
+  double cutoff = force->numeric(FLERR,arg[3]);
   if (cutoff < 0.0) error->all(FLERR,"Illegal compute cna/atom command");
   cutsq = cutoff*cutoff;
 
@@ -72,7 +70,7 @@ ComputeCNAAtom::~ComputeCNAAtom()
 
 void ComputeCNAAtom::init()
 {
-  if (force->pair == nullptr)
+  if (force->pair == NULL)
     error->all(FLERR,"Compute cna/atom requires a pair style be defined");
   if (sqrt(cutsq) > force->pair->cutforce)
     error->all(FLERR,"Compute cna/atom cutoff is longer than pairwise cutoff");
@@ -102,7 +100,7 @@ void ComputeCNAAtom::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeCNAAtom::init_list(int /*id*/, NeighList *ptr)
+void ComputeCNAAtom::init_list(int id, NeighList *ptr)
 {
   list = ptr;
 }
@@ -144,7 +142,7 @@ void ComputeCNAAtom::compute_peratom()
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
 
-  // find the neighbors of each atom within cutoff using full neighbor list
+  // find the neigbours of each atom within cutoff using full neighbor list
   // nearest[] = atom indices of nearest neighbors, up to MAXNEAR
   // do this for all atoms, not just compute group
   // since CNA calculation requires neighbors of neighbors
@@ -186,8 +184,11 @@ void ComputeCNAAtom::compute_peratom()
 
   int nerrorall;
   MPI_Allreduce(&nerror,&nerrorall,1,MPI_INT,MPI_SUM,world);
-  if (nerrorall && comm->me == 0)
-    error->warning(FLERR,"Too many neighbors in CNA for {} atoms",nerrorall);
+  if (nerrorall && comm->me == 0) {
+    char str[128];
+    sprintf(str,"Too many neighbors in CNA for %d atoms",nerrorall);
+    error->warning(FLERR,str,0);
+  }
 
   // compute CNA for each atom in group
   // only performed if # of nearest neighbors = 12 or 14 (fcc,hcp)
@@ -344,8 +345,11 @@ void ComputeCNAAtom::compute_peratom()
   // warning message
 
   MPI_Allreduce(&nerror,&nerrorall,1,MPI_INT,MPI_SUM,world);
-  if (nerrorall && comm->me == 0)
-    error->warning(FLERR,"Too many common neighbors in CNA: {}x", nerrorall);
+  if (nerrorall && comm->me == 0) {
+    char str[128];
+    sprintf(str,"Too many common neighbors in CNA %d times",nerrorall);
+    error->warning(FLERR,str);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -354,8 +358,8 @@ void ComputeCNAAtom::compute_peratom()
 
 double ComputeCNAAtom::memory_usage()
 {
-  double bytes = (double)nmax * sizeof(int);
-  bytes += (double)nmax * MAXNEAR * sizeof(int);
-  bytes += (double)nmax * sizeof(double);
+  double bytes = nmax * sizeof(int);
+  bytes += nmax * MAXNEAR * sizeof(int);
+  bytes += nmax * sizeof(double);
   return bytes;
 }

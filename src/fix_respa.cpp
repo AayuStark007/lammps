@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,12 +11,12 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "fix_respa.h"
-
 #include "atom.h"
+#include "force.h"
 #include "memory.h"
-
-#include <cstring>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -26,11 +25,11 @@ using namespace FixConst;
 
 FixRespa::FixRespa(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  store_torque(0), f_level(nullptr), t_level(nullptr)
+  store_torque(0), f_level(NULL), t_level(NULL)
 {
   // nlevels = # of rRESPA levels
 
-  nlevels = utils::inumeric(FLERR,arg[3],false,lmp);
+  nlevels = force->inumeric(FLERR,arg[3]);
 
   // optional arguments
   store_torque = 0;
@@ -42,10 +41,10 @@ FixRespa::FixRespa(LAMMPS *lmp, int narg, char **arg) :
   // perform initial allocation of atom-based arrays
   // register with Atom class
 
-  f_level = nullptr;
-  t_level = nullptr;
-  FixRespa::grow_arrays(atom->nmax);
-  atom->add_callback(Atom::GROW);
+  f_level = NULL;
+  t_level = NULL;
+  grow_arrays(atom->nmax);
+  atom->add_callback(0);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -54,7 +53,7 @@ FixRespa::~FixRespa()
 {
   // unregister callbacks to this fix from Atom class
 
-  atom->delete_callback(id,Atom::GROW);
+  atom->delete_callback(id,0);
 
   // delete locally stored arrays
 
@@ -75,8 +74,8 @@ int FixRespa::setmask()
 
 double FixRespa::memory_usage()
 {
-  double bytes = (double)atom->nmax*nlevels*3 * sizeof(double);
-  if (store_torque) bytes += (double)atom->nmax*nlevels*3 * sizeof(double);
+  double bytes = atom->nmax*nlevels*3 * sizeof(double);
+  if (store_torque) bytes += atom->nmax*nlevels*3 * sizeof(double);
   return bytes;
 }
 
@@ -94,7 +93,7 @@ void FixRespa::grow_arrays(int nmax)
    copy values within local atom-based arrays
 ------------------------------------------------------------------------- */
 
-void FixRespa::copy_arrays(int i, int j, int /*delflag*/)
+void FixRespa::copy_arrays(int i, int j, int delflag)
 {
   for (int k = 0; k < nlevels; k++) {
     f_level[j][k][0] = f_level[i][k][0];

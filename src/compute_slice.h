@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(slice,ComputeSlice);
-// clang-format on
+
+ComputeStyle(slice,ComputeSlice)
+
 #else
 
 #ifndef LMP_COMPUTE_SLICE_H
@@ -34,14 +34,14 @@ class ComputeSlice : public Compute {
 
  private:
   int me;
-  int nstart, nstop, nskip, nvalues;
-  int *which, *argindex, *value2index;
+  int nstart,nstop,nskip,nvalues;
+  int *which,*argindex,*value2index;
   char **ids;
 
   void extract_one(int, double *, int);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -102,25 +102,9 @@ E: Compute slice fix does not calculate global vector or array
 
 Self-explanatory.
 
-E: Variable name for compute slice does not exist
-
-UNDOCUMENTED
-
-E: Compute slice variable is not vector-style variable
-
-UNDOCUMENTED
-
-E: Compute slice vector variable cannot be indexed
-
-UNDOCUMENTED
-
 E: Fix used in compute slice not computed at compatible time
 
 Fixes generate their values on specific timesteps.  Compute slice is
 requesting a value on a non-allowed timestep.
-
-E: Compute slice variable is not long enough
-
-UNDOCUMENTED
 
 */

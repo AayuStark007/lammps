@@ -1,14 +1,13 @@
 /*
 //@HEADER
 // ************************************************************************
-//
-//                        Kokkos v. 3.0
-//       Copyright (2020) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
-//
-// Under the terms of Contract DE-NA0003525 with NTESS,
+// 
+//                        Kokkos v. 2.0
+//              Copyright (2014) Sandia Corporation
+// 
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
-//
+// 
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -24,10 +23,10 @@
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
-// THIS SOFTWARE IS PROVIDED BY NTESS "AS IS" AND ANY
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NTESS OR THE
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
 // CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 // EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
 // PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -36,13 +35,11 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
-//
+// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
+// 
 // ************************************************************************
 //@HEADER
 */
-
-#include <Kokkos_Macros.hpp>
 
 #include <gtest/gtest.h>
 
@@ -64,42 +61,75 @@
 
 namespace Performance {
 
-TEST(threads, dynrankview_perf) {
+class threads : public ::testing::Test {
+protected:
+  static void SetUpTestCase()
+  {
+    std::cout << std::setprecision(5) << std::scientific;
+
+    unsigned num_threads = 4;
+
+    if (Kokkos::hwloc::available()) {
+      num_threads = Kokkos::hwloc::get_available_numa_count() *
+                    Kokkos::hwloc::get_available_cores_per_numa() *
+                    Kokkos::hwloc::get_available_threads_per_core();
+
+    }
+
+    std::cout << "Threads: " << num_threads << std::endl;
+
+    Kokkos::Threads::initialize( num_threads );
+  }
+
+  static void TearDownTestCase()
+  {
+    Kokkos::Threads::finalize();
+  }
+};
+
+TEST_F( threads, dynrankview_perf ) 
+{
   std::cout << "Threads" << std::endl;
   std::cout << " DynRankView vs View: Initialization Only " << std::endl;
-  test_dynrankview_op_perf<Kokkos::Threads>(8192);
+  test_dynrankview_op_perf<Kokkos::Threads>( 8192 );
 }
 
-TEST(threads, global_2_local) {
+TEST_F( threads, global_2_local)
+{
   std::cout << "Threads" << std::endl;
   std::cout << "size, create, generate, fill, find" << std::endl;
-  for (unsigned i = Performance::begin_id_size; i <= Performance::end_id_size;
-       i *= Performance::id_step)
+  for (unsigned i=Performance::begin_id_size; i<=Performance::end_id_size; i *= Performance::id_step)
     test_global_to_local_ids<Kokkos::Threads>(i);
 }
 
-TEST(threads, unordered_map_performance_near) {
+TEST_F( threads, unordered_map_performance_near)
+{
   unsigned num_threads = 4;
   if (Kokkos::hwloc::available()) {
     num_threads = Kokkos::hwloc::get_available_numa_count() *
                   Kokkos::hwloc::get_available_cores_per_numa() *
                   Kokkos::hwloc::get_available_threads_per_core();
+
   }
   std::ostringstream base_file_name;
   base_file_name << "threads-" << num_threads << "-near";
-  Perf::run_performance_tests<Kokkos::Threads, true>(base_file_name.str());
+  Perf::run_performance_tests<Kokkos::Threads,true>(base_file_name.str());
 }
 
-TEST(threads, unordered_map_performance_far) {
+TEST_F( threads, unordered_map_performance_far)
+{
   unsigned num_threads = 4;
   if (Kokkos::hwloc::available()) {
     num_threads = Kokkos::hwloc::get_available_numa_count() *
                   Kokkos::hwloc::get_available_cores_per_numa() *
                   Kokkos::hwloc::get_available_threads_per_core();
+
   }
   std::ostringstream base_file_name;
   base_file_name << "threads-" << num_threads << "-far";
-  Perf::run_performance_tests<Kokkos::Threads, false>(base_file_name.str());
+  Perf::run_performance_tests<Kokkos::Threads,false>(base_file_name.str());
 }
 
-}  // namespace Performance
+} // namespace Performance
+
+

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,31 +11,32 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <string.h>
 #include "compute_erotate_rigid.h"
-
-#include "error.h"
+#include "update.h"
+#include "force.h"
+#include "modify.h"
 #include "fix.h"
 #include "fix_rigid.h"
 #include "fix_rigid_small.h"
-#include "force.h"
-#include "modify.h"
-#include "update.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
 ComputeERotateRigid::ComputeERotateRigid(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg), rfix(nullptr)
+  Compute(lmp, narg, arg), rfix(NULL)
 {
   if (narg != 4) error->all(FLERR,"Illegal compute erotate/rigid command");
 
   scalar_flag = 1;
   extscalar = 1;
 
-  rfix = utils::strdup(arg[3]);
+  int n = strlen(arg[3]) + 1;
+  rfix = new char[n];
+  strcpy(rfix,arg[3]);
 }
 
 /* ---------------------------------------------------------------------- */

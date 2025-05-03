@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(pair,ComputePair);
-// clang-format on
+
+ComputeStyle(pair,ComputePair)
+
 #else
 
 #ifndef LMP_COMPUTE_PAIR_H
@@ -33,13 +33,13 @@ class ComputePair : public Compute {
   void compute_vector();
 
  private:
-  int evalue, npair, nsub;
+  int evalue,npair;
   char *pstyle;
   class Pair *pair;
   double *one;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -52,6 +52,10 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
+E: Compute pair must use group all
+
+Pair styles accumlate energy on all atoms.
+
 E: Unrecognized pair style in compute pair command
 
 Self-explanatory.
@@ -61,9 +65,5 @@ E: Energy was not tallied on needed timestep
 You are using a thermo keyword that requires potentials to
 have tallied energy, but they didn't on this timestep.  See the
 variable doc page for ideas on how to make this work.
-
-U: Compute pair must use group all
-
-Pair styles accumulate energy on all atoms.
 
 */

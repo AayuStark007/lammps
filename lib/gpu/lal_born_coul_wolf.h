@@ -13,8 +13,8 @@
     email                : nguyentd@ornl.gov
  ***************************************************************************/
 
-#ifndef LAL_BORN_COUL_WOLF_H
-#define LAL_BORN_COUL_WOLF_H
+#ifndef LAL_BORN_COUL_LONG_H
+#define LAL_BORN_COUL_LONG_H
 
 #include "lal_base_charge.h"
 
@@ -32,7 +32,7 @@ class BornCoulWolf : public BaseCharge<numtyp, acctyp> {
     * \param gpu_split fraction of particles handled by device
     *
     * Returns:
-    * -  0 if successful
+    * -  0 if successfull
     * - -1 if fix gpu not found
     * - -3 if there is an out of memory error
     * - -4 if the GPU library was not compiled for GPU
@@ -79,9 +79,9 @@ class BornCoulWolf : public BaseCharge<numtyp, acctyp> {
 
   numtyp _cut_coulsq,_qqrd2e,_alf,_e_shift,_f_shift;
 
- protected:
+ private:
   bool _allocated;
-  int loop(const int eflag, const int vflag);
+  void loop(const bool _eflag, const bool _vflag);
 };
 
 }

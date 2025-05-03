@@ -1,6 +1,6 @@
 #include <mpi.h>
-#include <cstdlib>
-#include <cstdio>
+#include <stdlib.h>
+#include <stdio.h>
 #include "many2many.h"
 #include "irregular.h"
 #include "memory.h"

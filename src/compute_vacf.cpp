@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "compute_vacf.h"
-
 #include "atom.h"
 #include "update.h"
 #include "group.h"
@@ -27,7 +26,7 @@ using namespace LAMMPS_NS;
 
 ComputeVACF::ComputeVACF(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  id_fix(nullptr)
+  id_fix(NULL)
 {
   if (narg < 3) error->all(FLERR,"Illegal compute vacf command");
 
@@ -39,9 +38,21 @@ ComputeVACF::ComputeVACF(LAMMPS *lmp, int narg, char **arg) :
   // create a new fix STORE style
   // id = compute-ID + COMPUTE_STORE, fix group = compute group
 
-  id_fix = utils::strdup(id + std::string("_COMPUTE_STORE"));
-  fix = (FixStore *) modify->add_fix(fmt::format("{} {} STORE peratom 1 3",
-                                                 id_fix, group->names[igroup]));
+  int n = strlen(id) + strlen("_COMPUTE_STORE") + 1;
+  id_fix = new char[n];
+  strcpy(id_fix,id);
+  strcat(id_fix,"_COMPUTE_STORE");
+
+  char **newarg = new char*[6];
+  newarg[0] = id_fix;
+  newarg[1] = group->names[igroup];
+  newarg[2] = (char *) "STORE";
+  newarg[3] = (char *) "peratom";
+  newarg[4] = (char *) "1";
+  newarg[5] = (char *) "3";
+  modify->add_fix(6,newarg);
+  fix = (FixStore *) modify->fix[modify->nfix-1];
+  delete [] newarg;
 
   // store current velocities in fix store array
   // skip if reset from restart file
@@ -56,15 +67,15 @@ ComputeVACF::ComputeVACF(LAMMPS *lmp, int narg, char **arg) :
 
     for (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-        voriginal[i][0] = v[i][0];
-        voriginal[i][1] = v[i][1];
-        voriginal[i][2] = v[i][2];
+	voriginal[i][0] = v[i][0];
+	voriginal[i][1] = v[i][1];
+	voriginal[i][2] = v[i][2];
       } else voriginal[i][0] = voriginal[i][1] = voriginal[i][2] = 0.0;
   }
 
   // displacement vector
 
-  vector = new double[size_vector];
+  vector = new double[4];
 }
 
 /* ---------------------------------------------------------------------- */

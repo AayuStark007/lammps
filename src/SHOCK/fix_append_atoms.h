@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(append/atoms,FixAppendAtoms);
-// clang-format on
+
+FixStyle(append/atoms,FixAppendAtoms)
+
 #else
 
 #ifndef FIX_APPEND_ATOMS_H
@@ -44,14 +44,14 @@ class FixAppendAtoms : public Fix {
   int scaleflag, freq;
   int nbasis;
   int *basistype;
-  int advance, advance_sum;
-  double size, spatlead;
+  int advance,advance_sum;
+  double size,spatlead;
   char *spatialid;
   double tfactor;
-  double *gfactor1, *gfactor2;
+  double *gfactor1,*gfactor2;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -94,7 +94,7 @@ type p (periodic).
 
 E: Cannot append atoms to a triclinic box
 
-The simulation box must be defined with edges aligned with the
+The simulation box must be defined with edges alligned with the
 Cartesian axes.
 
 E: Fix ID for fix ave/spatial does not exist

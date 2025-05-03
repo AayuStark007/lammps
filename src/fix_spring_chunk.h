@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(spring/chunk,FixSpringChunk);
-// clang-format on
+
+FixStyle(spring/chunk,FixSpringChunk)
+
 #else
 
 #ifndef LMP_FIX_SPRING_CHUNK_H
@@ -35,24 +35,22 @@ class FixSpringChunk : public Fix {
   void post_force(int);
   void post_force_respa(int, int, int);
   void min_post_force(int);
-  void write_restart(FILE *);
-  void restart(char *);
   double compute_scalar();
 
  private:
   int ilevel_respa;
   double k_spring;
   double esprings;
-  char *idchunk, *idcom;
+  char *idchunk,*idcom;
 
   int nchunk;
-  double **com0, **fcom;
+  double **com0,**fcom;
 
   class ComputeChunkAtom *cchunk;
   class ComputeCOMChunk *ccom;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -65,35 +63,15 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Chunk/atom compute does not exist for fix spring/chunk
-
-UNDOCUMENTED
-
-E: Fix spring/chunk does not use chunk/atom compute
-
-UNDOCUMENTED
-
-E: Com/chunk compute does not exist for fix spring/chunk
-
-UNDOCUMENTED
-
-E: Fix spring/chunk does not use com/chunk compute
-
-UNDOCUMENTED
-
-E: Fix spring chunk chunkID not same as comID chunkID
-
-UNDOCUMENTED
-
-U: R0 < 0 for fix spring command
+E: R0 < 0 for fix spring command
 
 Equilibrium spring length is invalid.
 
-U: Fix spring couple group ID does not exist
+E: Fix spring couple group ID does not exist
 
 Self-explanatory.
 
-U: Two groups cannot be the same in fix spring couple
+E: Two groups cannot be the same in fix spring couple
 
 Self-explanatory.
 

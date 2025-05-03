@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,14 +15,16 @@
    Contributing author: Carsten Svaneborg (SDU)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_zero.h"
-
 #include "atom.h"
 #include "comm.h"
+#include "force.h"
 #include "memory.h"
 #include "error.h"
-
-#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -32,8 +33,6 @@ using namespace LAMMPS_NS;
 PairZero::PairZero(LAMMPS *lmp) : Pair(lmp) {
   coeffflag=1;
   writedata=1;
-  single_enable=1;
-  respa_enable=1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -51,15 +50,10 @@ PairZero::~PairZero()
 
 void PairZero::compute(int eflag, int vflag)
 {
- ev_init(eflag,vflag);
+ if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
+
  if (vflag_fdotr) virial_fdotr_compute();
-}
-
-/* ---------------------------------------------------------------------- */
-
-void PairZero::compute_outer(int eflag, int vflag)
-{
- ev_init(eflag,vflag);
 }
 
 /* ----------------------------------------------------------------------
@@ -89,7 +83,7 @@ void PairZero::settings(int narg, char **arg)
   if ((narg != 1) && (narg != 2))
     error->all(FLERR,"Illegal pair_style command");
 
-  cut_global = utils::numeric(FLERR,arg[0],false,lmp);
+  cut_global = force->numeric(FLERR,arg[0]);
   if (narg == 2) {
     if (strcmp("nocoeff",arg[1]) == 0) coeffflag=0;
     else error->all(FLERR,"Illegal pair_style command");
@@ -117,11 +111,11 @@ void PairZero::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   double cut_one = cut_global;
-  if (coeffflag && (narg == 3)) cut_one = utils::numeric(FLERR,arg[2],false,lmp);
+  if (coeffflag && (narg == 3)) cut_one = force->numeric(FLERR,arg[2]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -179,11 +173,11 @@ void PairZero::read_restart(FILE *fp)
   int me = comm->me;
   for (i = 1; i <= atom->ntypes; i++)
     for (j = i; j <= atom->ntypes; j++) {
-      if (me == 0) utils::sfread(FLERR,&setflag[i][j],sizeof(int),1,fp,nullptr,error);
+      if (me == 0) fread(&setflag[i][j],sizeof(int),1,fp);
       MPI_Bcast(&setflag[i][j],1,MPI_INT,0,world);
       if (setflag[i][j]) {
         if (me == 0) {
-          utils::sfread(FLERR,&cut[i][j],sizeof(double),1,fp,nullptr,error);
+          fread(&cut[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&cut[i][j],1,MPI_DOUBLE,0,world);
       }
@@ -208,8 +202,8 @@ void PairZero::read_restart_settings(FILE *fp)
 {
   int me = comm->me;
   if (me == 0) {
-    utils::sfread(FLERR,&cut_global,sizeof(double),1,fp,nullptr,error);
-    utils::sfread(FLERR,&coeffflag,sizeof(int),1,fp,nullptr,error);
+    fread(&cut_global,sizeof(double),1,fp);
+    fread(&coeffflag,sizeof(int),1,fp);
   }
   MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&coeffflag,1,MPI_INT,0,world);
@@ -236,13 +230,4 @@ void PairZero::write_data_all(FILE *fp)
       fprintf(fp,"%d %d %g\n",i,j,cut[i][j]);
 }
 
-/* ---------------------------------------------------------------------- */
-
-double PairZero::single(int /*i*/, int /*j*/, int /* itype */, int /* jtype */,
-                        double /* rsq */, double /*factor_coul*/,
-                        double /* factor_lj */, double &fforce)
-{
-  fforce = 0.0;
-  return 0.0;
-}
 

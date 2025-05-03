@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,8 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
 #include "fix_wall_lj93.h"
-#include <cmath>
 #include "atom.h"
 #include "error.h"
 
@@ -23,10 +22,7 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixWallLJ93::FixWallLJ93(LAMMPS *lmp, int narg, char **arg) :
-  FixWall(lmp, narg, arg)
-{
-  dynamic_group_allow = 1;
-}
+  FixWall(lmp, narg, arg) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -53,7 +49,6 @@ void FixWallLJ93::precompute(int m)
 void FixWallLJ93::wall_particle(int m, int which, double coord)
 {
   double delta,rinv,r2inv,r4inv,r10inv,fwall;
-  double vn;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -84,12 +79,6 @@ void FixWallLJ93::wall_particle(int m, int which, double coord)
       ewall[0] += coeff3[m]*r4inv*r4inv*rinv -
         coeff4[m]*r2inv*rinv - offset[m];
       ewall[m+1] += fwall;
-
-      if (evflag) {
-        if (side < 0) vn = -fwall*delta;
-        else vn = fwall*delta;
-        v_tally(dim, i, vn);
-      }
     }
 
   if (onflag) error->one(FLERR,"Particle on or inside fix wall surface");

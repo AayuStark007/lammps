@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef INTEGRATE_CLASS
-// clang-format off
-IntegrateStyle(verlet,Verlet);
-// clang-format on
+
+IntegrateStyle(verlet,Verlet)
+
 #else
 
 #ifndef LMP_VERLET_H
@@ -29,19 +29,19 @@ class Verlet : public Integrate {
   Verlet(class LAMMPS *, int, char **);
   virtual ~Verlet() {}
   virtual void init();
-  virtual void setup(int flag);
+  virtual void setup();
   virtual void setup_minimal(int);
   virtual void run(int);
   void cleanup();
 
  protected:
-  int triclinic;    // 0 if domain is orthog, 1 if triclinic
-  int torqueflag, extraflag;
+  int triclinic;                    // 0 if domain is orthog, 1 if triclinic
+  int torqueflag,extraflag;
 
   virtual void force_clear();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

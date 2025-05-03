@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,24 +15,26 @@
    Contributing author: Mark Sears (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "temper.h"
-
-#include "atom.h"
-#include "compute.h"
+#include "universe.h"
 #include "domain.h"
-#include "error.h"
-#include "finish.h"
-#include "fix.h"
-#include "force.h"
+#include "atom.h"
+#include "update.h"
 #include "integrate.h"
 #include "modify.h"
+#include "compute.h"
+#include "force.h"
+#include "output.h"
+#include "thermo.h"
+#include "fix.h"
 #include "random_park.h"
+#include "finish.h"
 #include "timer.h"
-#include "universe.h"
-#include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -41,7 +42,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-Temper::Temper(LAMMPS *lmp) : Command(lmp) {}
+Temper::Temper(LAMMPS *lmp) : Pointers(lmp) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -69,26 +70,20 @@ void Temper::command(int narg, char **arg)
   if (narg != 6 && narg != 7)
     error->universe_all(FLERR,"Illegal temper command");
 
-  int nsteps = utils::inumeric(FLERR,arg[0],false,lmp);
-  nevery = utils::inumeric(FLERR,arg[1],false,lmp);
-  double temp = utils::numeric(FLERR,arg[2],false,lmp);
-
-  // ignore temper command, if walltime limit was already reached
-
-  if (timer->is_timeout()) return;
+  int nsteps = force->inumeric(FLERR,arg[0]);
+  nevery = force->inumeric(FLERR,arg[1]);
+  double temp = force->numeric(FLERR,arg[2]);
 
   for (whichfix = 0; whichfix < modify->nfix; whichfix++)
     if (strcmp(arg[3],modify->fix[whichfix]->id) == 0) break;
   if (whichfix == modify->nfix)
     error->universe_all(FLERR,"Tempering fix ID is not defined");
 
-  seed_swap = utils::inumeric(FLERR,arg[4],false,lmp);
-  seed_boltz = utils::inumeric(FLERR,arg[5],false,lmp);
+  seed_swap = force->inumeric(FLERR,arg[4]);
+  seed_boltz = force->inumeric(FLERR,arg[5]);
 
   my_set_temp = universe->iworld;
-  if (narg == 7) my_set_temp = utils::inumeric(FLERR,arg[6],false,lmp);
-  if ((my_set_temp < 0) || (my_set_temp >= universe->nworlds))
-    error->universe_one(FLERR,"Illegal temperature index");
+  if (narg == 7) my_set_temp = force->inumeric(FLERR,arg[6]);
 
   // swap frequency must evenly divide total # of timesteps
 
@@ -101,18 +96,39 @@ void Temper::command(int narg, char **arg)
   // fix style must be appropriate for temperature control, i.e. it needs
   // to provide a working Fix::reset_target() and must not change the volume.
 
-  if ((!utils::strmatch(modify->fix[whichfix]->style,"^nvt")) &&
-      (!utils::strmatch(modify->fix[whichfix]->style,"^langevin")) &&
-      (!utils::strmatch(modify->fix[whichfix]->style,"^gl[de]$")) &&
-      (!utils::strmatch(modify->fix[whichfix]->style,"^rigid/nvt")) &&
-      (!utils::strmatch(modify->fix[whichfix]->style,"^temp/")))
+  if ((strcmp(modify->fix[whichfix]->style,"nvt") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/asphere") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/asphere/omp") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/body") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/eff") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/intel") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/kk") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/kk/host") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/kk/device") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/omp") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/sphere") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"nvt/sphere/omp") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"langevin") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"langevin/drude") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"langevin/eff") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"gld") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"gle") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"rigid/nvt") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"rigid/nvt/small") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"rigid/nvt/omp") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"rigid/nvt/small/omp") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"temp/berendsen") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"temp/berendsen/cuda") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"temp/csvr") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"temp/csld") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"temp/rescale") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"temp/rescale/cuda") != 0) &&
+      (strcmp(modify->fix[whichfix]->style,"temp/rescale/eff") != 0))
     error->universe_all(FLERR,"Tempering temperature fix is not supported");
 
   // setup for long tempering run
 
   update->whichflag = 1;
-  timer->init_timeout();
-
   update->nsteps = nsteps;
   update->beginstep = update->firststep = update->ntimestep;
   update->endstep = update->laststep = update->firststep + nsteps;
@@ -148,7 +164,7 @@ void Temper::command(int narg, char **arg)
   // warm up Boltzmann RNG
 
   if (seed_swap) ranswap = new RanPark(lmp,seed_swap);
-  else ranswap = nullptr;
+  else ranswap = NULL;
   ranboltz = new RanPark(lmp,seed_boltz + me_universe);
   for (int i = 0; i < 100; i++) ranboltz->uniform();
 
@@ -194,7 +210,7 @@ void Temper::command(int narg, char **arg)
   if (me_universe == 0 && universe->uscreen)
     fprintf(universe->uscreen,"Setting up tempering ...\n");
 
-  update->integrate->setup(1);
+  update->integrate->setup();
 
   if (me_universe == 0) {
     if (universe->uscreen) {
@@ -219,19 +235,7 @@ void Temper::command(int narg, char **arg)
 
     // run for nevery timesteps
 
-    timer->init_timeout();
     update->integrate->run(nevery);
-
-    // check for timeout across all procs
-
-    int my_timeout=0;
-    int any_timeout=0;
-    if (timer->is_timeout()) my_timeout=1;
-    MPI_Allreduce(&my_timeout, &any_timeout, 1, MPI_INT, MPI_SUM, universe->uworld);
-    if (any_timeout) {
-      timer->force_timeout();
-      break;
-    }
 
     // compute PE
     // notify compute it will be called at next swap

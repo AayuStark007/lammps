@@ -15,7 +15,7 @@
 
 #include <iostream>
 #include <cassert>
-#include <cmath>
+#include <math.h>
 
 #include "lal_lj_expand.h"
 
@@ -56,7 +56,7 @@ int lje_gpu_init(const int ntypes, double **cutsq, double **host_lj1,
   int init_ok=0;
   if (world_me==0)
     init_ok=LJEMF.init(ntypes, cutsq, host_lj1, host_lj2, host_lj3,
-                       host_lj4, offset, shift, special_lj, inum, nall, max_nbors,
+                       host_lj4, offset, shift, special_lj, inum, nall, 300,
                        maxspecial, cell_size, gpu_split, screen);
 
   LJEMF.device->world_barrier();
@@ -74,7 +74,7 @@ int lje_gpu_init(const int ntypes, double **cutsq, double **host_lj1,
     }
     if (gpu_rank==i && world_me!=0)
       init_ok=LJEMF.init(ntypes, cutsq, host_lj1, host_lj2, host_lj3, host_lj4,
-                         offset, shift, special_lj, inum, nall, max_nbors, maxspecial,
+                         offset, shift, special_lj, inum, nall, 300, maxspecial,
                          cell_size, gpu_split,screen);
 
     LJEMF.device->world_barrier();
@@ -92,7 +92,7 @@ int lje_gpu_init(const int ntypes, double **cutsq, double **host_lj1,
 // ---------------------------------------------------------------------------
 // Copy updated coeffs from host to device
 // ---------------------------------------------------------------------------
-void lje_gpu_reinit(const int ntypes, double **cutsq, double **host_lj1,
+int lje_gpu_reinit(const int ntypes, double **cutsq, double **host_lj1,
                    double **host_lj2, double **host_lj3, double **host_lj4,
                    double **offset, double **shift) {
   int world_me=LJEMF.device->world_me();

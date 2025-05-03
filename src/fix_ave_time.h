@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,15 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(ave/time,FixAveTime);
-// clang-format on
+
+FixStyle(ave/time,FixAveTime)
+
 #else
 
 #ifndef LMP_FIX_AVE_TIME_H
 #define LMP_FIX_AVE_TIME_H
 
+#include <stdio.h>
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -34,14 +35,14 @@ class FixAveTime : public Fix {
   void end_of_step();
   double compute_scalar();
   double compute_vector(int);
-  double compute_array(int, int);
+  double compute_array(int,int);
 
  private:
-  int me, nvalues;
-  int nrepeat, nfreq, irepeat;
-  bigint nvalid, nvalid_last;
-  int *which, *argindex, *value2index, *offcol;
-  int *varlen;    // 1 if value is from variable-length compute
+  int me,nvalues;
+  int nrepeat,nfreq,irepeat;
+  bigint nvalid,nvalid_last;
+  int *which,*argindex,*value2index,*offcol;
+  int *varlen;               // 1 if value is from variable-length compute
   char **ids;
   FILE *fp;
   int nrows;
@@ -49,14 +50,14 @@ class FixAveTime : public Fix {
   int all_variable_length;
   int lockforever;
 
-  int ave, nwindow, startstep, mode;
-  int noff, overwrite;
+  int ave,nwindow,startstep,mode;
+  int noff,overwrite;
   int *offlist;
-  char *format, *format_user;
-  char *title1, *title2, *title3;
+  char *format,*format_user;
+  char *title1,*title2,*title3;
   long filepos;
 
-  int norm, iwindow, window_limit;
+  int norm,iwindow,window_limit;
   double *vector;
   double *vector_total;
   double **vector_list;
@@ -73,7 +74,7 @@ class FixAveTime : public Fix {
   bigint nextvalid();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -90,21 +91,25 @@ E: No values in fix ave/time command
 
 Self-explanatory.
 
-E: Invalid fix ave/time off column
-
-Self-explanatory.
-
 E: Compute ID for fix ave/time does not exist
 
 Self-explanatory.
 
-E: Fix ave/time compute does not calculate a scalar
+E: Fix ID for fix ave/time does not exist
 
 Self-explanatory.
+
+E: Invalid fix ave/time off column
+
+Self-explantory.
+
+E: Fix ave/time compute does not calculate a scalar
+
+Self-explantory.
 
 E: Fix ave/time compute does not calculate a vector
 
-Self-explanatory.
+Self-explantory.
 
 E: Fix ave/time compute vector is accessed out-of-range
 
@@ -117,10 +122,6 @@ Self-explanatory.
 E: Fix ave/time compute array is accessed out-of-range
 
 An index for the array is out of bounds.
-
-E: Fix ID for fix ave/time does not exist
-
-Self-explanatory.
 
 E: Fix ave/time fix does not calculate a scalar
 
@@ -163,13 +164,9 @@ E: Fix ave/time variable is not equal-style variable
 
 Self-explanatory.
 
-E: Fix ave/time variable is not vector-style variable
+E: Fix ave/time cannot use variable with vector mode
 
-UNDOCUMENTED
-
-E: Fix ave/time mode vector variable cannot be indexed
-
-UNDOCUMENTED
+Variables produce scalar values.
 
 E: Error writing file header
 
@@ -190,10 +187,6 @@ E: Error writing out time averaged data
 
 Something in the output to the file triggered an error.
 
-E: Fix ave/time vector-style variable changed length
-
-UNDOCUMENTED
-
 E: Fix ave/time columns are inconsistent lengths
 
 Self-explanatory.
@@ -202,9 +195,5 @@ E: Cannot open fix ave/time file %s
 
 The specified file cannot be opened.  Check that the path and name are
 correct.
-
-U: Fix ave/time cannot use variable with vector mode
-
-Variables produce scalar values.
 
 */

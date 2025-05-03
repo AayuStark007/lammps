@@ -1,6 +1,6 @@
-/* -*- c++ -*- ----------------------------------------------------------
+/* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(zbl/gpu,PairZBLGPU);
-// clang-format on
+
+PairStyle(zbl/gpu,PairZBLGPU)
+
 #else
 
 #ifndef LMP_PAIR_ZBL_GPU_H
@@ -33,14 +33,14 @@ class PairZBLGPU : public PairZBL {
   void init_style();
   double memory_usage();
 
-  enum { GPU_FORCE, GPU_NEIGH, GPU_HYB_NEIGH };
+ enum { GPU_FORCE, GPU_NEIGH, GPU_HYB_NEIGH };
 
  private:
   int gpu_mode;
   double cpu_time;
 };
 
-}    // namespace LAMMPS_NS
+}
 #endif
 #endif
 
@@ -53,6 +53,6 @@ package
 
 E: Cannot use newton pair with zbl/gpu pair style
 
-Self-explanatory.
+Self-explantory.
 
 */

@@ -1,43 +1,24 @@
-ifndef KOKKOS_PATH
-  MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
-  KOKKOS_PATH = $(subst Makefile,,$(MAKEFILE_PATH))../../..
-endif
-
-ifndef KOKKOS_SETTINGS
-  KOKKOS_SETTINGS = "KOKKOS_PATH=${KOKKOS_PATH}"
-  ifdef KOKKOS_ARCH
-    KOKKOS_SETTINGS += "KOKKOS_ARCH=${KOKKOS_ARCH}"
-  endif
-  ifdef KOKKOS_DEVICES
-    KOKKOS_SETTINGS += "KOKKOS_DEVICES=${KOKKOS_DEVICES}"
-  endif
-  ifdef KOKKOS_OPTIONS
-    KOKKOS_SETTINGS += "KOKKOS_OPTIONS=${KOKKOS_OPTIONS}"
-  endif
-  ifdef KOKKOS_CUDA_OPTIONS
-    KOKKOS_SETTINGS += "KOKKOS_CUDA_OPTIONS=${KOKKOS_CUDA_OPTIONS}"
-  endif
-endif
-
-build:
-	mkdir -p 01_random_numbers
+default:
 	cd ./01_random_numbers; \
-	$(MAKE) build -f ${KOKKOS_PATH}/example/tutorial/Algorithms/01_random_numbers/Makefile ${KOKKOS_SETTINGS}
+	make -j 4
 
-build-insource:
+openmp:
 	cd ./01_random_numbers; \
-	$(MAKE) build ${KOKKOS_SETTINGS}
-test:
-	cd ./01_random_numbers; \
-	$(MAKE) test -f ${KOKKOS_PATH}/example/tutorial/Algorithms/01_random_numbers/Makefile ${KOKKOS_SETTINGS}
+	make -j 4 KOKKOS_DEVICES=OpenMP
 
-test-insource:
+pthreads:
 	cd ./01_random_numbers; \
-	$(MAKE) test ${KOKKOS_SETTINGS}
+	make -j 4 KOKKOS_DEVICES=Pthreads
+
+serial:
+	cd ./01_random_numbers; \
+	make -j 4 KOKKOS_DEVICES=Serial
+
+cuda:
+	cd ./01_random_numbers; \
+	make -j 4 KOKKOS_DEVICES=Cuda,Serial
+
 clean:
 	cd ./01_random_numbers; \
-	$(MAKE) clean -f ${KOKKOS_PATH}/example/tutorial/Algorithms/01_random_numbers/Makefile ${KOKKOS_SETTINGS}
+	make clean
 
-clean-insource:
-	cd ./01_random_numbers; \
-	$(MAKE) clean ${KOKKOS_SETTINGS}

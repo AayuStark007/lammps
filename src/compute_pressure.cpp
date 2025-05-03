@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,32 +11,31 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <mpi.h>
+#include <string.h>
+#include <stdlib.h>
 #include "compute_pressure.h"
-
-#include "angle.h"
 #include "atom.h"
-#include "bond.h"
-#include "dihedral.h"
+#include "update.h"
 #include "domain.h"
-#include "error.h"
+#include "modify.h"
 #include "fix.h"
 #include "force.h"
+#include "pair.h"
+#include "bond.h"
+#include "angle.h"
+#include "dihedral.h"
 #include "improper.h"
 #include "kspace.h"
-#include "modify.h"
-#include "pair.h"
-#include "pair_hybrid.h"
-#include "update.h"
+#include "error.h"
 
-#include <cctype>
-#include <cstring>
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
 ComputePressure::ComputePressure(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  vptr(nullptr), id_temp(nullptr), pstyle(nullptr)
+  vptr(NULL), id_temp(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute pressure command");
   if (igroup) error->all(FLERR,"Compute pressure must use group all");
@@ -52,9 +50,11 @@ ComputePressure::ComputePressure(LAMMPS *lmp, int narg, char **arg) :
   // store temperature ID used by pressure computation
   // insure it is valid for temperature computation
 
-  if (strcmp(arg[3],"NULL") == 0) id_temp = nullptr;
+  if (strcmp(arg[3],"NULL") == 0) id_temp = NULL;
   else {
-    id_temp = utils::strdup(arg[3]);
+    int n = strlen(arg[3]) + 1;
+    id_temp = new char[n];
+    strcpy(id_temp,arg[3]);
 
     int icompute = modify->find_compute(id_temp);
     if (icompute < 0)
@@ -66,7 +66,6 @@ ComputePressure::ComputePressure(LAMMPS *lmp, int narg, char **arg) :
 
   // process optional args
 
-  pairhybridflag = 0;
   if (narg == 4) {
     keflag = 1;
     pairflag = 1;
@@ -80,36 +79,6 @@ ComputePressure::ComputePressure(LAMMPS *lmp, int narg, char **arg) :
     int iarg = 4;
     while (iarg < narg) {
       if (strcmp(arg[iarg],"ke") == 0) keflag = 1;
-      else if (strcmp(arg[iarg],"pair/hybrid") == 0) {
-        if (lmp->suffix)
-          pstyle = utils::strdup(fmt::format("{}/{}",arg[++iarg],lmp->suffix));
-        else
-          pstyle = utils::strdup(arg[++iarg]);
-
-        nsub = 0;
-
-        if (narg > iarg) {
-          if (isdigit(arg[iarg][0])) {
-            nsub = utils::inumeric(FLERR,arg[iarg],false,lmp);
-            ++iarg;
-            if (nsub <= 0)
-              error->all(FLERR,"Illegal compute pressure command");
-          }
-        }
-
-        // check if pair style with and without suffix exists
-
-        pairhybrid = (Pair *) force->pair_match(pstyle,1,nsub);
-        if (!pairhybrid && lmp->suffix) {
-          pstyle[strlen(pstyle) - strlen(lmp->suffix) - 1] = '\0';
-          pairhybrid = (Pair *) force->pair_match(pstyle,1,nsub);
-        }
-
-        if (!pairhybrid)
-          error->all(FLERR,"Unrecognized pair style in compute pressure command");
-
-        pairhybridflag = 1;
-      }
       else if (strcmp(arg[iarg],"pair") == 0) pairflag = 1;
       else if (strcmp(arg[iarg],"bond") == 0) bondflag = 1;
       else if (strcmp(arg[iarg],"angle") == 0) angleflag = 1;
@@ -128,13 +97,13 @@ ComputePressure::ComputePressure(LAMMPS *lmp, int narg, char **arg) :
 
   // error check
 
-  if (keflag && id_temp == nullptr)
+  if (keflag && id_temp == NULL)
     error->all(FLERR,"Compute pressure requires temperature ID "
-               "to include kinetic energy");
+	       "to include kinetic energy");
 
-  vector = new double[size_vector];
+  vector = new double[6];
   nvirial = 0;
-  vptr = nullptr;
+  vptr = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -144,7 +113,6 @@ ComputePressure::~ComputePressure()
   delete [] id_temp;
   delete [] vector;
   delete [] vptr;
-  delete [] pstyle;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -165,47 +133,25 @@ void ComputePressure::init()
     temperature = modify->compute[icompute];
   }
 
-  // recheck if pair style with and without suffix exists
-
-  if (pairhybridflag) {
-    pairhybrid = (Pair *) force->pair_match(pstyle,1,nsub);
-    if (!pairhybrid && lmp->suffix) {
-      strcat(pstyle,"/");
-      strcat(pstyle,lmp->suffix);
-      pairhybrid = (Pair *) force->pair_match(pstyle,1,nsub);
-    }
-
-    if (!pairhybrid)
-      error->all(FLERR,"Unrecognized pair style in compute pressure command");
-  }
-
   // detect contributions to virial
   // vptr points to all virial[6] contributions
 
   delete [] vptr;
   nvirial = 0;
-  vptr = nullptr;
+  vptr = NULL;
 
-  if (pairhybridflag && force->pair) nvirial++;
   if (pairflag && force->pair) nvirial++;
-  if (atom->molecular != Atom::ATOMIC) {
-    if (bondflag && force->bond) nvirial++;
-    if (angleflag && force->angle) nvirial++;
-    if (dihedralflag && force->dihedral) nvirial++;
-    if (improperflag && force->improper) nvirial++;
-  }
+  if (bondflag && atom->molecular && force->bond) nvirial++;
+  if (angleflag && atom->molecular && force->angle) nvirial++;
+  if (dihedralflag && atom->molecular && force->dihedral) nvirial++;
+  if (improperflag && atom->molecular && force->improper) nvirial++;
   if (fixflag)
     for (int i = 0; i < modify->nfix; i++)
-      if (modify->fix[i]->thermo_virial) nvirial++;
+      if (modify->fix[i]->virial_flag) nvirial++;
 
   if (nvirial) {
     vptr = new double*[nvirial];
     nvirial = 0;
-    if (pairhybridflag && force->pair) {
-      PairHybrid *ph = (PairHybrid *) force->pair;
-      ph->no_virial_fdotr_compute = 1;
-      vptr[nvirial++] = pairhybrid->virial;
-    }
     if (pairflag && force->pair) vptr[nvirial++] = force->pair->virial;
     if (bondflag && force->bond) vptr[nvirial++] = force->bond->virial;
     if (angleflag && force->angle) vptr[nvirial++] = force->angle->virial;
@@ -215,14 +161,14 @@ void ComputePressure::init()
       vptr[nvirial++] = force->improper->virial;
     if (fixflag)
       for (int i = 0; i < modify->nfix; i++)
-        if (modify->fix[i]->virial_global_flag && modify->fix[i]->thermo_virial)
+        if (modify->fix[i]->virial_flag)
           vptr[nvirial++] = modify->fix[i]->virial;
   }
 
   // flag Kspace contribution separately, since not summed across procs
 
   if (kspaceflag && force->kspace) kspace_virial = force->kspace->virial;
-  else kspace_virial = nullptr;
+  else kspace_virial = NULL;
 }
 
 /* ----------------------------------------------------------------------
@@ -237,16 +183,18 @@ double ComputePressure::compute_scalar()
 
   // invoke temperature if it hasn't been already
 
+  double t;
   if (keflag) {
     if (temperature->invoked_scalar != update->ntimestep)
-      temperature->compute_scalar();
+      t = temperature->compute_scalar();
+    else t = temperature->scalar;
   }
 
   if (dimension == 3) {
     inv_volume = 1.0 / (domain->xprd * domain->yprd * domain->zprd);
     virial_compute(3,3);
     if (keflag)
-      scalar = (temperature->dof * boltz * temperature->scalar +
+      scalar = (temperature->dof * boltz * t +
                 virial[0] + virial[1] + virial[2]) / 3.0 * inv_volume * nktv2p;
     else
       scalar = (virial[0] + virial[1] + virial[2]) / 3.0 * inv_volume * nktv2p;
@@ -254,7 +202,7 @@ double ComputePressure::compute_scalar()
     inv_volume = 1.0 / (domain->xprd * domain->yprd);
     virial_compute(2,2);
     if (keflag)
-      scalar = (temperature->dof * boltz * temperature->scalar +
+      scalar = (temperature->dof * boltz * t +
                 virial[0] + virial[1]) / 2.0 * inv_volume * nktv2p;
     else
       scalar = (virial[0] + virial[1]) / 2.0 * inv_volume * nktv2p;
@@ -276,7 +224,7 @@ void ComputePressure::compute_vector()
 
   if (force->kspace && kspace_virial && force->kspace->scalar_pressure_flag)
     error->all(FLERR,"Must use 'kspace_modify pressure/scalar no' for "
-               "tensor components with kspace_style msm");
+	       "tensor components with kspace_style msm");
 
   // invoke temperature if it hasn't been already
 
@@ -349,5 +297,7 @@ void ComputePressure::virial_compute(int n, int ndiag)
 void ComputePressure::reset_extra_compute_fix(const char *id_new)
 {
   delete [] id_temp;
-  id_temp = utils::strdup(id_new);
+  int n = strlen(id_new) + 1;
+  id_temp = new char[n];
+  strcpy(id_temp,id_new);
 }

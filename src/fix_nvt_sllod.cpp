@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/
+   www.cs.sandia.gov/~sjplimp/lammps.html
    Steve Plimpton, sjplimp@sandia.gov, Sandia National Laboratories
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,21 +15,23 @@
    Contributing author: Pieter in 't Veld (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <string.h>
 #include "fix_nvt_sllod.h"
-
-#include "atom.h"
-#include "compute.h"
-#include "domain.h"
-#include "error.h"
-#include "fix_deform.h"
-#include "group.h"
 #include "math_extra.h"
+#include "atom.h"
+#include "domain.h"
+#include "group.h"
 #include "modify.h"
-
-#include <cstring>
+#include "fix.h"
+#include "fix_deform.h"
+#include "compute.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
+
+enum{NO_REMAP,X_REMAP,V_REMAP};                   // same as fix_deform.cpp
 
 /* ---------------------------------------------------------------------- */
 
@@ -50,9 +51,18 @@ FixNVTSllod::FixNVTSllod(LAMMPS *lmp, int narg, char **arg) :
   // create a new compute temp style
   // id = fix-ID + temp
 
-  id_temp = utils::strdup(std::string(id) + "_temp");
-  modify->add_compute(fmt::format("{} {} temp/deform",
-                                  id_temp,group->names[igroup]));
+  int n = strlen(id) + 6;
+  id_temp = new char[n];
+  strcpy(id_temp,id);
+  strcat(id_temp,"_temp");
+
+  char **newarg = new char*[3];
+  newarg[0] = id_temp;
+  newarg[1] = group->names[igroup];
+  newarg[2] = (char *) "temp/deform";
+
+  modify->add_compute(3,newarg);
+  delete [] newarg;
   tcomputeflag = 1;
 }
 
@@ -72,8 +82,8 @@ void FixNVTSllod::init()
 
   int i;
   for (i = 0; i < modify->nfix; i++)
-    if (strncmp(modify->fix[i]->style,"deform",6) == 0) {
-      if (((FixDeform *) modify->fix[i])->remapflag != Domain::V_REMAP)
+    if (strcmp(modify->fix[i]->style,"deform") == 0) {
+      if (((FixDeform *) modify->fix[i])->remapflag != V_REMAP)
         error->all(FLERR,"Using fix nvt/sllod with inconsistent fix deform "
                    "remap option");
       break;

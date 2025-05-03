@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,21 +15,20 @@
    Contributing author: Stan Moore (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
 #include "bond_fene_kokkos.h"
-
 #include "atom_kokkos.h"
-#include "atom_masks.h"
-#include "comm.h"
-#include "error.h"
-#include "force.h"
-#include "math_const.h"
-#include "memory_kokkos.h"
 #include "neighbor_kokkos.h"
-
-#include <cmath>
+#include "domain.h"
+#include "comm.h"
+#include "force.h"
+#include "memory.h"
+#include "error.h"
+#include "atom_masks.h"
 
 using namespace LAMMPS_NS;
-using MathConst::MY_CUBEROOT2;
+
 
 /* ---------------------------------------------------------------------- */
 
@@ -58,8 +56,8 @@ template<class DeviceType>
 BondFENEKokkos<DeviceType>::~BondFENEKokkos()
 {
   if (!copymode) {
-    memoryKK->destroy_kokkos(k_eatom,eatom);
-    memoryKK->destroy_kokkos(k_vatom,vatom);
+    memory->destroy_kokkos(k_eatom,eatom);
+    memory->destroy_kokkos(k_vatom,vatom);
   }
 }
 
@@ -71,25 +69,29 @@ void BondFENEKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   eflag = eflag_in;
   vflag = vflag_in;
 
-  ev_init(eflag,vflag,0);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 
   // reallocate per-atom arrays if necessary
 
   if (eflag_atom) {
-    memoryKK->destroy_kokkos(k_eatom,eatom);
-    memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"bond:eatom");
-    d_eatom = k_eatom.view<DeviceType>();
+    memory->destroy_kokkos(k_eatom,eatom);
+    memory->create_kokkos(k_eatom,eatom,maxeatom,"bond:eatom");
+    d_eatom = k_eatom.d_view;
   }
   if (vflag_atom) {
-    memoryKK->destroy_kokkos(k_vatom,vatom);
-    memoryKK->create_kokkos(k_vatom,vatom,maxvatom,"bond:vatom");
-    d_vatom = k_vatom.view<DeviceType>();
+    memory->destroy_kokkos(k_vatom,vatom);
+    memory->create_kokkos(k_vatom,vatom,maxvatom,6,"bond:vatom");
+    d_vatom = k_vatom.d_view;
   }
 
+  atomKK->sync(execution_space,datamask_read);
   k_k.template sync<DeviceType>();
   k_r0.template sync<DeviceType>();
   k_epsilon.template sync<DeviceType>();
   k_sigma.template sync<DeviceType>();
+  if (eflag || vflag) atomKK->modified(execution_space,datamask_modify);
+  else atomKK->modified(execution_space,F_MASK);
 
   x = atomKK->k_x.view<DeviceType>();
   f = atomKK->k_f.view<DeviceType>();
@@ -126,11 +128,12 @@ void BondFENEKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
       Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagBondFENECompute<0,0> >(0,nbondlist),*this);
     }
   }
+  DeviceType::fence();
 
   k_warning_flag.template modify<DeviceType>();
   k_warning_flag.template sync<LMPHostType>();
   if (h_warning_flag())
-    error->warning(FLERR,"FENE bond too long");
+    error->warning(FLERR,"FENE bond too long",0);
 
   k_error_flag.template modify<DeviceType>();
   k_error_flag.template sync<LMPHostType>();
@@ -168,7 +171,7 @@ void BondFENEKokkos<DeviceType>::operator()(TagBondFENECompute<NEWTON_BOND,EVFLA
   if (d_error_flag()) return;
 
   // The f array is atomic
-  Kokkos::View<F_FLOAT*[3], typename DAT::t_f_array::array_layout,typename KKDevice<DeviceType>::value,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > a_f = f;
+  Kokkos::View<F_FLOAT*[3], typename DAT::t_f_array::array_layout,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > a_f = f;
 
   const int i1 = bondlist(n,0);
   const int i2 = bondlist(n,1);
@@ -201,7 +204,7 @@ void BondFENEKokkos<DeviceType>::operator()(TagBondFENECompute<NEWTON_BOND,EVFLA
   // force from LJ term
 
   F_FLOAT sr6 = 0.0;
-  if (rsq < MY_CUBEROOT2*d_sigma[type]*d_sigma[type]) {
+  if (rsq < TWO_1_3*d_sigma[type]*d_sigma[type]) {
     const F_FLOAT sr2 = d_sigma[type]*d_sigma[type]/rsq;
     sr6 = sr2*sr2*sr2;
     fbond += 48.0*d_epsilon[type]*sr6*(sr6-0.5)/rsq;
@@ -212,7 +215,7 @@ void BondFENEKokkos<DeviceType>::operator()(TagBondFENECompute<NEWTON_BOND,EVFLA
   F_FLOAT ebond = 0.0;
   if (eflag) {
     ebond = -0.5 * d_k[type]*r0sq*log(rlogarg);
-    if (rsq < MY_CUBEROOT2*d_sigma[type]*d_sigma[type])
+    if (rsq < TWO_1_3*d_sigma[type]*d_sigma[type])
       ebond += 4.0*d_epsilon[type]*sr6*(sr6-1.0) + d_epsilon[type];
   }
 
@@ -254,10 +257,10 @@ void BondFENEKokkos<DeviceType>::allocate()
   k_epsilon = DAT::tdual_ffloat_1d("BondFene::epsilon",n+1);
   k_sigma = DAT::tdual_ffloat_1d("BondFene::sigma",n+1);
 
-  d_k = k_k.template view<DeviceType>();
-  d_r0 = k_r0.template view<DeviceType>();
-  d_epsilon = k_epsilon.template view<DeviceType>();
-  d_sigma = k_sigma.template view<DeviceType>();
+  d_k = k_k.d_view;
+  d_r0 = k_r0.d_view;
+  d_epsilon = k_epsilon.d_view;
+  d_sigma = k_sigma.d_view;
 }
 
 /* ----------------------------------------------------------------------
@@ -268,30 +271,6 @@ template<class DeviceType>
 void BondFENEKokkos<DeviceType>::coeff(int narg, char **arg)
 {
   BondFENE::coeff(narg, arg);
-
-  int n = atom->nbondtypes;
-  for (int i = 1; i <= n; i++) {
-    k_k.h_view[i] = k[i];
-    k_r0.h_view[i] = r0[i];
-    k_epsilon.h_view[i] = epsilon[i];
-    k_sigma.h_view[i] = sigma[i];
-  }
-
-  k_k.template modify<LMPHostType>();
-  k_r0.template modify<LMPHostType>();
-  k_epsilon.template modify<LMPHostType>();
-  k_sigma.template modify<LMPHostType>();
-}
-
-
-/* ----------------------------------------------------------------------
-   proc 0 reads coeffs from restart file, bcasts them
-------------------------------------------------------------------------- */
-
-template<class DeviceType>
-void BondFENEKokkos<DeviceType>::read_restart(FILE *fp)
-{
-  BondFENE::read_restart(fp);
 
   int n = atom->nbondtypes;
   for (int i = 1; i <= n; i++) {
@@ -322,8 +301,8 @@ void BondFENEKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int &i, const int 
   F_FLOAT v[6];
 
   // The eatom and vatom arrays are atomic
-  Kokkos::View<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,typename KKDevice<DeviceType>::value,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_eatom = k_eatom.view<DeviceType>();
-  Kokkos::View<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,typename KKDevice<DeviceType>::value,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_vatom = k_vatom.view<DeviceType>();
+  Kokkos::View<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_eatom = k_eatom.view<DeviceType>();
+  Kokkos::View<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_vatom = k_vatom.view<DeviceType>();
 
   if (eflag_either) {
     if (eflag_global) {
@@ -402,7 +381,7 @@ void BondFENEKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int &i, const int 
 
 namespace LAMMPS_NS {
 template class BondFENEKokkos<LMPDeviceType>;
-#ifdef LMP_KOKKOS_GPU
+#ifdef KOKKOS_HAVE_CUDA
 template class BondFENEKokkos<LMPHostType>;
 #endif
 }

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,12 +11,15 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 #include "pair_hybrid_overlay.h"
-
 #include "atom.h"
+#include "force.h"
+#include "neighbor.h"
+#include "neigh_request.h"
 #include "error.h"
-
-#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -35,14 +37,14 @@ void PairHybridOverlay::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   // 3rd arg = pair sub-style name
   // 4th arg = pair sub-style index if name used multiple times
   // allow for "none" as valid sub-style name
 
-  int multflag = 0;
+  int multflag;
   int m;
 
   for (m = 0; m < nstyles; m++) {
@@ -51,7 +53,10 @@ void PairHybridOverlay::coeff(int narg, char **arg)
       if (multiple[m]) {
         multflag = 1;
         if (narg < 4) error->all(FLERR,"Incorrect args for pair coefficients");
-        if (multiple[m] == utils::inumeric(FLERR,arg[3],false,lmp)) break;
+        if (!isdigit(arg[3][0]))
+          error->all(FLERR,"Incorrect args for pair coefficients");
+        int index = force->inumeric(FLERR,arg[3]);
+        if (index == multiple[m]) break;
         else continue;
       } else break;
     }
@@ -72,7 +77,7 @@ void PairHybridOverlay::coeff(int narg, char **arg)
 
   // invoke sub-style coeff() starting with 1st remaining arg
 
-  if (!none) styles[m]->coeff(narg-1-multflag,arg+1+multflag);
+  if (!none) styles[m]->coeff(narg-1-multflag,&arg[1+multflag]);
 
   // set setflag and which type pairs map to which sub-style
   // if sub-style is none: set hybrid subflag, wipe out map
@@ -101,51 +106,37 @@ void PairHybridOverlay::coeff(int narg, char **arg)
   if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
 }
 
-
 /* ----------------------------------------------------------------------
-   we need to handle Pair::svector special for hybrid/overlay
+   combine sub-style neigh list requests and create new ones if needed
 ------------------------------------------------------------------------- */
 
-void PairHybridOverlay::init_svector()
+void PairHybridOverlay::modify_requests()
 {
-  // single_extra = list all sub-style single_extra
-  // allocate svector
+  int i,j;
+  NeighRequest *irq,*jrq;
 
-  single_extra = 0;
-  for (int m = 0; m < nstyles; m++)
-    single_extra += styles[m]->single_extra;
+  // loop over pair requests only
+  // if a previous list is same kind with same skip attributes
+  // then make this one a copy list of that one
+  // works whether both lists are no-skip or yes-skip
+  // will not point a list at a copy list, but at copy list's parent
 
-  if (single_extra) {
-    delete [] svector;
-    svector = new double[single_extra];
-  }
-}
+  for (i = 0; i < neighbor->nrequest; i++) {
+    if (!neighbor->requests[i]->pair) continue;
 
-/* ----------------------------------------------------------------------
-   we need to handle Pair::svector special for hybrid/overlay
-------------------------------------------------------------------------- */
-
-void PairHybridOverlay::copy_svector(int itype, int jtype)
-{
-  int n=0;
-  Pair *this_style = nullptr;
-
-  // fill svector array.
-  // copy data from active styles and use 0.0 for inactive ones
-  for (int m = 0; m < nstyles; m++) {
-    for (int k = 0; k < nmap[itype][jtype]; ++k) {
-      if (m == map[itype][jtype][k]) {
-        this_style = styles[m];
-      } else {
-        this_style = nullptr;
-      }
-    }
-    for (int l = 0; l < styles[m]->single_extra; ++l) {
-      if (this_style) {
-        svector[n++] = this_style->svector[l];
-      } else {
-        svector[n++] = 0.0;
+    irq = neighbor->requests[i];
+    for (j = 0; j < i; j++) {
+      if (!neighbor->requests[j]->pair) continue;
+      jrq = neighbor->requests[j];
+      if (irq->same_kind(jrq) && irq->same_skip(jrq)) {
+        irq->copy = 1;
+        irq->otherlist = j;
+        break;
       }
     }
   }
+
+  // perform same operations on skip lists as pair style = hybrid
+
+  PairHybrid::modify_requests();
 }

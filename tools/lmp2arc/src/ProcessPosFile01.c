@@ -149,7 +149,7 @@ void ProcessPosFile01(int num_posfiles,char *posnames[],struct Sys *sysinfo,FILE
 
     } /* end while over LINES*/
     
-    fclose(PosFile);
+    close(PosFile);
    
   } /* end for loop over POS FILES */
   

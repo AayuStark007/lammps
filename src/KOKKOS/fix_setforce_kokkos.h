@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,18 +12,18 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(setforce/kk,FixSetForceKokkos<LMPDeviceType>);
-FixStyle(setforce/kk/device,FixSetForceKokkos<LMPDeviceType>);
-FixStyle(setforce/kk/host,FixSetForceKokkos<LMPHostType>);
-// clang-format on
+
+FixStyle(setforce/kk,FixSetForceKokkos<LMPDeviceType>)
+FixStyle(setforce/kk/device,FixSetForceKokkos<LMPDeviceType>)
+FixStyle(setforce/kk/host,FixSetForceKokkos<LMPHostType>)
+
 #else
 
-// clang-format off
 #ifndef LMP_FIX_SET_FORCE_KOKKOS_H
 #define LMP_FIX_SET_FORCE_KOKKOS_H
 
 #include "fix_setforce.h"
+#include "region.h"
 #include "kokkos_type.h"
 
 namespace LAMMPS_NS {
@@ -35,7 +35,7 @@ struct s_double_3 {
     d0 = d1 = d2 = 0.0;
   }
   KOKKOS_INLINE_FUNCTION
-  s_double_3& operator+=(const s_double_3 &rhs) {
+  s_double_3& operator+=(const s_double_3 &rhs){
     d0 += rhs.d0;
     d1 += rhs.d1;
     d2 += rhs.d2;
@@ -43,10 +43,11 @@ struct s_double_3 {
   }
 
   KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile s_double_3 &rhs) volatile {
+  volatile s_double_3& operator+=(const volatile s_double_3 &rhs) volatile {
     d0 += rhs.d0;
     d1 += rhs.d1;
     d2 += rhs.d2;
+    return *this;
   }
 };
 typedef s_double_3 double_3;
@@ -75,14 +76,14 @@ class FixSetForceKokkos : public FixSetForce {
 
  private:
   DAT::tdual_ffloat_2d k_sforce;
-  typename AT::t_ffloat_2d_randomread d_sforce;
-  typename AT::t_int_1d d_match;
+  DAT::t_ffloat_2d_randomread d_sforce;
+  DAT::t_int_1d d_match;
 
   typename AT::t_x_array_randomread x;
   typename AT::t_f_array f;
   typename AT::t_int_1d_randomread mask;
 
-  class Region* region;
+  Region* region;
 };
 
 }

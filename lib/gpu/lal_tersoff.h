@@ -32,7 +32,7 @@ class Tersoff : public BaseThree<numtyp, acctyp> {
     * \param gpu_split fraction of particles handled by device
     *
     * Returns:
-    * -  0 if successful
+    * -  0 if successfull
     * - -1 if fix gpu not found
     * - -3 if there is an out of memory error
     * - -4 if the GPU library was not compiled for GPU
@@ -47,6 +47,21 @@ class Tersoff : public BaseThree<numtyp, acctyp> {
            const double* h, const double* gamma, const double* beta,
            const double* powern, const double* cutsq);
 
+  /// Pair loop with host neighboring
+  void compute(const int f_ago, const int inum_full, const int nall,
+               const int nlist, double **host_x, int *host_type,
+               int *ilist, int *numj, int **firstneigh, const bool eflag,
+               const bool vflag, const bool eatom, const bool vatom,
+               int &host_start, const double cpu_time, bool &success);
+
+  /// Pair loop with device neighboring
+  int ** compute(const int ago, const int inum_full,
+                 const int nall, double **host_x, int *host_type, double *sublo,
+                 double *subhi, tagint *tag, int **nspecial,
+                 tagint **special, const bool eflag, const bool vflag,
+                 const bool eatom, const bool vatom, int &host_start,
+                 int **ilist, int **numj, const double cpu_time, bool &success);
+
   /// Clear all host and device data
   /** \note This is called at the beginning of the init() routine **/
   void clear();
@@ -59,36 +74,42 @@ class Tersoff : public BaseThree<numtyp, acctyp> {
 
   // --------------------------- TYPE DATA --------------------------
 
-  /// Number of atom types
-  int _ntypes;
+  /// If atom type constants fit in shared memory, use fast kernels
+  bool shared_types;
 
-  /// ts1.x = lam3, ts1.y = powermint,  ts1.z = c3, ts1.w = c4
+  /// Number of atom types
+  int _lj_types;
+
+  /// ts1.x = lam1, ts1.y = lam2,  ts1.z = lam3, ts1.w = powermint
   UCL_D_Vec<numtyp4> ts1;
-  /// ts2.x = biga, ts2.y = lam1,  ts2.z = bigr, ts2.w = bigd
+  /// ts2.x = biga, ts2.y = bigb,  ts2.z = bigr, ts2.w = bigd
   UCL_D_Vec<numtyp4> ts2;
   /// ts3.x = c1,   ts3.y = c2,    ts3.z = c3,   ts3.w = c4
   UCL_D_Vec<numtyp4> ts3;
-  /// ts4.x = c*c,  ts4.y = d*d,   ts4.z = h,    ts4.w = gamma
+  /// ts4.x = c,    ts4.y = d,     ts4.z = h,    ts4.w = gamma
   UCL_D_Vec<numtyp4> ts4;
-  /// ts5.x = beta, ts5.y = powern, ts5.z = lam2, ts5.w = bigb
+  /// ts5.x = beta, ts5.y = powern
   UCL_D_Vec<numtyp4> ts5;
 
-  numtyp _cutsq_max;
+  UCL_D_Vec<numtyp> cutsq;
 
   UCL_D_Vec<int> elem2param;
   UCL_D_Vec<int> map;
   int _nparams,_nelements;
 
   /// Per-atom arrays:
-  /// zetaij.x = force, zetaij.y = prefactor
-  UCL_D_Vec<acctyp2>   _zetaij;
-  UCL_D_Vec<acctyp> _zetaij_eng;
+  /// zetaij.x = force, zetaij.y = prefactor, zetaij.z = evdwl,
+  /// zetaij.w = zetaij
+  UCL_D_Vec<acctyp4>   _zetaij;
 
-  UCL_Kernel k_zeta, k_zeta_noev, *k_zeta_selt;
+  UCL_Kernel k_zeta;
+  UCL_Texture ts1_tex, ts2_tex, ts3_tex, ts4_tex, ts5_tex;
+
+  int _max_nbors;
 
  private:
   bool _allocated;
-  int loop(const int eflag, const int vflag, const int evatom, bool &success);
+  void loop(const bool _eflag, const bool _vflag, const int evatom);
 };
 
 }

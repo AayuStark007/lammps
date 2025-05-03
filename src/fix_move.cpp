@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,29 +11,29 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include "fix_move.h"
-
 #include "atom.h"
-#include "atom_vec_body.h"
+#include "group.h"
+#include "update.h"
+#include "modify.h"
+#include "force.h"
+#include "domain.h"
+#include "lattice.h"
+#include "comm.h"
+#include "respa.h"
+#include "input.h"
+#include "variable.h"
 #include "atom_vec_ellipsoid.h"
 #include "atom_vec_line.h"
 #include "atom_vec_tri.h"
-#include "comm.h"
-#include "domain.h"
-#include "error.h"
-#include "force.h"
-#include "input.h"
-#include "lattice.h"
+#include "atom_vec_body.h"
 #include "math_const.h"
 #include "math_extra.h"
 #include "memory.h"
-#include "modify.h"
-#include "respa.h"
-#include "update.h"
-#include "variable.h"
-
-#include <cmath>
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -49,10 +48,10 @@ enum{EQUAL,ATOM};
 
 FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  xvarstr(nullptr), yvarstr(nullptr), zvarstr(nullptr), vxvarstr(nullptr),
-  vyvarstr(nullptr), vzvarstr(nullptr),
-  xoriginal(nullptr), toriginal(nullptr), qoriginal(nullptr),
-  displace(nullptr), velocity(nullptr)
+  xvarstr(NULL), yvarstr(NULL), zvarstr(NULL), vxvarstr(NULL), 
+  vyvarstr(NULL), vzvarstr(NULL),
+  xoriginal(NULL), toriginal(NULL), qoriginal(NULL), 
+  displace(NULL), velocity(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix move command");
 
@@ -69,8 +68,8 @@ FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
 
   // parse args
 
-  int iarg = 0;
-
+  int iarg;
+  
   if (strcmp(arg[3],"linear") == 0) {
     if (narg < 7) error->all(FLERR,"Illegal fix move command");
     iarg = 7;
@@ -78,17 +77,17 @@ FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
     if (strcmp(arg[4],"NULL") == 0) vxflag = 0;
     else {
       vxflag = 1;
-      vx = utils::numeric(FLERR,arg[4],false,lmp);
+      vx = force->numeric(FLERR,arg[4]);
     }
     if (strcmp(arg[5],"NULL") == 0) vyflag = 0;
     else {
       vyflag = 1;
-      vy = utils::numeric(FLERR,arg[5],false,lmp);
+      vy = force->numeric(FLERR,arg[5]);
     }
     if (strcmp(arg[6],"NULL") == 0) vzflag = 0;
     else {
       vzflag = 1;
-      vz = utils::numeric(FLERR,arg[6],false,lmp);
+      vz = force->numeric(FLERR,arg[6]);
     }
 
   } else if (strcmp(arg[3],"wiggle") == 0) {
@@ -98,61 +97,73 @@ FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
     if (strcmp(arg[4],"NULL") == 0) axflag = 0;
     else {
       axflag = 1;
-      ax = utils::numeric(FLERR,arg[4],false,lmp);
+      ax = force->numeric(FLERR,arg[4]);
     }
     if (strcmp(arg[5],"NULL") == 0) ayflag = 0;
     else {
       ayflag = 1;
-      ay = utils::numeric(FLERR,arg[5],false,lmp);
+      ay = force->numeric(FLERR,arg[5]);
     }
     if (strcmp(arg[6],"NULL") == 0) azflag = 0;
     else {
       azflag = 1;
-      az = utils::numeric(FLERR,arg[6],false,lmp);
+      az = force->numeric(FLERR,arg[6]);
     }
-    period = utils::numeric(FLERR,arg[7],false,lmp);
+    period = force->numeric(FLERR,arg[7]);
     if (period <= 0.0) error->all(FLERR,"Illegal fix move command");
 
   } else if (strcmp(arg[3],"rotate") == 0) {
     if (narg < 11) error->all(FLERR,"Illegal fix move command");
     iarg = 11;
     mstyle = ROTATE;
-    point[0] = utils::numeric(FLERR,arg[4],false,lmp);
-    point[1] = utils::numeric(FLERR,arg[5],false,lmp);
-    point[2] = utils::numeric(FLERR,arg[6],false,lmp);
-    axis[0] = utils::numeric(FLERR,arg[7],false,lmp);
-    axis[1] = utils::numeric(FLERR,arg[8],false,lmp);
-    axis[2] = utils::numeric(FLERR,arg[9],false,lmp);
-    period = utils::numeric(FLERR,arg[10],false,lmp);
+    point[0] = force->numeric(FLERR,arg[4]);
+    point[1] = force->numeric(FLERR,arg[5]);
+    point[2] = force->numeric(FLERR,arg[6]);
+    axis[0] = force->numeric(FLERR,arg[7]);
+    axis[1] = force->numeric(FLERR,arg[8]);
+    axis[2] = force->numeric(FLERR,arg[9]);
+    period = force->numeric(FLERR,arg[10]);
     if (period <= 0.0) error->all(FLERR,"Illegal fix move command");
 
   } else if (strcmp(arg[3],"variable") == 0) {
     if (narg < 10) error->all(FLERR,"Illegal fix move command");
     iarg = 10;
     mstyle = VARIABLE;
-    if (strcmp(arg[4],"NULL") == 0) xvarstr = nullptr;
-    else if (utils::strmatch(arg[4],"^v_")) {
-      xvarstr = utils::strdup(arg[4]+2);
+    if (strcmp(arg[4],"NULL") == 0) xvarstr = NULL;
+    else if (strstr(arg[4],"v_") == arg[4]) {
+      int n = strlen(&arg[4][2]) + 1;
+      xvarstr = new char[n];
+      strcpy(xvarstr,&arg[4][2]);
     } else error->all(FLERR,"Illegal fix move command");
-    if (strcmp(arg[5],"NULL") == 0) yvarstr = nullptr;
-    else if (utils::strmatch(arg[5],"^v_")) {
-      yvarstr = utils::strdup(arg[5]+2);
+    if (strcmp(arg[5],"NULL") == 0) yvarstr = NULL;
+    else if (strstr(arg[5],"v_") == arg[5]) {
+      int n = strlen(&arg[5][2]) + 1;
+      yvarstr = new char[n];
+      strcpy(yvarstr,&arg[5][2]);
     } else error->all(FLERR,"Illegal fix move command");
-    if (strcmp(arg[6],"NULL") == 0) zvarstr = nullptr;
-    else if (utils::strmatch(arg[6],"^v_")) {
-      zvarstr = utils::strdup(arg[6]+2);
+    if (strcmp(arg[6],"NULL") == 0) zvarstr = NULL;
+    else if (strstr(arg[6],"v_") == arg[6]) {
+      int n = strlen(&arg[6][2]) + 1;
+      zvarstr = new char[n];
+      strcpy(zvarstr,&arg[6][2]);
     } else error->all(FLERR,"Illegal fix move command");
-    if (strcmp(arg[7],"NULL") == 0) vxvarstr = nullptr;
-    else if (utils::strmatch(arg[7],"^v_")) {
-      vxvarstr = utils::strdup(arg[7]+2);
+    if (strcmp(arg[7],"NULL") == 0) vxvarstr = NULL;
+    else if (strstr(arg[7],"v_") == arg[7]) {
+      int n = strlen(&arg[7][2]) + 1;
+      vxvarstr = new char[n];
+      strcpy(vxvarstr,&arg[7][2]);
     } else error->all(FLERR,"Illegal fix move command");
-    if (strcmp(arg[8],"NULL") == 0) vyvarstr = nullptr;
-    else if (utils::strmatch(arg[8],"^v_")) {
-      vyvarstr = utils::strdup(arg[8]+2);
+    if (strcmp(arg[8],"NULL") == 0) vyvarstr = NULL;
+    else if (strstr(arg[8],"v_") == arg[8]) {
+      int n = strlen(&arg[8][2]) + 1;
+      vyvarstr = new char[n];
+      strcpy(vyvarstr,&arg[8][2]);
     } else error->all(FLERR,"Illegal fix move command");
-    if (strcmp(arg[9],"NULL") == 0) vzvarstr = nullptr;
-    else if (utils::strmatch(arg[9],"^v_")) {
-      vzvarstr = utils::strdup(arg[9]+2);
+    if (strcmp(arg[9],"NULL") == 0) vzvarstr = NULL;
+    else if (strstr(arg[9],"v_") == arg[9]) {
+      int n = strlen(&arg[9][2]) + 1;
+      vzvarstr = new char[n];
+      strcpy(vzvarstr,&arg[9][2]);
     } else error->all(FLERR,"Illegal fix move command");
 
   } else error->all(FLERR,"Illegal fix move command");
@@ -226,7 +237,7 @@ FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
 
   // set flags for extra attributes particles may store
   // relevant extra attributes = omega, angmom, theta, quat
-
+  
   omega_flag = atom->omega_flag;
   angmom_flag = atom->angmom_flag;
 
@@ -242,15 +253,15 @@ FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
 
   extra_flag = 0;
   if (omega_flag || angmom_flag || theta_flag || quat_flag) extra_flag = 1;
-
+    
   // perform initial allocation of atom-based array
   // register with Atom class
 
-  FixMove::grow_arrays(atom->nmax);
-  atom->add_callback(Atom::GROW);
-  atom->add_callback(Atom::RESTART);
+  grow_arrays(atom->nmax);
+  atom->add_callback(0);
+  atom->add_callback(1);
 
-  displace = velocity = nullptr;
+  displace = velocity = NULL;
 
   // AtomVec pointers to retrieve per-atom storage of extra quantities
 
@@ -288,7 +299,7 @@ FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
   if (quat_flag) {
     double *quat;
     for (int i = 0; i < nlocal; i++) {
-      quat = nullptr;
+      quat = NULL;
       if (mask[i] & groupbit) {
         if (ellipsoid_flag && ellipsoid[i] >= 0)
           quat = avec_ellipsoid->bonus[ellipsoid[i]].quat;
@@ -302,7 +313,7 @@ FixMove::FixMove(LAMMPS *lmp, int narg, char **arg) :
         qoriginal[i][1] = quat[1];
         qoriginal[i][2] = quat[2];
         qoriginal[i][3] = quat[3];
-      } else qoriginal[i][0] = qoriginal[i][1] =
+      } else qoriginal[i][0] = qoriginal[i][1] = 
                qoriginal[i][2] = qoriginal[i][3] = 0.0;
     }
   }
@@ -325,8 +336,8 @@ FixMove::~FixMove()
 {
   // unregister callbacks to this fix from Atom class
 
-  atom->delete_callback(id,Atom::GROW);
-  atom->delete_callback(id,Atom::RESTART);
+  atom->delete_callback(id,0);
+  atom->delete_callback(id,1);
 
   // delete locally stored arrays
 
@@ -430,11 +441,11 @@ void FixMove::init()
   memory->destroy(displace);
   memory->destroy(velocity);
   if (displaceflag) memory->create(displace,maxatom,3,"move:displace");
-  else displace = nullptr;
+  else displace = NULL;
   if (velocityflag) memory->create(velocity,maxatom,3,"move:velocity");
-  else velocity = nullptr;
+  else velocity = NULL;
 
-  if (utils::strmatch(update->integrate_style,"^respa"))
+  if (strstr(update->integrate_style,"respa"))
     nlevels_respa = ((Respa *) update->integrate)->nlevels;
 }
 
@@ -442,7 +453,7 @@ void FixMove::init()
    set x,v of particles
 ------------------------------------------------------------------------- */
 
-void FixMove::initial_integrate(int /*vflag*/)
+void FixMove::initial_integrate(int vflag)
 {
   int flag;
   double ddotr,dx,dy,dz;
@@ -653,17 +664,17 @@ void FixMove::initial_integrate(int /*vflag*/)
           }
 
           // angmom for ellipsoids, tris, and bodies
-
+          
           if (angmom_flag) {
-            quat = inertia = nullptr;
+            quat = inertia = NULL;
             if (ellipsoid_flag && ellipsoid[i] >= 0) {
               quat = avec_ellipsoid->bonus[ellipsoid[i]].quat;
               shape = avec_ellipsoid->bonus[ellipsoid[i]].shape;
-              inertia_ellipsoid[0] =
+              inertia_ellipsoid[0] = 
                 INERTIA*rmass[i] * (shape[1]*shape[1]+shape[2]*shape[2]);
-              inertia_ellipsoid[1] =
+              inertia_ellipsoid[1] = 
                 INERTIA*rmass[i] * (shape[0]*shape[0]+shape[2]*shape[2]);
-              inertia_ellipsoid[2] =
+              inertia_ellipsoid[2] = 
                 INERTIA*rmass[i] * (shape[0]*shape[0]+shape[1]*shape[1]);
               inertia = inertia_ellipsoid;
             } else if (tri_flag && tri[i] >= 0) {
@@ -683,16 +694,16 @@ void FixMove::initial_integrate(int /*vflag*/)
           }
 
           // theta for lines
-
+          
           if (theta_flag && line[i] >= 0.0) {
             theta_new = fmod(toriginal[i]+arg,MY_2PI);
             avec_line->bonus[atom->line[i]].theta = theta_new;
           }
-
+          
           // quats for ellipsoids, tris, and bodies
-
+          
           if (quat_flag) {
-            quat = nullptr;
+            quat = NULL;
             if (ellipsoid_flag && ellipsoid[i] >= 0)
               quat = avec_ellipsoid->bonus[ellipsoid[i]].quat;
             else if (tri_flag && tri[i] >= 0)
@@ -779,8 +790,10 @@ void FixMove::initial_integrate(int /*vflag*/)
           if (vxvarstyle == EQUAL) v[i][0] = vx;
           else v[i][0] = velocity[i][0];
           if (rmass) {
+            dtfm = dtf / rmass[i];
             x[i][0] += dtv * v[i][0];
           } else {
+            dtfm = dtf / mass[type[i]];
             x[i][0] += dtv * v[i][0];
           }
         } else {
@@ -807,8 +820,10 @@ void FixMove::initial_integrate(int /*vflag*/)
           if (vyvarstyle == EQUAL) v[i][1] = vy;
           else v[i][1] = velocity[i][1];
           if (rmass) {
+            dtfm = dtf / rmass[i];
             x[i][1] += dtv * v[i][1];
           } else {
+            dtfm = dtf / mass[type[i]];
             x[i][1] += dtv * v[i][1];
           }
         } else {
@@ -835,8 +850,10 @@ void FixMove::initial_integrate(int /*vflag*/)
           if (vzvarstyle == EQUAL) v[i][2] = vz;
           else v[i][2] = velocity[i][2];
           if (rmass) {
+            dtfm = dtf / rmass[i];
             x[i][2] += dtv * v[i][2];
           } else {
+            dtfm = dtf / mass[type[i]];
             x[i][2] += dtv * v[i][2];
           }
         } else {
@@ -858,7 +875,7 @@ void FixMove::initial_integrate(int /*vflag*/)
 }
 
 /* ----------------------------------------------------------------------
-   final NVE of particles with nullptr components
+   final NVE of particles with NULL components
 ------------------------------------------------------------------------- */
 
 void FixMove::final_integrate()
@@ -928,7 +945,7 @@ void FixMove::final_integrate()
 
 /* ---------------------------------------------------------------------- */
 
-void FixMove::initial_integrate_respa(int vflag, int ilevel, int /*iloop*/)
+void FixMove::initial_integrate_respa(int vflag, int ilevel, int iloop)
 {
   // outermost level - update v and x
   // all other levels - nothing
@@ -938,7 +955,7 @@ void FixMove::initial_integrate_respa(int vflag, int ilevel, int /*iloop*/)
 
 /* ---------------------------------------------------------------------- */
 
-void FixMove::final_integrate_respa(int ilevel, int /*iloop*/)
+void FixMove::final_integrate_respa(int ilevel, int iloop)
 {
   if (ilevel == nlevels_respa-1) final_integrate();
 }
@@ -949,11 +966,11 @@ void FixMove::final_integrate_respa(int ilevel, int /*iloop*/)
 
 double FixMove::memory_usage()
 {
-  double bytes = (double)atom->nmax*3 * sizeof(double);
-  if (theta_flag) bytes += (double)atom->nmax * sizeof(double);
-  if (quat_flag) bytes += (double)atom->nmax*4 * sizeof(double);
-  if (displaceflag) bytes += (double)atom->nmax*3 * sizeof(double);
-  if (velocityflag) bytes += (double)atom->nmax*3 * sizeof(double);
+  double bytes = atom->nmax*3 * sizeof(double);
+  if (theta_flag) bytes += atom->nmax * sizeof(double);
+  if (quat_flag) bytes += atom->nmax*4 * sizeof(double);
+  if (displaceflag) bytes += atom->nmax*3 * sizeof(double);
+  if (velocityflag) bytes += atom->nmax*3 * sizeof(double);
   return bytes;
 }
 
@@ -1002,7 +1019,7 @@ void FixMove::grow_arrays(int nmax)
    copy values within local atom-based array
 ------------------------------------------------------------------------- */
 
-void FixMove::copy_arrays(int i, int j, int /*delflag*/)
+void FixMove::copy_arrays(int i, int j, int delflag)
 {
   xoriginal[j][0] = xoriginal[i][0];
   xoriginal[j][1] = xoriginal[i][1];
@@ -1091,22 +1108,22 @@ void FixMove::set_arrays(int i)
     xoriginal[i][0] = point[0] + c[0] + disp[0];
     xoriginal[i][1] = point[1] + c[1] + disp[1];
     xoriginal[i][2] = point[2] + c[2] + disp[2];
-
+    
     // set theta and quat extra attributes affected by rotation
 
     if (extra_flag) {
 
       // theta for lines
-
+      
       if (theta_flag && line[i] >= 0.0) {
         theta = avec_line->bonus[atom->line[i]].theta;
         toriginal[i] = theta - 0.0;  // NOTE: edit this line
       }
-
+      
       // quats for ellipsoids, tris, and bodies
-
+      
       if (quat_flag) {
-        quat = nullptr;
+        quat = NULL;
         if (ellipsoid_flag && ellipsoid[i] >= 0)
           quat = avec_ellipsoid->bonus[ellipsoid[i]].quat;
         else if (tri_flag && tri[i] >= 0)
@@ -1178,7 +1195,6 @@ int FixMove::pack_restart(int i, double *buf)
     buf[n++] = qoriginal[i][2];
     buf[n++] = qoriginal[i][3];
   }
-  // pack buf[0] this way because other fixes unpack it
   buf[0] = n;
   return n;
 }
@@ -1192,7 +1208,6 @@ void FixMove::unpack_restart(int nlocal, int nth)
   double **extra = atom->extra;
 
   // skip to Nth set of extra values
-  // unpack the Nth first values this way because other fixes pack them
 
   int m = 0;
   for (int i = 0; i < nth; i++) m += static_cast<int> (extra[nlocal][m]);
@@ -1223,7 +1238,7 @@ int FixMove::maxsize_restart()
    size of atom nlocal's restart data
 ------------------------------------------------------------------------- */
 
-int FixMove::size_restart(int /*nlocal*/)
+int FixMove::size_restart(int nlocal)
 {
   return nrestart;
 }

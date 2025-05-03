@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,17 +15,16 @@
    Contributing author: Eric Simon (Cray)
 ------------------------------------------------------------------------- */
 
-#include <cstring>
+#include <math.h>
+#include <stdlib.h>
 #include "bond_class2.h"
-
-#include <cmath>
 #include "atom.h"
 #include "neighbor.h"
+#include "domain.h"
 #include "comm.h"
 #include "force.h"
 #include "memory.h"
 #include "error.h"
-
 
 using namespace LAMMPS_NS;
 
@@ -38,8 +36,6 @@ BondClass2::BondClass2(LAMMPS *lmp) : Bond(lmp) {}
 
 BondClass2::~BondClass2()
 {
-  if (copymode) return;
-
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(r0);
@@ -58,7 +54,8 @@ void BondClass2::compute(int eflag, int vflag)
   double rsq,r,dr,dr2,dr3,dr4,de_bond;
 
   ebond = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -135,12 +132,12 @@ void BondClass2::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  utils::bounds(FLERR,arg[0],1,atom->nbondtypes,ilo,ihi,error);
+  force->bounds(FLERR,arg[0],atom->nbondtypes,ilo,ihi);
 
-  double r0_one = utils::numeric(FLERR,arg[1],false,lmp);
-  double k2_one = utils::numeric(FLERR,arg[2],false,lmp);
-  double k3_one = utils::numeric(FLERR,arg[3],false,lmp);
-  double k4_one = utils::numeric(FLERR,arg[4],false,lmp);
+  double r0_one = force->numeric(FLERR,arg[1]);
+  double k2_one = force->numeric(FLERR,arg[2]);
+  double k3_one = force->numeric(FLERR,arg[3]);
+  double k4_one = force->numeric(FLERR,arg[4]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -185,10 +182,10 @@ void BondClass2::read_restart(FILE *fp)
   allocate();
 
   if (comm->me == 0) {
-    utils::sfread(FLERR,&r0[1],sizeof(double),atom->nbondtypes,fp,nullptr,error);
-    utils::sfread(FLERR,&k2[1],sizeof(double),atom->nbondtypes,fp,nullptr,error);
-    utils::sfread(FLERR,&k3[1],sizeof(double),atom->nbondtypes,fp,nullptr,error);
-    utils::sfread(FLERR,&k4[1],sizeof(double),atom->nbondtypes,fp,nullptr,error);
+    fread(&r0[1],sizeof(double),atom->nbondtypes,fp);
+    fread(&k2[1],sizeof(double),atom->nbondtypes,fp);
+    fread(&k3[1],sizeof(double),atom->nbondtypes,fp);
+    fread(&k4[1],sizeof(double),atom->nbondtypes,fp);
   }
   MPI_Bcast(&r0[1],atom->nbondtypes,MPI_DOUBLE,0,world);
   MPI_Bcast(&k2[1],atom->nbondtypes,MPI_DOUBLE,0,world);
@@ -210,7 +207,7 @@ void BondClass2::write_data(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double BondClass2::single(int type, double rsq, int /*i*/, int /*j*/, double &fforce)
+double BondClass2::single(int type, double rsq, int i, int j, double &fforce)
 {
   double r = sqrt(rsq);
   double dr = r - r0[type];
@@ -221,13 +218,4 @@ double BondClass2::single(int type, double rsq, int /*i*/, int /*j*/, double &ff
   if (r > 0.0) fforce = -de_bond/r;
   else fforce = 0.0;
   return (k2[type]*dr2 + k3[type]*dr3 + k4[type]*dr4);
-}
-
-/* ---------------------------------------------------------------------- */
-
-void *BondClass2::extract(const char *str, int &dim)
-{
-  dim = 1;
-  if (strcmp(str,"r0")==0) return (void*) r0;
-  return nullptr;
 }

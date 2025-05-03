@@ -11,24 +11,18 @@
 //
 //    begin                : Fri May 06 2011
 //    email                : brownw@ornl.gov
-// ***************************************************************************
+// ***************************************************************************/
 
-#if defined(NV_KERNEL) || defined(USE_HIP)
+#ifdef NV_KERNEL
 #include "lal_ellipsoid_extra.h"
 #endif
 
-#if (SHUFFLE_AVAIL == 0)
-#define local_allocate_store_ellipse_lj local_allocate_store_ellipse
-#else
-#define local_allocate_store_ellipse_lj()                                   \
-    __local acctyp red_acc[7][BLOCK_ELLIPSE / SIMD_SIZE];
-#endif
-
-#if (SHUFFLE_AVAIL == 0)
+#if (ARCH < 300)
 
 #define store_answers_rt(f, tor, energy, virial, ii, astride, tid,           \
-                         t_per_atom, offset, eflag, vflag, ans, engv, inum)  \
+                         t_per_atom, offset, eflag, vflag, ans, engv)        \
   if (t_per_atom>1) {                                                        \
+    __local acctyp red_acc[7][BLOCK_PAIR];                                   \
     red_acc[0][tid]=f.x;                                                     \
     red_acc[1][tid]=f.y;                                                     \
     red_acc[2][tid]=f.z;                                                     \
@@ -36,7 +30,6 @@
     red_acc[4][tid]=tor.y;                                                   \
     red_acc[5][tid]=tor.z;                                                   \
     for (unsigned int s=t_per_atom/2; s>0; s>>=1) {                          \
-      simdsync();                                                            \
       if (offset < s) {                                                      \
         for (int r=0; r<6; r++)                                              \
           red_acc[r][tid] += red_acc[r][tid+s];                              \
@@ -48,39 +41,28 @@
     tor.x=red_acc[3][tid];                                                   \
     tor.y=red_acc[4][tid];                                                   \
     tor.z=red_acc[5][tid];                                                   \
-    if (EVFLAG && (eflag || vflag)) {                                        \
-      if (vflag) {                                                           \
-        simdsync();                                                          \
-        for (int r=0; r<6; r++)                                              \
-          red_acc[r][tid]=virial[r];                                         \
-        for (unsigned int s=t_per_atom/2; s>0; s>>=1) {                      \
-          simdsync();                                                        \
-          if (offset < s) {                                                  \
-            for (int r=0; r<6; r++)                                          \
-              red_acc[r][tid] += red_acc[r][tid+s];                          \
-          }                                                                  \
-        }                                                                    \
-        for (int r=0; r<6; r++)                                              \
-          virial[r]=red_acc[r][tid];                                         \
-      }                                                                      \
-      if (eflag) {                                                           \
-        simdsync();                                                          \
-        red_acc[0][tid]=energy;                                              \
-        for (unsigned int s=t_per_atom/2; s>0; s>>=1) {                      \
-          simdsync();                                                        \
-          if (offset < s) red_acc[0][tid] += red_acc[0][tid+s];              \
+    if (eflag>0 || vflag>0) {                                                \
+      for (int r=0; r<6; r++)                                                \
+        red_acc[r][tid]=virial[r];                                           \
+      red_acc[6][tid]=energy;                                                \
+      for (unsigned int s=t_per_atom/2; s>0; s>>=1) {                        \
+        if (offset < s) {                                                    \
+          for (int r=0; r<7; r++)                                            \
+            red_acc[r][tid] += red_acc[r][tid+s];                            \
         }                                                                    \
       }                                                                      \
-      energy=red_acc[0][tid];                                                \
+      for (int r=0; r<6; r++)                                                \
+        virial[r]=red_acc[r][tid];                                           \
+      energy=red_acc[6][tid];                                                \
     }                                                                        \
   }                                                                          \
-  if (offset==0 && ii<inum) {                                                \
+  if (offset==0) {                                                           \
     __global acctyp *ap1=engv+ii;                                            \
-    if (EVFLAG && eflag) {                                                   \
+    if (eflag>0) {                                                           \
       *ap1+=energy*(acctyp)0.5;                                              \
       ap1+=astride;                                                          \
     }                                                                        \
-    if (EVFLAG && vflag) {                                                   \
+    if (vflag>0) {                                                           \
       for (int i=0; i<6; i++) {                                              \
         *ap1+=virial[i]*(acctyp)0.5;                                         \
         ap1+=astride;                                                        \
@@ -100,32 +82,32 @@
 
 #else
 
-#define store_answers_rt(f, tor, energy, virial, ii, astride, tid,           \
-                         t_per_atom, offset, eflag, vflag, ans, engv, inum)  \
-  if (t_per_atom>1) {                                                        \
-    for (unsigned int s=t_per_atom/2; s>0; s>>=1) {                          \
-        f.x += shfl_down(f.x, s, t_per_atom);                                \
-        f.y += shfl_down(f.y, s, t_per_atom);                                \
-        f.z += shfl_down(f.z, s, t_per_atom);                                \
-        tor.x += shfl_down(tor.x, s, t_per_atom);                            \
-        tor.y += shfl_down(tor.y, s, t_per_atom);                            \
-        tor.z += shfl_down(tor.z, s, t_per_atom);                            \
-        energy += shfl_down(energy, s, t_per_atom);                          \
+#define store_answers_rt(f, tor, energy, virial, ii, astride, tid,          \
+                         t_per_atom, offset, eflag, vflag, ans, engv)       \
+  if (t_per_atom>1) {                                                       \
+    for (unsigned int s=t_per_atom/2; s>0; s>>=1) {                         \
+        f.x += shfl_xor(f.x, s, t_per_atom);                                \
+        f.y += shfl_xor(f.y, s, t_per_atom);                                \
+        f.z += shfl_xor(f.z, s, t_per_atom);                                \
+        tor.x += shfl_xor(tor.x, s, t_per_atom);                            \
+        tor.y += shfl_xor(tor.y, s, t_per_atom);                            \
+        tor.z += shfl_xor(tor.z, s, t_per_atom);                            \
+        energy += shfl_xor(energy, s, t_per_atom);                          \
     }                                                                       \
-    if (EVFLAG && vflag) {                                                  \
+    if (vflag>0) {                                                          \
       for (unsigned int s=t_per_atom/2; s>0; s>>=1) {                       \
           for (int r=0; r<6; r++)                                           \
-            virial[r] += shfl_down(virial[r], s, t_per_atom);                \
+            virial[r] += shfl_xor(virial[r], s, t_per_atom);                \
       }                                                                     \
     }                                                                       \
   }                                                                         \
-  if (offset==0 && ii<inum) {                                               \
+  if (offset==0) {                                                          \
     __global acctyp *ap1=engv+ii;                                           \
-    if (EVFLAG && eflag) {                                                  \
+    if (eflag>0) {                                                          \
       *ap1+=energy*(acctyp)0.5;                                             \
       ap1+=astride;                                                         \
     }                                                                       \
-    if (EVFLAG && vflag) {                                                  \
+    if (vflag>0) {                                                          \
       for (int i=0; i<6; i++) {                                             \
         *ap1+=virial[i]*(acctyp)0.5;                                        \
         ap1+=astride;                                                       \
@@ -165,34 +147,35 @@ __kernel void k_resquared_ellipsoid_sphere(const __global numtyp4 *restrict x_,
   atom_info(t_per_atom,ii,tid,offset);
 
   __local numtyp sp_lj[4];
-  int n_stride;
-  local_allocate_store_ellipse();
-
   sp_lj[0]=splj[0];
   sp_lj[1]=splj[1];
   sp_lj[2]=splj[2];
   sp_lj[3]=splj[3];
 
-  const numtyp b_alpha=(numtyp)45.0/(numtyp)56.0;
-  const numtyp cr60=ucl_cbrt((numtyp)60.0);
-  const numtyp solv_f_a =
-     (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*-(numtyp)36.0);
-  const numtyp solv_f_r =
-     (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*(numtyp)2025.0);
+  __local numtyp b_alpha, cr60, solv_f_a, solv_f_r;
+  b_alpha=(numtyp)45.0/(numtyp)56.0;
+  cr60=ucl_cbrt((numtyp)60.0);
+  solv_f_a = (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*-(numtyp)36.0);
+  solv_f_r = (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*(numtyp)2025.0);
 
-  acctyp4 f, tor;
-  f.x=(acctyp)0; f.y=(acctyp)0; f.z=(acctyp)0;
-  tor.x=(acctyp)0; tor.y=(acctyp)0; tor.z=(acctyp)0;
-  acctyp energy, virial[6];
-  if (EVFLAG) {
-    energy=(acctyp)0;
-    for (int i=0; i<6; i++) virial[i]=(acctyp)0;
-  }
+  acctyp energy=(acctyp)0;
+  acctyp4 f;
+  f.x=(acctyp)0;
+  f.y=(acctyp)0;
+  f.z=(acctyp)0;
+  acctyp4 tor;
+  tor.x=(acctyp)0;
+  tor.y=(acctyp)0;
+  tor.z=(acctyp)0;
+  acctyp virial[6];
+  for (int i=0; i<6; i++)
+    virial[i]=(acctyp)0;
 
   if (ii<inum) {
     int nbor, nbor_end;
     int i, numj;
-    nbor_info_p(dev_nbor,stride,t_per_atom,ii,offset,i,numj,
+    __local int n_stride;
+    nbor_info_e(dev_nbor,stride,t_per_atom,ii,offset,i,numj,
                 n_stride,nbor_end,nbor);
 
     numtyp4 ix; fetch4(ix,i,pos_tex);
@@ -333,17 +316,17 @@ __kernel void k_resquared_ellipsoid_sphere(const __global numtyp4 *restrict x_,
         numtyp force=dUr*Ur+dUa*Ua;
         if (i==0) {
           f.x+=force;
-          if (EVFLAG && vflag)
+          if (vflag>0)
             virial[0]+=-r[0]*force;
         } else if (i==1) {
           f.y+=force;
-          if (EVFLAG && vflag) {
+          if (vflag>0) {
             virial[1]+=-r[1]*force;
             virial[3]+=-r[0]*force;
           }
         } else {
           f.z+=force;
-          if (EVFLAG && vflag) {
+          if (vflag>0) {
             virial[2]+=-r[2]*force;
             virial[4]+=-r[0]*force;
             virial[5]+=-r[1]*force;
@@ -395,9 +378,9 @@ __kernel void k_resquared_ellipsoid_sphere(const __global numtyp4 *restrict x_,
       }
 
     } // for nbor
+    store_answers_rt(f,tor,energy,virial,ii,astride,tid,t_per_atom,offset,eflag,
+                     vflag,ans,engv);
   } // if ii
-  store_answers_rt(f,tor,energy,virial,ii,astride,tid,t_per_atom,offset,
-                   eflag,vflag,ans,engv,inum);
 }
 
 __kernel void k_resquared_sphere_ellipsoid(const __global numtyp4 *restrict x_,
@@ -420,33 +403,31 @@ __kernel void k_resquared_sphere_ellipsoid(const __global numtyp4 *restrict x_,
   ii+=start;
 
   __local numtyp sp_lj[4];
-  int n_stride;
-  local_allocate_store_ellipse_lj();
-
   sp_lj[0]=splj[0];
   sp_lj[1]=splj[1];
   sp_lj[2]=splj[2];
   sp_lj[3]=splj[3];
 
-  const numtyp b_alpha=(numtyp)45.0/(numtyp)56.0;
-  const numtyp cr60=ucl_cbrt((numtyp)60.0);
-  const numtyp solv_f_a =
-    (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*-(numtyp)36.0);
-  const numtyp solv_f_r =
-    (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*(numtyp)2025.0);
+  __local numtyp b_alpha, cr60, solv_f_a, solv_f_r;
+  b_alpha=(numtyp)45.0/(numtyp)56.0;
+  cr60=ucl_cbrt((numtyp)60.0);
+  solv_f_a = (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*-(numtyp)36.0);
+  solv_f_r = (numtyp)3.0/((numtyp)16.0*ucl_atan((numtyp)1.0)*(numtyp)2025.0);
 
+  acctyp energy=(acctyp)0;
   acctyp4 f;
-  f.x=(acctyp)0; f.y=(acctyp)0; f.z=(acctyp)0;
-  acctyp energy, virial[6];
-  if (EVFLAG) {
-    energy=(acctyp)0;
-    for (int i=0; i<6; i++) virial[i]=(acctyp)0;
-  }
+  f.x=(acctyp)0;
+  f.y=(acctyp)0;
+  f.z=(acctyp)0;
+  acctyp virial[6];
+  for (int i=0; i<6; i++)
+    virial[i]=(acctyp)0;
 
   if (ii<inum) {
     int nbor, nbor_end;
     int j, numj;
-    nbor_info_p(dev_nbor,stride,t_per_atom,ii,offset,j,numj,
+    __local int n_stride;
+    nbor_info_e(dev_nbor,stride,t_per_atom,ii,offset,j,numj,
                 n_stride,nbor_end,nbor);
 
     numtyp4 jx; fetch4(jx,j,pos_tex);
@@ -580,17 +561,17 @@ __kernel void k_resquared_sphere_ellipsoid(const __global numtyp4 *restrict x_,
         numtyp force=dUr*Ur+dUa*Ua;
         if (i==0) {
           f.x+=force;
-          if (EVFLAG && vflag)
+          if (vflag>0)
             virial[0]+=-r[0]*force;
         } else if (i==1) {
           f.y+=force;
-          if (EVFLAG && vflag) {
+          if (vflag>0) {
             virial[1]+=-r[1]*force;
             virial[3]+=-r[0]*force;
           }
         } else {
           f.z+=force;
-          if (EVFLAG && vflag) {
+          if (vflag>0) {
             virial[2]+=-r[2]*force;
             virial[4]+=-r[0]*force;
             virial[5]+=-r[1]*force;
@@ -598,9 +579,9 @@ __kernel void k_resquared_sphere_ellipsoid(const __global numtyp4 *restrict x_,
         }
       }
     } // for nbor
+    store_answers(f,energy,virial,ii,inum,tid,t_per_atom,offset,eflag,vflag,
+                  ans,engv);
   } // if ii
-  store_answers(f,energy,virial,ii,inum,tid,t_per_atom,offset,eflag,vflag,
-                ans,engv);
 }
 
 __kernel void k_resquared_lj(const __global numtyp4 *restrict x_,
@@ -620,27 +601,26 @@ __kernel void k_resquared_lj(const __global numtyp4 *restrict x_,
   ii+=start;
 
   __local numtyp sp_lj[4];
-  int n_stride;
-  local_allocate_store_ellipse();
-
   sp_lj[0]=gum[0];
   sp_lj[1]=gum[1];
   sp_lj[2]=gum[2];
   sp_lj[3]=gum[3];
 
+  acctyp energy=(acctyp)0;
   acctyp4 f;
-  f.x=(acctyp)0; f.y=(acctyp)0; f.z=(acctyp)0;
-  acctyp energy, virial[6];
-  if (EVFLAG) {
-    energy=(acctyp)0;
-    for (int i=0; i<6; i++) virial[i]=(acctyp)0;
-  }
+  f.x=(acctyp)0;
+  f.y=(acctyp)0;
+  f.z=(acctyp)0;
+  acctyp virial[6];
+  for (int i=0; i<6; i++)
+    virial[i]=(acctyp)0;
 
   if (ii<inum) {
     int nbor, nbor_end;
     int i, numj;
-    nbor_info_e_ss(dev_ij,stride,t_per_atom,ii,offset,i,numj,
-                   n_stride,nbor_end,nbor);
+    __local int n_stride;
+    nbor_info_e(dev_ij,stride,t_per_atom,ii,offset,i,numj,
+                n_stride,nbor_end,nbor);
 
     numtyp4 ix; fetch4(ix,i,pos_tex);
     int itype=ix.w;
@@ -672,11 +652,11 @@ __kernel void k_resquared_lj(const __global numtyp4 *restrict x_,
         f.y+=dely*force;
         f.z+=delz*force;
 
-        if (EVFLAG && eflag) {
+        if (eflag>0) {
           numtyp e=r6inv*(lj3[ii].x*r6inv-lj3[ii].y);
           energy+=factor_lj*(e-lj3[ii].z);
         }
-        if (EVFLAG && vflag) {
+        if (vflag>0) {
           virial[0] += delx*delx*force;
           virial[1] += dely*dely*force;
           virial[2] += delz*delz*force;
@@ -686,9 +666,9 @@ __kernel void k_resquared_lj(const __global numtyp4 *restrict x_,
         }
       }
     } // for nbor
+    acc_answers(f,energy,virial,ii,inum,tid,t_per_atom,offset,eflag,vflag,
+                ans,engv);
   } // if ii
-  acc_answers(f,energy,virial,ii,inum,tid,t_per_atom,offset,eflag,vflag,
-              ans,engv);
 }
 
 __kernel void k_resquared_lj_fast(const __global numtyp4 *restrict x_,
@@ -710,32 +690,31 @@ __kernel void k_resquared_lj_fast(const __global numtyp4 *restrict x_,
   __local numtyp sp_lj[4];
   __local numtyp4 lj1[MAX_SHARED_TYPES*MAX_SHARED_TYPES];
   __local numtyp4 lj3[MAX_SHARED_TYPES*MAX_SHARED_TYPES];
-  int n_stride;
-  local_allocate_store_ellipse();
-
   if (tid<4)
     sp_lj[tid]=gum[tid];
   if (tid<MAX_SHARED_TYPES*MAX_SHARED_TYPES) {
     lj1[tid]=lj1_in[tid];
-    if (EVFLAG && eflag)
+    if (eflag>0)
       lj3[tid]=lj3_in[tid];
   }
 
+  acctyp energy=(acctyp)0;
   acctyp4 f;
-  f.x=(acctyp)0; f.y=(acctyp)0; f.z=(acctyp)0;
-  acctyp energy, virial[6];
-  if (EVFLAG) {
-    energy=(acctyp)0;
-    for (int i=0; i<6; i++) virial[i]=(acctyp)0;
-  }
+  f.x=(acctyp)0;
+  f.y=(acctyp)0;
+  f.z=(acctyp)0;
+  acctyp virial[6];
+  for (int i=0; i<6; i++)
+    virial[i]=(acctyp)0;
 
   __syncthreads();
 
   if (ii<inum) {
     int nbor, nbor_end;
     int i, numj;
-    nbor_info_e_ss(dev_ij,stride,t_per_atom,ii,offset,i,numj,
-                   n_stride,nbor_end,nbor);
+    __local int n_stride;
+    nbor_info_e(dev_ij,stride,t_per_atom,ii,offset,i,numj,
+                n_stride,nbor_end,nbor);
 
     numtyp4 ix; fetch4(ix,i,pos_tex);
     int iw=ix.w;
@@ -766,11 +745,11 @@ __kernel void k_resquared_lj_fast(const __global numtyp4 *restrict x_,
         f.y+=dely*force;
         f.z+=delz*force;
 
-        if (EVFLAG && eflag) {
+        if (eflag>0) {
           numtyp e=r6inv*(lj3[mtype].x*r6inv-lj3[mtype].y);
           energy+=factor_lj*(e-lj3[mtype].z);
         }
-        if (EVFLAG && vflag) {
+        if (vflag>0) {
           virial[0] += delx*delx*force;
           virial[1] += dely*dely*force;
           virial[2] += delz*delz*force;
@@ -781,7 +760,8 @@ __kernel void k_resquared_lj_fast(const __global numtyp4 *restrict x_,
       }
 
     } // for nbor
+    acc_answers(f,energy,virial,ii,inum,tid,t_per_atom,offset,eflag,vflag,
+                ans,engv);
   } // if ii
-  acc_answers(f,energy,virial,ii,inum,tid,t_per_atom,offset,eflag,vflag,
-              ans,engv);
 }
+

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,21 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "compute_dipole_chunk.h"
-
 #include "atom.h"
-#include "comm.h"
+#include "update.h"
+#include "modify.h"
 #include "compute_chunk_atom.h"
 #include "domain.h"
-#include "error.h"
-#include "force.h"
-#include "math_special.h"
 #include "memory.h"
-#include "modify.h"
-#include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "error.h"
+#include "math_special.h"
 
 using namespace LAMMPS_NS;
 using namespace MathSpecial;
@@ -35,14 +29,12 @@ enum { MASSCENTER, GEOMCENTER };
 
 /* ---------------------------------------------------------------------- */
 
-ComputeDipoleChunk::ComputeDipoleChunk(LAMMPS *lmp, int narg, char **arg) :
+ComputeDipoleChunk::ComputeDipoleChunk(LAMMPS *lmp, int narg, char **arg) : 
   Compute(lmp, narg, arg),
-  idchunk(nullptr), massproc(nullptr), masstotal(nullptr), chrgproc(nullptr),
-  chrgtotal(nullptr), com(nullptr),
-  comall(nullptr), dipole(nullptr), dipoleall(nullptr)
+  idchunk(NULL), massproc(NULL), masstotal(NULL), chrgproc(NULL), chrgtotal(NULL), com(NULL),
+  comall(NULL), dipole(NULL), dipoleall(NULL)
 {
-  if ((narg != 4) && (narg != 5))
-    error->all(FLERR,"Illegal compute dipole/chunk command");
+  if ((narg != 4) && (narg != 5)) error->all(FLERR,"Illegal compute dipole/chunk command");
 
   array_flag = 1;
   size_array_cols = 4;
@@ -52,7 +44,9 @@ ComputeDipoleChunk::ComputeDipoleChunk(LAMMPS *lmp, int narg, char **arg) :
 
   // ID of compute chunk/atom
 
-  idchunk = utils::strdup(arg[3]);
+  int n = strlen(arg[3]) + 1;
+  idchunk = new char[n];
+  strcpy(idchunk,arg[3]);
 
   usecenter = MASSCENTER;
 
@@ -61,8 +55,8 @@ ComputeDipoleChunk::ComputeDipoleChunk(LAMMPS *lmp, int narg, char **arg) :
     else if (strcmp(arg[4],"mass") == 0) usecenter = MASSCENTER;
     else error->all(FLERR,"Illegal compute dipole/chunk command");
   }
-
-  ComputeDipoleChunk::init();
+  
+  init();
 
   // chunk-based data
 
@@ -97,10 +91,6 @@ void ComputeDipoleChunk::init()
   cchunk = (ComputeChunkAtom *) modify->compute[icompute];
   if (strcmp(cchunk->style,"chunk/atom") != 0)
     error->all(FLERR,"Compute dipole/chunk does not use chunk/atom compute");
-
-  if ((force->pair_match("/tip4p/",0) != nullptr) && (comm->me == 0))
-    error->warning(FLERR,"Computed dipole moments may be incorrect when "
-                   "using a tip4p pair style");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -126,7 +116,7 @@ void ComputeDipoleChunk::compute_array()
 
   // zero local per-chunk values
 
-  for (i = 0; i < nchunk; i++) {
+  for (int i = 0; i < nchunk; i++) {
     massproc[i] = chrgproc[i] = 0.0;
     com[i][0] = com[i][1] = com[i][2] = 0.0;
     dipole[i][0] = dipole[i][1] = dipole[i][2] = dipole[i][3] = 0.0;
@@ -145,7 +135,7 @@ void ComputeDipoleChunk::compute_array()
 
   int nlocal = atom->nlocal;
 
-  for (i = 0; i < nlocal; i++)
+  for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       index = ichunk[i]-1;
       if (index < 0) continue;
@@ -166,7 +156,7 @@ void ComputeDipoleChunk::compute_array()
   MPI_Allreduce(chrgproc,chrgtotal,nchunk,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&com[0][0],&comall[0][0],3*nchunk,MPI_DOUBLE,MPI_SUM,world);
 
-  for (i = 0; i < nchunk; i++) {
+  for (int i = 0; i < nchunk; i++) {
     if (masstotal[i] > 0.0) {
       comall[i][0] /= masstotal[i];
       comall[i][1] /= masstotal[i];
@@ -298,7 +288,7 @@ void ComputeDipoleChunk::allocate()
 double ComputeDipoleChunk::memory_usage()
 {
   double bytes = (bigint) maxchunk * 2 * sizeof(double);
-  bytes += (double)maxchunk * 2*3 * sizeof(double);
-  bytes += (double)maxchunk * 2*4 * sizeof(double);
+  bytes += (bigint) maxchunk * 2*3 * sizeof(double);
+  bytes += (bigint) maxchunk * 2*4 * sizeof(double);
   return bytes;
 }

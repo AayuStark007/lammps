@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,8 +11,11 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "pair_tri_lj.h"
-#include <cmath>
 #include "math_extra.h"
 #include "atom.h"
 #include "atom_vec_tri.h"
@@ -22,7 +24,6 @@
 #include "neigh_list.h"
 #include "memory.h"
 #include "error.h"
-
 
 using namespace LAMMPS_NS;
 
@@ -33,8 +34,8 @@ using namespace LAMMPS_NS;
 PairTriLJ::PairTriLJ(LAMMPS *lmp) : Pair(lmp)
 {
   dmax = nmax = 0;
-  discrete = nullptr;
-  dnum = dfirst = nullptr;
+  discrete = NULL;
+  dnum = dfirst = NULL;
 
   single_enable = 0;
   restartinfo = 0;
@@ -75,7 +76,9 @@ void PairTriLJ::compute(int eflag, int vflag)
   double dc1[3],dc2[3],dc3[3];
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  ev_init(eflag,vflag);
+  evdwl = 0.0;
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   AtomVecTri::Bonus *bonus = avec->bonus;
   double **x = atom->x;
@@ -375,7 +378,8 @@ void PairTriLJ::compute(int eflag, int vflag)
         }
       }
 
-      if (evflag) ev_tally(i,j,nlocal,newton_pair,evdwl,0.0,fpair,delx,dely,delz);
+      if (evflag) ev_tally(i,j,nlocal,newton_pair,
+                           evdwl,0.0,fpair,delx,dely,delz);
     }
   }
 
@@ -415,14 +419,14 @@ void PairTriLJ::settings(int narg, char **arg)
 {
   if (narg != 1) error->all(FLERR,"Illegal pair_style command");
 
-  cut_global = utils::numeric(FLERR,arg[0],false,lmp);
+  cut_global = force->numeric(FLERR,arg[0]);
 
   // reset cutoffs that have been explicitly set
 
   if (allocated) {
     int i,j;
     for (i = 1; i <= atom->ntypes; i++)
-      for (j = i; j <= atom->ntypes; j++)
+      for (j = i+1; j <= atom->ntypes; j++)
         if (setflag[i][j]) cut[i][j] = cut_global;
   }
 }
@@ -438,14 +442,14 @@ void PairTriLJ::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  utils::bounds(FLERR,arg[0],1,atom->ntypes,ilo,ihi,error);
-  utils::bounds(FLERR,arg[1],1,atom->ntypes,jlo,jhi,error);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
-  double epsilon_one = utils::numeric(FLERR,arg[2],false,lmp);
-  double sigma_one = utils::numeric(FLERR,arg[3],false,lmp);
+  double epsilon_one = force->numeric(FLERR,arg[2]);
+  double sigma_one = force->numeric(FLERR,arg[3]);
 
   double cut_one = cut_global;
-  if (narg == 5) cut_one = utils::numeric(FLERR,arg[4],false,lmp);
+  if (narg == 5) cut_one = force->numeric(FLERR,arg[4]);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {

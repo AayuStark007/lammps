@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,22 +15,21 @@
    Contributing author: Carsten Svaneborg (SDU)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "dihedral_zero.h"
-
 #include "atom.h"
-#include "error.h"
+#include "force.h"
+#include "comm.h"
 #include "memory.h"
-
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-DihedralZero::DihedralZero(LAMMPS *lmp) : Dihedral(lmp), coeffflag(1)
-{
-  writedata = 1;
-}
+DihedralZero::DihedralZero(LAMMPS *lmp) : Dihedral(lmp), coeffflag(1) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -46,7 +44,8 @@ DihedralZero::~DihedralZero()
 
 void DihedralZero::compute(int eflag, int vflag)
 {
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -85,7 +84,7 @@ void DihedralZero::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  utils::bounds(FLERR,arg[0],1,atom->ndihedraltypes,ilo,ihi,error);
+  force->bounds(FLERR,arg[0],atom->ndihedraltypes,ilo,ihi);
 
   int count = 0;
   for (int i = ilo; i <= ihi; i++) {
@@ -100,13 +99,13 @@ void DihedralZero::coeff(int narg, char **arg)
    proc 0 writes out coeffs to restart file
 ------------------------------------------------------------------------- */
 
-void DihedralZero::write_restart(FILE * /*fp*/) {}
+void DihedralZero::write_restart(FILE *fp) {}
 
 /* ----------------------------------------------------------------------
    proc 0 reads coeffs from restart file, bcasts them
 ------------------------------------------------------------------------- */
 
-void DihedralZero::read_restart(FILE * /*fp*/)
+void DihedralZero::read_restart(FILE *fp)
 {
   allocate();
   for (int i = 1; i <= atom->ndihedraltypes; i++) setflag[i] = 1;
@@ -120,3 +119,4 @@ void DihedralZero::write_data(FILE *fp) {
   for (int i = 1; i <= atom->ndihedraltypes; i++)
     fprintf(fp,"%d\n",i);
 }
+

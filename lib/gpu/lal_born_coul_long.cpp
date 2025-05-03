@@ -23,7 +23,7 @@ const char *born_coul_long=0;
 
 #include "lal_born_coul_long.h"
 #include <cassert>
-namespace LAMMPS_AL {
+using namespace LAMMPS_AL;
 #define BornCoulLongT BornCoulLong<numtyp, acctyp>
 
 extern Device<PRECISION,ACC_PRECISION> device;
@@ -57,7 +57,7 @@ int BornCoulLongT::init(const int ntypes, double **host_cutsq, double **host_rho
                        const double g_ewald) {
   int success;
   success=this->init_atomic(nlocal,nall,max_nbors,maxspecial,cell_size,gpu_split,
-                            _screen,born_coul_long,"k_born_coul_long");
+                            _screen,born_coul_long,"k_born_long");
   if (success!=0)
     return success;
 
@@ -129,9 +129,20 @@ double BornCoulLongT::host_memory_usage() const {
 // Calculate energies, forces, and torques
 // ---------------------------------------------------------------------------
 template <class numtyp, class acctyp>
-int BornCoulLongT::loop(const int eflag, const int vflag) {
+void BornCoulLongT::loop(const bool _eflag, const bool _vflag) {
   // Compute the block size and grid size to keep all cores busy
   const int BX=this->block_size();
+  int eflag, vflag;
+  if (_eflag)
+    eflag=1;
+  else
+    eflag=0;
+
+  if (_vflag)
+    vflag=1;
+  else
+    vflag=0;
+
   int GX=static_cast<int>(ceil(static_cast<double>(this->ans->inum())/
                                (BX/this->_threads_per_atom)));
 
@@ -139,8 +150,8 @@ int BornCoulLongT::loop(const int eflag, const int vflag) {
   int nbor_pitch=this->nbor->nbor_pitch();
   this->time_pair.start();
   if (shared_types) {
-    this->k_pair_sel->set_size(GX,BX);
-    this->k_pair_sel->run(&this->atom->x, &coeff1, &coeff2, &sp_lj,
+    this->k_pair_fast.set_size(GX,BX);
+    this->k_pair_fast.run(&this->atom->x, &coeff1, &coeff2, &sp_lj,
                           &this->nbor->dev_nbor,
                           &this->_nbor_data->begin(),
                           &this->ans->force,
@@ -159,8 +170,6 @@ int BornCoulLongT::loop(const int eflag, const int vflag) {
                    &_qqrd2e, &_g_ewald, &this->_threads_per_atom);
   }
   this->time_pair.stop();
-  return GX;
 }
 
 template class BornCoulLong<PRECISION,ACC_PRECISION>;
-}

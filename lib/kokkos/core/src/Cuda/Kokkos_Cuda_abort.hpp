@@ -1,14 +1,13 @@
 /*
 //@HEADER
 // ************************************************************************
-//
-//                        Kokkos v. 3.0
-//       Copyright (2020) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
-//
-// Under the terms of Contract DE-NA0003525 with NTESS,
+// 
+//                        Kokkos v. 2.0
+//              Copyright (2014) Sandia Corporation
+// 
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
-//
+// 
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
 // met:
@@ -24,10 +23,10 @@
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
-// THIS SOFTWARE IS PROVIDED BY NTESS "AS IS" AND ANY
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NTESS OR THE
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
 // CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 // EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
 // PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -36,8 +35,8 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
-//
+// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
+// 
 // ************************************************************************
 //@HEADER
 */
@@ -47,55 +46,74 @@
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
-#include <Kokkos_Macros.hpp>
-#if defined(KOKKOS_ENABLE_CUDA)
+#include "Kokkos_Macros.hpp"
+#if defined( __CUDACC__ ) && defined( __CUDA_ARCH__ ) && defined( KOKKOS_HAVE_CUDA )
 
 #include <cuda.h>
+
+#if ! defined( CUDA_VERSION ) || ( CUDA_VERSION < 4010 )
+#error "Cuda version 4.1 or greater required"
+#endif
+
+#if ( __CUDA_ARCH__ < 200 )
+#error "Cuda device capability 2.0 or greater required"
+#endif
 
 extern "C" {
 /*  Cuda runtime function, declared in <crt/device_runtime.h>
  *  Requires capability 2.x or better.
  */
-extern __device__ void __assertfail(const void *message, const void *file,
-                                    unsigned int line, const void *function,
-                                    size_t charsize);
+extern __device__ void __assertfail(
+  const void  *message,
+  const void  *file,
+  unsigned int line,
+  const void  *function,
+  size_t       charsize);
 }
 
 namespace Kokkos {
 namespace Impl {
 
-#if !defined(__APPLE__)
-// required to workaround failures in random number generator unit tests with
-// pre-volta architectures
-#if defined(KOKKOS_ENABLE_DEBUG_BOUNDS_CHECK)
-__device__ inline void cuda_abort(const char *const message) {
-#else
-[[noreturn]] __device__ inline void cuda_abort(const char *const message) {
-#endif
-  const char empty[] = "";
+__device__ inline
+void cuda_abort( const char * const message )
+{
+#ifndef __APPLE__
+  const char empty[] = "" ;
 
-  __assertfail((const void *)message, (const void *)empty, (unsigned int)0,
-               (const void *)empty, sizeof(char));
-
-  // This loop is never executed. It's intended to suppress warnings that the
-  // function returns, even though it does not. This is necessary because
-  // __assertfail is not marked as [[noreturn]], even though it does not return.
-  //  Disable with KOKKOS_ENABLE_DEBUG_BOUNDS_CHECK to workaround failures
-  //  in random number generator unit tests with pre-volta architectures
-#if !defined(KOKKOS_ENABLE_DEBUG_BOUNDS_CHECK)
-  while (true)
-    ;
+  __assertfail( (const void *) message ,
+                (const void *) empty ,
+                (unsigned int) 0 ,
+                (const void *) empty ,
+                sizeof(char) );
 #endif
 }
-#else
-__device__ inline void cuda_abort(const char *const message) {
-  // __assertfail is not supported on MAC
-}
-#endif
 
-}  // namespace Impl
-}  // namespace Kokkos
+} // namespace Impl
+} // namespace Kokkos
+
 #else
-void KOKKOS_CORE_SRC_CUDA_ABORT_PREVENT_LINK_ERROR() {}
-#endif /* #if defined( KOKKOS_ENABLE_CUDA ) */
+
+namespace Kokkos {
+namespace Impl {
+KOKKOS_INLINE_FUNCTION
+void cuda_abort( const char * const ) {}
+}
+}
+
+#endif /* #if defined( __CUDACC__ ) && defined( __CUDA_ARCH__ ) */
+
+//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
+
+#if defined( KOKKOS_ACTIVE_EXECUTION_MEMORY_SPACE_CUDA )
+namespace Kokkos {
+__device__ inline
+void abort( const char * const message ) { Kokkos::Impl::cuda_abort(message); }
+}
+#endif /* defined( KOKKOS_ACTIVE_EXECUTION_MEMORY_SPACE_CUDA ) */
+
+//----------------------------------------------------------------------------
+//----------------------------------------------------------------------------
+
 #endif /* #ifndef KOKKOS_CUDA_ABORT_HPP */
+

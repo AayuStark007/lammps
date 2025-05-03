@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(cna/atom,ComputeCNAAtom);
-// clang-format on
+
+ComputeStyle(cna/atom,ComputeCNAAtom)
+
 #else
 
 #ifndef LMP_COMPUTE_CNA_ATOM_H
@@ -42,7 +42,7 @@ class ComputeCNAAtom : public Compute {
   double *pattern;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -57,11 +57,11 @@ command-line option when running LAMMPS to see the offending line.
 
 E: Compute cna/atom requires a pair style be defined
 
-Self-explanatory.
+Self-explantory.
 
 E: Compute cna/atom cutoff is longer than pairwise cutoff
 
-Self-explanatory.
+Self-explantory.
 
 W: Compute cna/atom cutoff may be too large to find ghost atom neighbors
 

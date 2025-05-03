@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(erotate/asphere,ComputeERotateAsphere);
-// clang-format on
+
+ComputeStyle(erotate/asphere,ComputeERotateAsphere)
+
 #else
 
 #ifndef LMP_COMPUTE_EROTATE_ASPHERE_H
@@ -37,7 +37,7 @@ class ComputeERotateAsphere : public Compute {
   class AtomVecTri *avec_tri;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -56,6 +56,6 @@ Self-explanatory.
 
 E: Compute erotate/asphere requires extended particles
 
-This compute cannot be used with point particles.
+This compute cannot be used with point paritlces.
 
 */

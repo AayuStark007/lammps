@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,8 +11,9 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <string.h>
 #include "compute_rigid_local.h"
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "domain.h"
@@ -33,15 +33,18 @@ enum{ID,MOL,MASS,X,Y,Z,XU,YU,ZU,VX,VY,VZ,FX,FY,FZ,IX,IY,IZ,
 /* ---------------------------------------------------------------------- */
 
 ComputeRigidLocal::ComputeRigidLocal(LAMMPS *lmp, int narg, char **arg) :
-  Compute(lmp, narg, arg),
-  rstyle(nullptr), idrigid(nullptr), fixrigid(nullptr), vlocal(nullptr), alocal(nullptr)
+  Compute(lmp, narg, arg), rstyle(NULL), idrigid(NULL), fixrigid(NULL)
 {
   if (narg < 5) error->all(FLERR,"Illegal compute rigid/local command");
 
   local_flag = 1;
   nvalues = narg - 4;
+  if (nvalues == 1) size_local_cols = 0;
+  else size_local_cols = nvalues;
 
-  idrigid = utils::strdup(arg[3]);
+  int n = strlen(arg[3]) + 1;
+  idrigid = new char[n];
+  strcpy(idrigid,arg[3]);
 
   rstyle = new int[nvalues];
 
@@ -84,20 +87,17 @@ ComputeRigidLocal::ComputeRigidLocal(LAMMPS *lmp, int narg, char **arg) :
     else error->all(FLERR,"Invalid keyword in compute rigid/local command");
   }
 
-  if (nvalues == 1) size_local_cols = 0;
-  else size_local_cols = nvalues;
-
-ncount = nmax = 0;
-  vlocal = nullptr;
-  alocal = nullptr;
+  ncount = nmax = 0;
+  vector = NULL;
+  array = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeRigidLocal::~ComputeRigidLocal()
 {
-  memory->destroy(vlocal);
-  memory->destroy(alocal);
+  memory->destroy(vector);
+  memory->destroy(array);
   delete [] idrigid;
   delete [] rstyle;
 }
@@ -114,8 +114,8 @@ void ComputeRigidLocal::init()
   fixrigid = (FixRigidSmall *) modify->fix[ifix];
 
   int flag = 0;
-  if (strstr(fixrigid->style,"rigid/") == nullptr) flag = 1;
-  if (strstr(fixrigid->style,"/small") == nullptr) flag = 1;
+  if (strstr(fixrigid->style,"rigid/") == NULL) flag = 1;
+  if (strstr(fixrigid->style,"/small") == NULL) flag = 1;
   if (flag)
     error->all(FLERR,"Compute rigid/local does not use fix rigid/small fix");
 
@@ -169,8 +169,8 @@ int ComputeRigidLocal::compute_rigid(int flag)
     body = &fixrigid->body[ibody];
 
     if (flag) {
-      if (nvalues == 1) ptr = &vlocal[m];
-      else ptr = alocal[m];
+      if (nvalues == 1) ptr = &vector[m];
+      else ptr = array[m];
 
       for (n = 0; n < nvalues; n++) {
         switch (rstyle[n]) {
@@ -193,11 +193,11 @@ int ComputeRigidLocal::compute_rigid(int flag)
           ptr[n] = body->xcm[2];
           break;
         case XU:
-          ptr[n] = body->xcm[0] +
+          ptr[n] = body->xcm[0] + 
             ((body->image & IMGMASK) - IMGMAX) * xprd;
           break;
         case YU:
-          ptr[n] = body->xcm[1] +
+          ptr[n] = body->xcm[1] + 
             ((body->image >> IMGBITS & IMGMASK) - IMGMAX) * yprd;
           break;
         case ZU:
@@ -293,18 +293,18 @@ int ComputeRigidLocal::compute_rigid(int flag)
 
 void ComputeRigidLocal::reallocate(int n)
 {
-  // grow vector_local or array_local
+  // grow vector or array
 
   while (nmax < n) nmax += DELTA;
 
   if (nvalues == 1) {
-    memory->destroy(vlocal);
-    memory->create(vlocal,nmax,"rigid/local:vector_local");
-    vector_local = vlocal;
+    memory->destroy(vector);
+    memory->create(vector,nmax,"rigid/local:vector");
+    vector_local = vector;
   } else {
-    memory->destroy(alocal);
-    memory->create(alocal,nmax,nvalues,"rigid/local:array_local");
-    array_local = alocal;
+    memory->destroy(array);
+    memory->create(array,nmax,nvalues,"rigid/local:array");
+    array_local = array;
   }
 }
 
@@ -314,6 +314,6 @@ void ComputeRigidLocal::reallocate(int n)
 
 double ComputeRigidLocal::memory_usage()
 {
-  double bytes = (double)nmax*nvalues * sizeof(double);
+  double bytes = nmax*nvalues * sizeof(double);
   return bytes;
 }

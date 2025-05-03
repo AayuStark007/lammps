@@ -1,5 +1,5 @@
 #!/usr/bin/env python -i
-# preceding line should have path for Python on your machine
+# preceeding line should have path for Python on your machine
 
 # split.py
 # Purpose: similar to simple.py, but first the world communicator
@@ -57,7 +57,7 @@ if color == 0:
   lmp.scatter_atoms("x",1,3,x)
   lmp.command("run 1");
 
-  f = lmp.extract_atom("f")
+  f = lmp.extract_atom("f",3)
   print("Force on 1 atom via extract_atom: ",f[0][0])
 
   fx = lmp.extract_variable("fx","all",1)

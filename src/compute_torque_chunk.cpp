@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <string.h>
 #include "compute_torque_chunk.h"
-
-#include <cstring>
 #include "atom.h"
 #include "update.h"
 #include "modify.h"
@@ -29,7 +27,7 @@ using namespace LAMMPS_NS;
 
 ComputeTorqueChunk::ComputeTorqueChunk(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  idchunk(nullptr), massproc(nullptr), masstotal(nullptr), com(nullptr), comall(nullptr), torque(nullptr), torqueall(nullptr)
+  idchunk(NULL), massproc(NULL), masstotal(NULL), com(NULL), comall(NULL), torque(NULL), torqueall(NULL)
 {
   if (narg != 4) error->all(FLERR,"Illegal compute torque/chunk command");
 
@@ -41,9 +39,11 @@ ComputeTorqueChunk::ComputeTorqueChunk(LAMMPS *lmp, int narg, char **arg) :
 
   // ID of compute chunk/atom
 
-  idchunk = utils::strdup(arg[3]);
+  int n = strlen(arg[3]) + 1;
+  idchunk = new char[n];
+  strcpy(idchunk,arg[3]);
 
-  ComputeTorqueChunk::init();
+  init();
 
   // chunk-based data
 
@@ -101,7 +101,7 @@ void ComputeTorqueChunk::compute_array()
 
   // zero local per-chunk values
 
-  for (i = 0; i < nchunk; i++) {
+  for (int i = 0; i < nchunk; i++) {
     massproc[i] = 0.0;
     com[i][0] = com[i][1] = com[i][2] = 0.0;
     torque[i][0] = torque[i][1] = torque[i][2] = 0.0;
@@ -117,7 +117,7 @@ void ComputeTorqueChunk::compute_array()
   double *rmass = atom->rmass;
   int nlocal = atom->nlocal;
 
-  for (i = 0; i < nlocal; i++)
+  for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       index = ichunk[i]-1;
       if (index < 0) continue;
@@ -133,7 +133,7 @@ void ComputeTorqueChunk::compute_array()
   MPI_Allreduce(massproc,masstotal,nchunk,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&com[0][0],&comall[0][0],3*nchunk,MPI_DOUBLE,MPI_SUM,world);
 
-  for (i = 0; i < nchunk; i++) {
+  for (int i = 0; i < nchunk; i++) {
     if (masstotal[i] > 0.0) {
       comall[i][0] /= masstotal[i];
       comall[i][1] /= masstotal[i];
@@ -247,7 +247,7 @@ void ComputeTorqueChunk::allocate()
 double ComputeTorqueChunk::memory_usage()
 {
   double bytes = (bigint) maxchunk * 2 * sizeof(double);
-  bytes += (double) maxchunk * 2*3 * sizeof(double);
-  bytes += (double) maxchunk * 2*3 * sizeof(double);
+  bytes += (bigint) maxchunk * 2*3 * sizeof(double);
+  bytes += (bigint) maxchunk * 2*3 * sizeof(double);
   return bytes;
 }

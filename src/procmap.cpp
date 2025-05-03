@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -17,23 +16,20 @@
 ------------------------------------------------------------------------- */
 
 #include "procmap.h"
-
-#include "comm.h"
+#include "universe.h"
 #include "domain.h"
-#include "error.h"
 #include "math_extra.h"
 #include "memory.h"
-#include "tokenizer.h"
-#include "universe.h"
+#include "error.h"
 
-#include <cmath>
-#include <cstring>
 #include <map>
-#include <utility>
+#include <string>
 
 using namespace LAMMPS_NS;
 
 #define MAXLINE 128
+
+enum{MULTIPLE};                   // same as in Comm
 
 /* ---------------------------------------------------------------------- */
 
@@ -51,7 +47,7 @@ void ProcMap::onelevel_grid(int nprocs, int *user_procgrid, int *procgrid,
 
   // factors = list of all possible 3 factors of processor count
 
-  int npossible = factor(nprocs,nullptr);
+  int npossible = factor(nprocs,NULL);
   memory->create(factors,npossible,3,"procmap:factors");
   npossible = factor(nprocs,factors);
 
@@ -95,7 +91,7 @@ void ProcMap::twolevel_grid(int nprocs, int *user_procgrid, int *procgrid,
   // nfactors = list of all possible 3 factors of node count
   // constrain by 2d
 
-  int nnpossible = factor(nprocs/ncores,nullptr);
+  int nnpossible = factor(nprocs/ncores,NULL);
   memory->create(nfactors,nnpossible,3,"procmap:nfactors");
   nnpossible = factor(nprocs/ncores,nfactors);
 
@@ -104,7 +100,7 @@ void ProcMap::twolevel_grid(int nprocs, int *user_procgrid, int *procgrid,
   // cfactors = list of all possible 3 factors of core count
   // constrain by 2d
 
-  int ncpossible = factor(ncores,nullptr);
+  int ncpossible = factor(ncores,NULL);
   memory->create(cfactors,ncpossible,3,"procmap:cfactors");
   ncpossible = factor(ncores,cfactors);
 
@@ -207,7 +203,7 @@ void ProcMap::numa_grid(int nprocs, int *user_procgrid, int *procgrid,
   // initial factorization within NUMA node
 
   int **numafactors;
-  int numapossible = factor(procs_per_numa,nullptr);
+  int numapossible = factor(procs_per_numa,NULL);
   memory->create(numafactors,numapossible,3,"procmap:numafactors");
   numapossible = factor(procs_per_numa,numafactors);
 
@@ -220,7 +216,7 @@ void ProcMap::numa_grid(int nprocs, int *user_procgrid, int *procgrid,
 
   best_factors(numapossible,numafactors,numagrid,1,1,1);
 
-  // user_nodegrid = implied user constraints on nodes
+  // user_nodegrid = implied user contraints on nodes
 
   int user_nodegrid[3];
   user_nodegrid[0] = user_procgrid[0] / numagrid[0];
@@ -232,7 +228,7 @@ void ProcMap::numa_grid(int nprocs, int *user_procgrid, int *procgrid,
   int node_count = nprocs / procs_per_numa;
 
   int **nodefactors;
-  int nodepossible = factor(node_count,nullptr);
+  int nodepossible = factor(node_count,NULL);
   memory->create(nodefactors,nodepossible,3,"procmap:nodefactors");
   nodepossible = factor(node_count,nodefactors);
 
@@ -283,11 +279,11 @@ void ProcMap::custom_grid(char *cfile, int nprocs,
   MPI_Comm_rank(world,&me);
 
   char line[MAXLINE];
-  FILE *fp = nullptr;
+  FILE *fp = NULL;
 
   if (me == 0) {
     fp = fopen(cfile,"r");
-    if (fp == nullptr) error->one(FLERR,"Cannot open custom file");
+    if (fp == NULL) error->one(FLERR,"Cannot open custom file");
 
     // skip header = blank and comment lines
 
@@ -302,16 +298,11 @@ void ProcMap::custom_grid(char *cfile, int nprocs,
     }
   }
 
-  MPI_Bcast(line,MAXLINE,MPI_CHAR,0,world);
-  try {
-    ValueTokenizer procs(line);
-    procgrid[0] = procs.next_int();
-    procgrid[1] = procs.next_int();
-    procgrid[2] = procs.next_int();
-  } catch (TokenizerException &e) {
-    error->all(FLERR,"Processors custom grid file "
-                                 "is inconsistent: {}", e.what());
-  }
+  int n = strlen(line) + 1;
+  MPI_Bcast(&n,1,MPI_INT,0,world);
+  MPI_Bcast(line,n,MPI_CHAR,0,world);
+
+  sscanf(line,"%d %d %d",&procgrid[0],&procgrid[1],&procgrid[2]);
 
   int flag = 0;
   if (procgrid[0]*procgrid[1]*procgrid[2] != nprocs) flag = 1;
@@ -330,17 +321,8 @@ void ProcMap::custom_grid(char *cfile, int nprocs,
     for (int i = 0; i < nprocs; i++) {
       if (!fgets(line,MAXLINE,fp))
         error->one(FLERR,"Unexpected end of custom file");
-
-      try {
-        ValueTokenizer pmap(line);
-        cmap[i][0] = pmap.next_int();
-        cmap[i][1] = pmap.next_int();
-        cmap[i][2] = pmap.next_int();
-        cmap[i][3] = pmap.next_int();
-      } catch (TokenizerException &e) {
-        error->one(FLERR,"Processors custom grid file is "
-                                     "inconsistent: {}", e.what());
-      }
+      sscanf(line,"%d %d %d %d",
+             &cmap[i][0],&cmap[i][1],&cmap[i][2],&cmap[i][3]);
     }
     fclose(fp);
   }
@@ -675,7 +657,7 @@ void ProcMap::output(char *file, int *procgrid, int ***grid2proc)
   FILE *fp;
   if (me == 0) {
     fp = fopen(file,"w");
-    if (fp == nullptr) error->one(FLERR,"Cannot open processors output file");
+    if (fp == NULL) error->one(FLERR,"Cannot open processors output file");
     fprintf(fp,"LAMMPS mapping of processors to 3d grid\n");
     fprintf(fp,"partition = %d\n",universe->iworld+1);
     fprintf(fp,"Px Py Pz = %d %d %d\n",procgrid[0],procgrid[1],procgrid[2]);
@@ -735,7 +717,7 @@ void ProcMap::output(char *file, int *procgrid, int ***grid2proc)
 
 /* ----------------------------------------------------------------------
    generate all possible 3-integer factorizations of N
-   store them in factors if non-nullptr
+   store them in factors if non-NULL
    return # of factorizations
 ------------------------------------------------------------------------- */
 
@@ -829,7 +811,7 @@ int ProcMap::cull_other(int n, int **factors, int m,
 {
   int i = 0;
   while (i < n) {
-    if (other_style == Comm::MULTIPLE) {
+    if (other_style == MULTIPLE) {
       int flag = 0;
       if ((other_procgrid[0]/other_coregrid[0]) % factors[i][0]) flag = 1;
       if ((other_procgrid[1]/other_coregrid[1]) % factors[i][1]) flag = 1;

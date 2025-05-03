@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -18,43 +17,46 @@
                Miller et al., J Chem Phys. 116, 8649-8659 (2002)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
 #include "fix_rigid_nh_small.h"
-
+#include "math_extra.h"
 #include "atom.h"
-#include "comm.h"
 #include "compute.h"
 #include "domain.h"
-#include "error.h"
-#include "fix_deform.h"
-#include "force.h"
-#include "group.h"
-#include "kspace.h"
-#include "math_extra.h"
-#include "memory.h"
-#include "modify.h"
-#include "rigid_const.h"
 #include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "modify.h"
+#include "fix_deform.h"
+#include "group.h"
+#include "comm.h"
+#include "force.h"
+#include "kspace.h"
+#include "output.h"
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
 using namespace MathExtra;
-using namespace RigidConst;
+
+enum{NONE,XYZ,XY,YZ,XZ};     // same as in FixRigid
+enum{ISO,ANISO,TRICLINIC};   // same as in FixRigid
+
+#define EPSILON 1.0e-7
+
+enum{FULL_BODY,INITIAL,FINAL,FORCE_TORQUE,VCM_ANGMOM,XCM_MASS,ITENSOR,DOF};
 
 /* ---------------------------------------------------------------------- */
 
 FixRigidNHSmall::FixRigidNHSmall(LAMMPS *lmp, int narg, char **arg) :
-  FixRigidSmall(lmp, narg, arg), w(nullptr), wdti1(nullptr),
-  wdti2(nullptr), wdti4(nullptr), q_t(nullptr), q_r(nullptr), eta_t(nullptr),
-  eta_r(nullptr), eta_dot_t(nullptr), eta_dot_r(nullptr), f_eta_t(nullptr),
-  f_eta_r(nullptr), q_b(nullptr), eta_b(nullptr), eta_dot_b(nullptr),
-  f_eta_b(nullptr), rfix(nullptr), id_temp(nullptr), id_press(nullptr),
-  temperature(nullptr), pressure(nullptr)
+  FixRigidSmall(lmp, narg, arg), w(NULL), wdti1(NULL), 
+  wdti2(NULL), wdti4(NULL), q_t(NULL), q_r(NULL), eta_t(NULL), 
+  eta_r(NULL), eta_dot_t(NULL), eta_dot_r(NULL), f_eta_t(NULL), 
+  f_eta_r(NULL), q_b(NULL), eta_b(NULL), eta_dot_b(NULL), 
+  f_eta_b(NULL), rfix(NULL), id_temp(NULL), id_press(NULL), 
+  temperature(NULL), pressure(NULL)
 {
-  if (tstat_flag || pstat_flag) ecouple_flag = 1;
-
   // error checks
 
   if ((p_flag[0] == 1 && p_period[0] <= 0.0) ||
@@ -124,10 +126,6 @@ FixRigidNHSmall::FixRigidNHSmall(LAMMPS *lmp, int narg, char **arg) :
        p_period[0] != p_period[2]))
     error->all(FLERR,"Invalid fix rigid/small npt/nph command pressure settings");
 
-  if (p_flag[0]) box_change |= BOX_CHANGE_X;
-  if (p_flag[1]) box_change |= BOX_CHANGE_Y;
-  if (p_flag[2]) box_change |= BOX_CHANGE_Z;
-
   if ((tstat_flag && t_period <= 0.0) ||
       (p_flag[0] && p_period[0] <= 0.0) ||
       (p_flag[1] && p_period[1] <= 0.0) ||
@@ -163,7 +161,7 @@ FixRigidNHSmall::FixRigidNHSmall(LAMMPS *lmp, int narg, char **arg) :
   // rigid body pointers
 
   nrigidfix = 0;
-  rfix = nullptr;
+  rfix = NULL;
 
   vol0 = 0.0;
   t0 = 1.0;
@@ -171,8 +169,8 @@ FixRigidNHSmall::FixRigidNHSmall(LAMMPS *lmp, int narg, char **arg) :
   tcomputeflag = 0;
   pcomputeflag = 0;
 
-  id_temp = nullptr;
-  id_press = nullptr;
+  id_temp = NULL;
+  id_press = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -203,6 +201,8 @@ int FixRigidNHSmall::setmask()
 {
   int mask = 0;
   mask = FixRigidSmall::setmask();
+  if (tstat_flag || pstat_flag) mask |= THERMO_ENERGY;
+
   return mask;
 }
 
@@ -268,9 +268,9 @@ void FixRigidNHSmall::init()
 
     for (int i = 0; i < modify->nfix; i++)
       if (strcmp(modify->fix[i]->style,"deform") == 0) {
-        int *dimflag = ((FixDeform *) modify->fix[i])->dimflag;
-        if ((p_flag[0] && dimflag[0]) || (p_flag[1] && dimflag[1]) ||
-            (p_flag[2] && dimflag[2]))
+      	int *dimflag = ((FixDeform *) modify->fix[i])->dimflag;
+      	if ((p_flag[0] && dimflag[0]) || (p_flag[1] && dimflag[1]) ||
+      	    (p_flag[2] && dimflag[2]))
           error->all(FLERR,"Cannot use fix rigid npt/nph and fix deform on "
                      "same component of stress tensor");
       }
@@ -303,7 +303,7 @@ void FixRigidNHSmall::init()
 
     if (rfix) delete [] rfix;
     nrigidfix = 0;
-    rfix = nullptr;
+    rfix = NULL;
 
     for (int i = 0; i < modify->nfix; i++)
       if (modify->fix[i]->rigid_flag) nrigidfix++;
@@ -321,7 +321,35 @@ void FixRigidNHSmall::init()
 void FixRigidNHSmall::setup(int vflag)
 {
   FixRigidSmall::setup(vflag);
-  compute_dof();
+
+  // total translational and rotational degrees of freedom
+
+  nf_t = dimension * nlocal_body;
+  if (dimension == 3) {
+    nf_r = dimension * nlocal_body;
+    for (int ibody = 0; ibody < nlocal_body; ibody++) {
+      Body *b = &body[ibody];
+      for (int k = 0; k < dimension; k++)
+        if (fabs(b->inertia[k]) < EPSILON) nf_r--;
+    }
+  } else if (dimension == 2) {
+    nf_r = nlocal_body;
+    for (int ibody = 0; ibody < nlocal_body; ibody++) {
+      Body *b = &body[ibody];
+      if (fabs(b->inertia[2]) < EPSILON) nf_r--;
+    }
+  }
+
+  double nf[2], nfall[2];
+  nf[0] = nf_t;
+  nf[1] = nf_r;
+  MPI_Allreduce(nf,nfall,2,MPI_DOUBLE,MPI_SUM,world);
+  nf_t = nfall[0];
+  nf_r = nfall[1];
+
+  g_f = nf_t + nf_r;
+  onednft = 1.0 + (double)(dimension) / (double)g_f;
+  onednfr = (double) (dimension) / (double)g_f;
 
   double mbody[3];
   akin_t = akin_r = 0.0;
@@ -580,7 +608,6 @@ void FixRigidNHSmall::initial_integrate(int vflag)
 
   if (tstat_flag) {
     compute_temp_target();
-    if (dynamic) compute_dof();
     nhc_temp_integrate();
   }
 
@@ -593,7 +620,8 @@ void FixRigidNHSmall::initial_integrate(int vflag)
 
   // virial setup before call to set_xv
 
-  v_init(vflag);
+  if (vflag) v_setup(vflag);
+  else evflag = 0;
 
   // remap simulation box by 1/2 step
 
@@ -617,7 +645,7 @@ void FixRigidNHSmall::initial_integrate(int vflag)
 
 void FixRigidNHSmall::final_integrate()
 {
-  int ibody;
+  int i,ibody;
   double tmp,scale_t[3],scale_r;
   double dtfm;
   double mbody[3],tbody[3],fquat[4];
@@ -642,9 +670,80 @@ void FixRigidNHSmall::final_integrate()
     scale_r *= exp(-dtq * (pdim * mtk_term2));
   }
 
-  // late calculation of forces and torques (if requested)
+  // sum over atoms to get force and torque on rigid body
 
-  if (!earlyflag) compute_forces_and_torques();
+  double **x = atom->x;
+  double **f = atom->f;
+  int nlocal = atom->nlocal;
+
+  double dx,dy,dz;
+  double unwrap[3];
+  double *xcm,*fcm,*tcm;
+
+  for (ibody = 0; ibody < nlocal_body+nghost_body; ibody++) {
+    fcm = body[ibody].fcm;
+    fcm[0] = fcm[1] = fcm[2] = 0.0;
+    tcm = body[ibody].torque;
+    tcm[0] = tcm[1] = tcm[2] = 0.0;
+  }
+
+  for (i = 0; i < nlocal; i++) {
+    if (atom2body[i] < 0) continue;
+    Body *b = &body[atom2body[i]];
+
+    fcm = b->fcm;
+    fcm[0] += f[i][0];
+    fcm[1] += f[i][1];
+    fcm[2] += f[i][2];
+
+    domain->unmap(x[i],xcmimage[i],unwrap);
+    xcm = b->xcm;
+    dx = unwrap[0] - xcm[0];
+    dy = unwrap[1] - xcm[1];
+    dz = unwrap[2] - xcm[2];
+
+    tcm = b->torque;
+    tcm[0] += dy*f[i][2] - dz*f[i][1];
+    tcm[1] += dz*f[i][0] - dx*f[i][2];
+    tcm[2] += dx*f[i][1] - dy*f[i][0];
+  }
+
+  // extended particles add their torque to torque of body
+
+  if (extended) {
+    double **torque = atom->torque;
+
+    for (i = 0; i < nlocal; i++) {
+      if (atom2body[i] < 0) continue;
+
+      if (eflags[i] & TORQUE) {
+        tcm = body[atom2body[i]].torque;
+        tcm[0] += torque[i][0];
+        tcm[1] += torque[i][1];
+        tcm[2] += torque[i][2];
+      }
+    }
+  }
+
+  // reverse communicate fcm, torque of all bodies
+
+  commflag = FORCE_TORQUE;
+  comm->reverse_comm_fix(this,6);
+
+  // include Langevin thermostat forces and torques
+
+  if (langflag) {
+    for (int ibody = 0; ibody < nlocal_body; ibody++) {
+      fcm = body[ibody].fcm;
+      fcm[0] += langextra[ibody][0];
+      fcm[1] += langextra[ibody][1];
+      fcm[2] += langextra[ibody][2];
+      tcm = body[ibody].torque;
+      tcm[0] += langextra[ibody][3];
+      tcm[1] += langextra[ibody][4];
+      tcm[2] += langextra[ibody][5];
+    }
+  }
 
   // update vcm and angmom
   // include Langevin thermostat forces
@@ -706,7 +805,7 @@ void FixRigidNHSmall::final_integrate()
   if (pstat_flag) {
 
     akin_t = akin_r = 0.0;
-    for (ibody = 0; ibody < nlocal_body; ibody++) {
+    for (int ibody = 0; ibody < nlocal_body; ibody++) {
       Body *b = &body[ibody];
       akin_t += b->mass*(b->vcm[0]*b->vcm[0] + b->vcm[1]*b->vcm[1] +
         b->vcm[2]*b->vcm[2]);
@@ -754,8 +853,6 @@ void FixRigidNHSmall::final_integrate()
 
 void FixRigidNHSmall::nhc_temp_integrate()
 {
-  if (g_f == 0) return;
-
   int i,j,k;
   double kt,gfkt_t,gfkt_r,tmp,ms,s,s2;
 
@@ -857,7 +954,7 @@ void FixRigidNHSmall::nhc_press_integrate()
 
   double tb_mass = kt / (p_freq_max * p_freq_max);
   q_b[0] = dimension * dimension * tb_mass;
-  for (i = 1; i < p_chain; i++) {
+  for (int i = 1; i < p_chain; i++) {
     q_b[i] = tb_mass;
     f_eta_b[i] = q_b[i-1] * eta_dot_b[i-1] * eta_dot_b[i-1] - kt;
     f_eta_b[i] /= q_b[i];
@@ -942,7 +1039,7 @@ double FixRigidNHSmall::compute_scalar()
   ke_t = 0.0;
   ke_q = 0.0;
 
-  for (i = 0; i < nlocal_body; i++) {
+  for (int i = 0; i < nlocal_body; i++) {
     vcm = body[i].vcm;
     quat = body[i].quat;
     ke_t += body[i].mass * (vcm[0]*vcm[0] + vcm[1]*vcm[1] +
@@ -1150,8 +1247,6 @@ void FixRigidNHSmall::compute_press_target()
 
 void FixRigidNHSmall::nh_epsilon_dot()
 {
-  if (g_f == 0) return;
-
   int i;
   double volume,scale,f_epsilon;
 
@@ -1176,38 +1271,6 @@ void FixRigidNHSmall::nh_epsilon_dot()
   for (i = 0; i < 3; i++)
     if (p_flag[i]) mtk_term2 += epsilon_dot[i];
   mtk_term2 /= g_f;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixRigidNHSmall::compute_dof()
-{
-  // total translational and rotational degrees of freedom
-
-  nf_t = dimension * nlocal_body;
-  if (dimension == 3) {
-    nf_r = dimension * nlocal_body;
-    for (int ibody = 0; ibody < nlocal_body; ibody++) {
-      Body *b = &body[ibody];
-      for (int k = 0; k < dimension; k++)
-        if (fabs(b->inertia[k]) < EPSILON) nf_r--;
-    }
-  } else if (dimension == 2) {
-    nf_r = nlocal_body;
-    for (int ibody = 0; ibody < nlocal_body; ibody++) {
-      Body *b = &body[ibody];
-      if (fabs(b->inertia[2]) < EPSILON) nf_r--;
-    }
-  }
-
-  double nf[2], nfall[2];
-  nf[0] = nf_t;
-  nf[1] = nf_r;
-  MPI_Allreduce(nf,nfall,2,MPI_DOUBLE,MPI_SUM,world);
-  nf_t = nfall[0];
-  nf_r = nfall[1];
-
-  g_f = nf_t + nf_r;
 }
 
 /* ----------------------------------------------------------------------
@@ -1323,7 +1386,9 @@ int FixRigidNHSmall::modify_param(int narg, char **arg)
       tcomputeflag = 0;
     }
     delete [] id_temp;
-    id_temp = utils::strdup(arg[1]);
+    int n = strlen(arg[1]) + 1;
+    id_temp = new char[n];
+    strcpy(id_temp,arg[1]);
 
     int icompute = modify->find_compute(arg[1]);
     if (icompute < 0)
@@ -1355,7 +1420,9 @@ int FixRigidNHSmall::modify_param(int narg, char **arg)
       pcomputeflag = 0;
     }
     delete [] id_press;
-    id_press = utils::strdup(arg[1]);
+    int n = strlen(arg[1]) + 1;
+    id_press = new char[n];
+    strcpy(id_press,arg[1]);
 
     int icompute = modify->find_compute(arg[1]);
     if (icompute < 0) error->all(FLERR,"Could not find fix_modify pressure ID");
@@ -1366,7 +1433,7 @@ int FixRigidNHSmall::modify_param(int narg, char **arg)
     return 2;
   }
 
-  return FixRigidSmall::modify_param(narg,arg);
+  return 0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1441,3 +1508,4 @@ void FixRigidNHSmall::deallocate_order()
   delete [] wdti2;
   delete [] wdti4;
 }
+

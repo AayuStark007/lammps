@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,20 +11,20 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <string.h>
+#include <stdlib.h>
 #include "compute_pair_local.h"
-
 #include "atom.h"
-#include "error.h"
-#include "force.h"
-#include "memory.h"
-#include "neigh_list.h"
-#include "neigh_request.h"
-#include "neighbor.h"
-#include "pair.h"
 #include "update.h"
-
-#include <cmath>
-#include <cstring>
+#include "force.h"
+#include "pair.h"
+#include "neighbor.h"
+#include "neigh_request.h"
+#include "neigh_list.h"
+#include "group.h"
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 
@@ -38,12 +37,15 @@ enum{TYPE,RADIUS};
 
 ComputePairLocal::ComputePairLocal(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  pstyle(nullptr), pindex(nullptr), vlocal(nullptr), alocal(nullptr)
+  pstyle(NULL), pindex(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal compute pair/local command");
 
   local_flag = 1;
   nvalues = narg - 3;
+  if (nvalues == 1) size_local_cols = 0;
+  else size_local_cols = nvalues;
+
   pstyle = new int[nvalues];
   pindex = new int[nvalues];
 
@@ -74,7 +76,7 @@ ComputePairLocal::ComputePairLocal(LAMMPS *lmp, int narg, char **arg) :
 
   while (iarg < narg) {
     if (strcmp(arg[iarg],"cutoff") == 0) {
-      if (iarg+2 > narg)
+      if (iarg+2 > narg) 
         error->all(FLERR,"Illegal compute pair/local command");
       if (strcmp(arg[iarg+1],"type") == 0) cutstyle = TYPE;
       else if (strcmp(arg[iarg+1],"radius") == 0) cutstyle = RADIUS;
@@ -94,20 +96,15 @@ ComputePairLocal::ComputePairLocal(LAMMPS *lmp, int narg, char **arg) :
   for (int i = 0; i < nvalues; i++)
     if (pstyle[i] != DIST) singleflag = 1;
 
-  if (nvalues == 1) size_local_cols = 0;
-  else size_local_cols = nvalues;
-
   nmax = 0;
-  vlocal = nullptr;
-  alocal = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputePairLocal::~ComputePairLocal()
 {
-  memory->destroy(vlocal);
-  memory->destroy(alocal);
+  memory->destroy(vector);
+  memory->destroy(array);
   delete [] pstyle;
   delete [] pindex;
 }
@@ -116,7 +113,7 @@ ComputePairLocal::~ComputePairLocal()
 
 void ComputePairLocal::init()
 {
-  if (singleflag && force->pair == nullptr)
+  if (singleflag && force->pair == NULL)
     error->all(FLERR,"No pair style is defined for compute pair/local");
   if (singleflag && force->pair->single_enable == 0)
     error->all(FLERR,"Pair style does not support compute pair/local");
@@ -127,20 +124,16 @@ void ComputePairLocal::init()
                  " requested by compute pair/local");
 
   // need an occasional half neighbor list
-  // set size to same value as request made by force->pair
-  // this should enable it to always be a copy list (e.g. for granular pstyle)
 
   int irequest = neighbor->request(this,instance_me);
   neighbor->requests[irequest]->pair = 0;
   neighbor->requests[irequest]->compute = 1;
   neighbor->requests[irequest]->occasional = 1;
-  NeighRequest *pairrequest = neighbor->find_request((void *) force->pair);
-  if (pairrequest) neighbor->requests[irequest]->size = pairrequest->size;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputePairLocal::init_list(int /*id*/, NeighList *ptr)
+void ComputePairLocal::init_list(int id, NeighList *ptr)
 {
   list = ptr;
 }
@@ -261,8 +254,8 @@ int ComputePairLocal::compute_pairs(int flag)
           eng = pair->single(i,j,itype,jtype,rsq,factor_coul,factor_lj,fpair);
         else eng = fpair = 0.0;
 
-        if (nvalues == 1) ptr = &vlocal[m];
-        else ptr = alocal[m];
+        if (nvalues == 1) ptr = &vector[m];
+        else ptr = array[m];
 
         for (n = 0; n < nvalues; n++) {
           switch (pstyle[n]) {
@@ -302,18 +295,18 @@ int ComputePairLocal::compute_pairs(int flag)
 
 void ComputePairLocal::reallocate(int n)
 {
-  // grow vector_local or array_local
+  // grow vector or array and indices array
 
   while (nmax < n) nmax += DELTA;
 
   if (nvalues == 1) {
-    memory->destroy(vlocal);
-    memory->create(vlocal,nmax,"pair/local:vector_local");
-    vector_local = vlocal;
+    memory->destroy(vector);
+    memory->create(vector,nmax,"pair/local:vector");
+    vector_local = vector;
   } else {
-    memory->destroy(alocal);
-    memory->create(alocal,nmax,nvalues,"pair/local:array_local");
-    array_local = alocal;
+    memory->destroy(array);
+    memory->create(array,nmax,nvalues,"pair/local:array");
+    array_local = array;
   }
 }
 
@@ -323,6 +316,6 @@ void ComputePairLocal::reallocate(int n)
 
 double ComputePairLocal::memory_usage()
 {
-  double bytes = (double)nmax*nvalues * sizeof(double);
+  double bytes = nmax*nvalues * sizeof(double);
   return bytes;
 }

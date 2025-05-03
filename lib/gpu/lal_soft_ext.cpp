@@ -15,7 +15,7 @@
 
 #include <iostream>
 #include <cassert>
-#include <cmath>
+#include <math.h>
 
 #include "lal_soft.h"
 
@@ -55,7 +55,7 @@ int soft_gpu_init(const int ntypes, double **cutsq, double **host_prefactor,
   int init_ok=0;
   if (world_me==0)
     init_ok=SLMF.init(ntypes, cutsq, host_prefactor, host_cut,
-                      special_lj, inum, nall, max_nbors,
+                      special_lj, inum, nall, 300,
                       maxspecial, cell_size, gpu_split, screen);
 
   SLMF.device->world_barrier();
@@ -73,7 +73,7 @@ int soft_gpu_init(const int ntypes, double **cutsq, double **host_prefactor,
     }
     if (gpu_rank==i && world_me!=0)
       init_ok=SLMF.init(ntypes, cutsq, host_prefactor, host_cut,
-                        special_lj, inum, nall, max_nbors, maxspecial,
+                        special_lj, inum, nall, 300, maxspecial,
                         cell_size, gpu_split, screen);
 
     SLMF.device->gpu_barrier();

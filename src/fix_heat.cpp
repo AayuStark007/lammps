@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,22 +15,21 @@
    Contributing author: Paul Crozier (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "fix_heat.h"
-
 #include "atom.h"
 #include "domain.h"
-#include "error.h"
-#include "force.h"
-#include "group.h"
-#include "input.h"
-#include "memory.h"
-#include "modify.h"
 #include "region.h"
+#include "group.h"
+#include "force.h"
 #include "update.h"
+#include "modify.h"
+#include "input.h"
 #include "variable.h"
-
-#include <cmath>
-#include <cstring>
+#include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -41,7 +39,7 @@ enum{CONSTANT,EQUAL,ATOM};
 /* ---------------------------------------------------------------------- */
 
 FixHeat::FixHeat(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg),
-idregion(nullptr), hstr(nullptr), vheat(nullptr), vscale(nullptr)
+idregion(NULL), hstr(NULL), vheat(NULL), vscale(NULL)
 {
   if (narg < 4) error->all(FLERR,"Illegal fix heat command");
 
@@ -49,22 +47,24 @@ idregion(nullptr), hstr(nullptr), vheat(nullptr), vscale(nullptr)
   global_freq = 1;
   extscalar = 0;
 
-  nevery = utils::inumeric(FLERR,arg[3],false,lmp);
+  nevery = force->inumeric(FLERR,arg[3]);
   if (nevery <= 0) error->all(FLERR,"Illegal fix heat command");
 
-  hstr = nullptr;
+  hstr = NULL;
 
-  if (utils::strmatch(arg[4],"^v_")) {
-    hstr = utils::strdup(arg[4]+2);
+  if (strstr(arg[4],"v_") == arg[4]) {
+    int n = strlen(&arg[4][2]) + 1;
+    hstr = new char[n];
+    strcpy(hstr,&arg[4][2]);
   } else {
-    heat_input = utils::numeric(FLERR,arg[4],false,lmp);
+    heat_input = force->numeric(FLERR,arg[4]);
     hstyle = CONSTANT;
   }
 
   // optional args
 
   iregion = -1;
-
+  
   int iarg = 5;
   while (iarg < narg) {
     if (strcmp(arg[iarg],"region") == 0) {
@@ -72,7 +72,9 @@ idregion(nullptr), hstr(nullptr), vheat(nullptr), vscale(nullptr)
       iregion = domain->find_region(arg[iarg+1]);
       if (iregion == -1)
         error->all(FLERR,"Region ID for fix heat does not exist");
-      idregion = utils::strdup(arg[iarg+1]);
+      int n = strlen(arg[iarg+1]) + 1;
+      idregion = new char[n];
+      strcpy(idregion,arg[iarg+1]);
       iarg += 2;
     } else error->all(FLERR,"Illegal fix heat command");
   }
@@ -123,10 +125,6 @@ void FixHeat::init()
     else if (input->variable->atomstyle(hvar)) hstyle = ATOM;
     else error->all(FLERR,"Variable for fix heat is invalid style");
   }
-
-  // check for rigid bodies in region (done here for performance reasons)
-  if (iregion >= 0 && modify->check_rigid_region_overlap(groupbit,domain->regions[iregion]))
-    error->warning(FLERR,"Cannot apply fix heat to atoms in rigid bodies");
 
   // cannot have 0 atoms in group
 
@@ -190,7 +188,7 @@ void FixHeat::end_of_step()
   // vsub = velocity subtracted from each atom to preserve momentum
   // overall KE cannot go negative
 
-  Region *region = nullptr;
+  Region *region = NULL;
   if (iregion >= 0) {
     region = domain->regions[iregion];
     region->prematch();
@@ -214,7 +212,7 @@ void FixHeat::end_of_step()
           v[i][2] = scale*v[i][2] - vsub[2];
         }
     } else {
-      for (i = 0; i < nlocal; i++)
+      for (int i = 0; i < nlocal; i++)
         if (mask[i] & groupbit && region->match(x[i][0],x[i][1],x[i][2])) {
           v[i][0] = scale*v[i][0] - vsub[0];
           v[i][1] = scale*v[i][1] - vsub[1];
@@ -298,7 +296,6 @@ double FixHeat::compute_scalar()
 {
   double average_scale = scale;
   if (hstyle == ATOM) {
-    if (!vscale) return 1.0;
     double scale_sum = 0.0;
     int ncount = 0;
     int *mask = atom->mask;

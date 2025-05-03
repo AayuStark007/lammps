@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(temp/region,ComputeTempRegion);
-// clang-format on
+
+ComputeStyle(temp/region,ComputeTempRegion)
+
 #else
 
 #ifndef LMP_COMPUTE_TEMP_REGION_H
@@ -35,13 +35,10 @@ class ComputeTempRegion : public Compute {
 
   void dof_remove_pre();
   int dof_remove(int);
-
   void remove_bias(int, double *);
-  void remove_bias_thr(int, double *, double *);
   void remove_bias_all();
   void restore_bias(int, double *);
   void restore_bias_all();
-  void restore_bias_thr(int, double *, double *);
   double memory_usage();
 
  protected:
@@ -49,7 +46,7 @@ class ComputeTempRegion : public Compute {
   char *idregion;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

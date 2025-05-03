@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(orientorder/atom,ComputeOrientOrderAtom);
-// clang-format on
+
+ComputeStyle(orientorder/atom,ComputeOrientOrderAtom)
+
 #else
 
 #ifndef LMP_COMPUTE_ORIENTORDER_ATOM_H
@@ -28,40 +28,35 @@ class ComputeOrientOrderAtom : public Compute {
  public:
   ComputeOrientOrderAtom(class LAMMPS *, int, char **);
   ~ComputeOrientOrderAtom();
-  virtual void init();
+  void init();
   void init_list(int, class NeighList *);
-  virtual void compute_peratom();
+  void compute_peratom();
   double memory_usage();
-  double cutsq;
-  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
-  int *qlist;
-  int nqlist;
 
- protected:
-  int nmax, maxneigh, ncol, nnn;
+ private:
+  int nmax,maxneigh,ncol,nnn;
   class NeighList *list;
   double *distsq;
   int *nearest;
   double **rlist;
+  int *qlist;
+  int nqlist;
   int qmax;
   double **qnarray;
+  double cutsq;
   double **qnm_r;
   double **qnm_i;
 
   void select3(int, int, double *, int *, double **);
-  void calc_boop(double **rlist, int numNeighbors, double qn[], int nlist[], int nnlist);
+  void calc_boop(double **rlist, int numNeighbors, 
+		 double qn[], int nlist[], int nnlist);
   double dist(const double r[]);
 
   double polar_prefactor(int, int, double);
   double associated_legendre(int, int, double);
-
-  virtual void init_clebsch_gordan();
-  double *cglist;    // Clebsch-Gordan coeffs
-  int idxcg_max;
-  int chunksize;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -76,7 +71,7 @@ command-line option when running LAMMPS to see the offending line.
 
 E: Compute orientorder/atom requires a pair style be defined
 
-Self-explanatory.
+Self-explantory.
 
 E: Compute orientorder/atom cutoff is longer than pairwise cutoff
 

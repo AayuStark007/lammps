@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef FIX_CLASS
-// clang-format off
-FixStyle(wall/gran,FixWallGran);
-// clang-format on
+
+FixStyle(wall/gran,FixWallGran)
+
 #else
 
 #ifndef LMP_FIX_WALL_GRAN_H
@@ -26,9 +26,6 @@ namespace LAMMPS_NS {
 
 class FixWallGran : public Fix {
  public:
-  enum { HOOKE, HOOKE_HISTORY, HERTZ_HISTORY, GRANULAR };
-  enum { NORMAL_NONE, NORMAL_HOOKE, NORMAL_HERTZ, HERTZ_MATERIAL, DMT, JKR };
-
   FixWallGran(class LAMMPS *, int, char **);
   virtual ~FixWallGran();
   int setmask();
@@ -49,73 +46,45 @@ class FixWallGran : public Fix {
   virtual int maxsize_restart();
   void reset_dt();
 
-  void hooke(double, double, double, double, double *, double *, double *, double *, double *,
-             double, double, double *);
-  void hooke_history(double, double, double, double, double *, double *, double *, double *,
-                     double *, double, double, double *, double *);
-  void hertz_history(double, double, double, double, double *, double, double *, double *, double *,
-                     double *, double, double, double *, double *);
-  void granular(double, double, double, double, double *, double, double *, double *, double *,
-                double *, double, double, double *, double *);
-
-  double pulloff_distance(double);
+  void hooke(double, double, double, double, double *,
+             double *, double *, double *, double *, double, double);
+  void hooke_history(double, double, double, double, double *,
+                     double *, double *, double *, double *, double, double,
+                     double *);
+  void hertz_history(double, double, double, double, double *, double,
+                     double *, double *, double *, double *, double, double,
+                     double *);
+  void bonded_history(double, double, double, double, double *, double,
+                       double *, double *, double *, double *, double, double,
+                       double *);
 
  protected:
-  int wallstyle, wiggle, wshear, axis;
-  int pairstyle, nlevels_respa;
+  int wallstyle,wiggle,wshear,axis;
+  int pairstyle,nlevels_respa;
   bigint time_origin;
-  double kn, kt, gamman, gammat, xmu;
-
-  // for granular model choices
-  int normal_model, damping_model;
-  int tangential_model, roll_model, twist_model;
-  int limit_damping;
-
-  // history flags
-  int normal_history, tangential_history, roll_history, twist_history;
-
-  // indices of history entries
-  int normal_history_index;
-  int tangential_history_index;
-  int roll_history_index;
-  int twist_history_index;
-
-  // material coefficients
-  double Emod, poiss, Gmod;
-
-  // contact model coefficients
-  double normal_coeffs[4];
-  double tangential_coeffs[3];
-  double roll_coeffs[3];
-  double twist_coeffs[3];
-
-  double lo, hi, cylradius;
-  double amplitude, period, omega, vshear;
+  double kn,kt,gamman,gammat,xmu;
+  double E,G,SurfEnergy;
+  double lo,hi,cylradius;
+  double amplitude,period,omega,vshear;
   double dt;
   char *idregion;
 
-  int use_history;       // if particle/wall interaction stores history
-  int history_update;    // flag for whether shear history is updated
-  int size_history;      // # of shear history values per contact
+  int history;       // if particle/wall interaction stores history
+  int shearupdate;   // flag for whether shear history is updated
+  int sheardim;      // # of shear history values per contact
 
   // shear history for single contact per particle
 
-  double **history_one;
+  double **shearone;
 
   // rigid body masses for use in granular interactions
 
-  class Fix *fix_rigid;    // ptr to rigid body fix, null pointer if none
+  class Fix *fix_rigid;    // ptr to rigid body fix, NULL if none
   double *mass_rigid;      // rigid mass for owned+ghost atoms
   int nmax;                // allocated size of mass_rigid
-
-  // store particle interactions
-
-  int store;
-
-  void clear_stored_contacts();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -131,10 +100,6 @@ command-line option when running LAMMPS to see the offending line.
 E: Fix wall/gran requires atom style sphere
 
 Self-explanatory.
-
-E: Invalid fix wall/gran interaction style
-
-UNDOCUMENTED
 
 E: Cannot use wall in periodic dimension
 
@@ -152,11 +117,7 @@ E: Invalid shear direction for fix wall/gran
 
 Self-explanatory.
 
-E: Cannot wiggle or shear with fix wall/gran/region
-
-UNDOCUMENTED
-
-U: Fix wall/gran is incompatible with Pair style
+E: Fix wall/gran is incompatible with Pair style
 
 Must use a granular pair style to define the parameters needed for
 this fix.

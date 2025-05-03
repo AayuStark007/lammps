@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,16 +11,16 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "fix_print.h"
-
-#include "error.h"
-#include "input.h"
-#include "memory.h"
-#include "modify.h"
 #include "update.h"
+#include "input.h"
+#include "modify.h"
 #include "variable.h"
-
-#include <cstring>
+#include "memory.h"
+#include "error.h"
+#include "force.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -30,30 +29,27 @@ using namespace FixConst;
 
 FixPrint::FixPrint(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  fp(nullptr), text(nullptr), copy(nullptr), work(nullptr), var_print(nullptr)
+  fp(NULL), string(NULL), copy(NULL), work(NULL)
 {
   if (narg < 5) error->all(FLERR,"Illegal fix print command");
-  if (utils::strmatch(arg[3],"^v_")) {
-    var_print = utils::strdup(arg[3]+2);
-    nevery = 1;
-  } else {
-    nevery = utils::inumeric(FLERR,arg[3],false,lmp);
-    if (nevery <= 0) error->all(FLERR,"Illegal fix print command");
-  }
+  nevery = force->inumeric(FLERR,arg[3]);
+  if (nevery <= 0) error->all(FLERR,"Illegal fix print command");
 
   MPI_Comm_rank(world,&me);
 
-  text = utils::strdup(arg[4]);
-  int n = strlen(text)+1;
+  int n = strlen(arg[4]) + 1;
+  string = new char[n];
+  strcpy(string,arg[4]);
+
   copy = (char *) memory->smalloc(n*sizeof(char),"fix/print:copy");
   work = (char *) memory->smalloc(n*sizeof(char),"fix/print:work");
   maxcopy = maxwork = n;
 
   // parse optional args
 
-  fp = nullptr;
+  fp = NULL;
   screenflag = 1;
-  char *title = nullptr;
+  char *title = NULL;
 
   int iarg = 5;
   while (iarg < narg) {
@@ -62,9 +58,11 @@ FixPrint::FixPrint(LAMMPS *lmp, int narg, char **arg) :
       if (me == 0) {
         if (strcmp(arg[iarg],"file") == 0) fp = fopen(arg[iarg+1],"w");
         else fp = fopen(arg[iarg+1],"a");
-        if (fp == nullptr)
-          error->one(FLERR,"Cannot open fix print file {}: {}",
-                                       arg[iarg+1], utils::getsyserror());
+        if (fp == NULL) {
+          char str[128];
+          sprintf(str,"Cannot open fix print file %s",arg[iarg+1]);
+          error->one(FLERR,str);
+        }
       }
       iarg += 2;
     } else if (strcmp(arg[iarg],"screen") == 0) {
@@ -76,7 +74,9 @@ FixPrint::FixPrint(LAMMPS *lmp, int narg, char **arg) :
     } else if (strcmp(arg[iarg],"title") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix print command");
       delete [] title;
-      title = utils::strdup(arg[iarg+1]);
+      int n = strlen(arg[iarg+1]) + 1;
+      title = new char[n];
+      strcpy(title,arg[iarg+1]);
       iarg += 2;
     } else error->all(FLERR,"Illegal fix print command");
   }
@@ -89,14 +89,20 @@ FixPrint::FixPrint(LAMMPS *lmp, int narg, char **arg) :
   }
 
   delete [] title;
+
+  // add nfirst to all computes that store invocation times
+  // since don't know a priori which are invoked via variables by this fix
+  // once in end_of_step() can set timestep for ones actually invoked
+
+  const bigint nfirst = (update->ntimestep/nevery)*nevery + nevery;
+  modify->addstep_compute_all(nfirst);
 }
 
 /* ---------------------------------------------------------------------- */
 
 FixPrint::~FixPrint()
 {
-  delete [] text;
-  delete [] var_print;
+  delete [] string;
   memory->sfree(copy);
   memory->sfree(work);
 
@@ -114,70 +120,25 @@ int FixPrint::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixPrint::init()
-{
-  if (var_print) {
-    ivar_print = input->variable->find(var_print);
-    if (ivar_print < 0)
-      error->all(FLERR,"Variable name for fix print timestep does not exist");
-    if (!input->variable->equalstyle(ivar_print))
-      error->all(FLERR,"Variable for fix print timestep is invalid style");
-    next_print = static_cast<bigint>
-      (input->variable->compute_equal(ivar_print));
-    if (next_print <= update->ntimestep)
-      error->all(FLERR,"Fix print timestep variable returned a bad timestep");
-  } else {
-    if (update->ntimestep % nevery)
-      next_print = (update->ntimestep/nevery)*nevery + nevery;
-    else
-      next_print = update->ntimestep;
-  }
-
-  // add next_print to all computes that store invocation times
-  // since don't know a priori which are invoked via variables by this fix
-  // once in end_of_step() can set timestep for ones actually invoked
-
-  modify->addstep_compute_all(next_print);
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixPrint::setup(int /* vflag */)
-{
-  end_of_step();
-}
-
-/* ---------------------------------------------------------------------- */
-
 void FixPrint::end_of_step()
 {
-  if (update->ntimestep != next_print) return;
-
-  // make a copy of text to work on
+  // make a copy of string to work on
   // substitute for $ variables (no printing)
   // append a newline and print final copy
   // variable evaluation may invoke computes so wrap with clear/add
 
   modify->clearstep_compute();
 
-  strcpy(copy,text);
+  strcpy(copy,string);
   input->substitute(copy,work,maxcopy,maxwork,0);
 
-  if (var_print) {
-    next_print = static_cast<bigint>
-      (input->variable->compute_equal(ivar_print));
-    if (next_print <= update->ntimestep)
-      error->all(FLERR,"Fix print timestep variable returned a bad timestep");
-  } else {
-    next_print = (update->ntimestep/nevery)*nevery + nevery;
-  }
-
-  modify->addstep_compute(next_print);
+  modify->addstep_compute(update->ntimestep + nevery);
 
   if (me == 0) {
-    if (screenflag) utils::logmesg(lmp,std::string(copy) + "\n");
+    if (screenflag && screen) fprintf(screen,"%s\n",copy);
+    if (screenflag && logfile) fprintf(logfile,"%s\n",copy);
     if (fp) {
-      fmt::print(fp,"{}\n",copy);
+      fprintf(fp,"%s\n",copy);
       fflush(fp);
     }
   }

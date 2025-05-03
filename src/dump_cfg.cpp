@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -14,20 +13,27 @@
 
 /* ----------------------------------------------------------------------
    Contributing author: Liang Wan (Chinese Academy of Sciences)
-        Memory efficiency improved by Ray Shan (Sandia)
+   	Memory efficiency improved by Ray Shan (Sandia)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "dump_cfg.h"
-
-#include "arg_info.h"
 #include "atom.h"
 #include "domain.h"
+#include "comm.h"
+#include "modify.h"
+#include "compute.h"
+#include "input.h"
+#include "fix.h"
+#include "variable.h"
 #include "memory.h"
 #include "error.h"
 
-#include <cstring>
-
 using namespace LAMMPS_NS;
+
+enum{INT,DOUBLE,STRING,BIGINT};   // same as in DumpCustom
 
 #define UNWRAPEXPAND 10.0
 #define ONEFIELD 32
@@ -36,7 +42,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 DumpCFG::DumpCFG(LAMMPS *lmp, int narg, char **arg) :
-  DumpCustom(lmp, narg, arg), auxname(nullptr)
+  DumpCustom(lmp, narg, arg), auxname(NULL)
 {
   multifile_override = 0;
 
@@ -67,18 +73,25 @@ DumpCFG::DumpCFG(LAMMPS *lmp, int narg, char **arg) :
   // convert 'X_ID[m]' (X=c,f,v) to 'X_ID_m'
 
   if (nfield > 5) auxname = new char*[nfield];
-  else auxname = nullptr;
+  else auxname = NULL;
 
   int i = 0;
   for (int iarg = 5; iarg < nfield; iarg++, i++) {
-    ArgInfo argi(earg[iarg],ArgInfo::COMPUTE|ArgInfo::FIX|ArgInfo::VARIABLE
-                 |ArgInfo::DNAME|ArgInfo::INAME);
+    if ((strncmp(earg[iarg],"c_",2) == 0 ||
+         strncmp(earg[iarg],"f_",2) == 0 ||
+         strncmp(earg[iarg],"v_",2) == 0) && strchr(earg[iarg],'[')) {
+      char *ptr = strchr(earg[iarg],'[');
+      char *ptr2 = strchr(ptr,']');
+      auxname[i] = new char[strlen(earg[iarg])];
+      *ptr = '\0';
+      *ptr2 = '\0';
+      strcpy(auxname[i],earg[iarg]);
+      strcat(auxname[i],"_");
+      strcat(auxname[i],ptr+1);
 
-    if (argi.get_dim() == 1) {
-      std::string newarg = fmt::format("{}_{}_{}", earg[iarg][0], argi.get_name(), argi.get_index1());
-      auxname[i] = utils::strdup(newarg);
     } else {
-      auxname[i] = utils::strdup(earg[iarg]);
+      auxname[i] = new char[strlen(earg[iarg]) + 1];
+      strcpy(auxname[i],earg[iarg]);
     }
   }
 }
@@ -123,7 +136,9 @@ void DumpCFG::write_header(bigint n)
   if (atom->peri_flag) scale = atom->pdscale;
   else if (unwrapflag == 1) scale = UNWRAPEXPAND;
 
-  fprintf(fp,"Number of particles = " BIGINT_FORMAT "\n", n);
+  char str[64];
+  sprintf(str,"Number of particles = %s\n",BIGINT_FORMAT);
+  fprintf(fp,str,n);
   fprintf(fp,"A = %g Angstrom (basic length-scale)\n",scale);
   fprintf(fp,"H0(1,1) = %g A\n",domain->xprd);
   fprintf(fp,"H0(1,2) = 0 A \n");
@@ -162,19 +177,19 @@ int DumpCFG::convert_string(int n, double *mybuf)
 
       for (j = 0; j < size_one; j++) {
         if (j == 0) {
-          offset += sprintf(&sbuf[offset],"%f \n",mybuf[m]);
+	  offset += sprintf(&sbuf[offset],"%f \n",mybuf[m]);
         } else if (j == 1) {
-          offset += sprintf(&sbuf[offset],"%s \n",typenames[(int) mybuf[m]]);
+	  offset += sprintf(&sbuf[offset],"%s \n",typenames[(int) mybuf[m]]);
         } else if (j >= 2) {
-          if (vtype[j] == Dump::INT)
+          if (vtype[j] == INT)
             offset +=
               sprintf(&sbuf[offset],vformat[j],static_cast<int> (mybuf[m]));
-          else if (vtype[j] == Dump::DOUBLE)
+          else if (vtype[j] == DOUBLE)
             offset += sprintf(&sbuf[offset],vformat[j],mybuf[m]);
-          else if (vtype[j] == Dump::STRING)
+          else if (vtype[j] == STRING)
             offset +=
               sprintf(&sbuf[offset],vformat[j],typenames[(int) mybuf[m]]);
-          else if (vtype[j] == Dump::BIGINT)
+          else if (vtype[j] == BIGINT)
             offset +=
               sprintf(&sbuf[offset],vformat[j],static_cast<bigint> (mybuf[m]));
         }
@@ -194,22 +209,22 @@ int DumpCFG::convert_string(int n, double *mybuf)
 
       for (j = 0; j < size_one; j++) {
         if (j == 0) {
-          offset += sprintf(&sbuf[offset],"%f \n",mybuf[m]);
+	  offset += sprintf(&sbuf[offset],"%f \n",mybuf[m]);
         } else if (j == 1) {
-          offset += sprintf(&sbuf[offset],"%s \n",typenames[(int) mybuf[m]]);
+	  offset += sprintf(&sbuf[offset],"%s \n",typenames[(int) mybuf[m]]);
         } else if (j >= 2 && j <= 4) {
           unwrap_coord = (mybuf[m] - 0.5)/UNWRAPEXPAND + 0.5;
           offset += sprintf(&sbuf[offset],vformat[j],unwrap_coord);
-        } else if (j >= 5) {
-          if (vtype[j] == Dump::INT)
+        } else if (j >= 5 ) {
+          if (vtype[j] == INT)
             offset +=
               sprintf(&sbuf[offset],vformat[j],static_cast<int> (mybuf[m]));
-          else if (vtype[j] == Dump::DOUBLE)
+          else if (vtype[j] == DOUBLE)
             offset += sprintf(&sbuf[offset],vformat[j],mybuf[m]);
-          else if (vtype[j] == Dump::STRING)
+          else if (vtype[j] == STRING)
             offset +=
               sprintf(&sbuf[offset],vformat[j],typenames[(int) mybuf[m]]);
-          else if (vtype[j] == Dump::BIGINT)
+          else if (vtype[j] == BIGINT)
             offset +=
               sprintf(&sbuf[offset],vformat[j],static_cast<bigint> (mybuf[m]));
         }
@@ -251,13 +266,13 @@ void DumpCFG::write_lines(int n, double *mybuf)
         } else if (j == 1) {
           fprintf(fp,"%s \n",typenames[(int) mybuf[m]]);
         } else if (j >= 2) {
-          if (vtype[j] == Dump::INT)
+          if (vtype[j] == INT)
             fprintf(fp,vformat[j],static_cast<int> (mybuf[m]));
-          else if (vtype[j] == Dump::DOUBLE)
+          else if (vtype[j] == DOUBLE)
             fprintf(fp,vformat[j],mybuf[m]);
-          else if (vtype[j] == Dump::STRING)
+          else if (vtype[j] == STRING)
             fprintf(fp,vformat[j],typenames[(int) mybuf[m]]);
-          else if (vtype[j] == Dump::BIGINT)
+          else if (vtype[j] == BIGINT)
             fprintf(fp,vformat[j],static_cast<bigint> (mybuf[m]));
         }
         m++;
@@ -276,14 +291,14 @@ void DumpCFG::write_lines(int n, double *mybuf)
         } else if (j >= 2 && j <= 4) {
           unwrap_coord = (mybuf[m] - 0.5)/UNWRAPEXPAND + 0.5;
           fprintf(fp,vformat[j],unwrap_coord);
-        } else if (j >= 5) {
-          if (vtype[j] == Dump::INT)
+        } else if (j >= 5 ) {
+          if (vtype[j] == INT)
             fprintf(fp,vformat[j],static_cast<int> (mybuf[m]));
-          else if (vtype[j] == Dump::DOUBLE)
+          else if (vtype[j] == DOUBLE)
             fprintf(fp,vformat[j],mybuf[m]);
-          else if (vtype[j] == Dump::STRING)
+          else if (vtype[j] == STRING)
             fprintf(fp,vformat[j],typenames[(int) mybuf[m]]);
-          else if (vtype[j] == Dump::BIGINT)
+          else if (vtype[j] == BIGINT)
             fprintf(fp,vformat[j],static_cast<bigint> (mybuf[m]));
         }
         m++;

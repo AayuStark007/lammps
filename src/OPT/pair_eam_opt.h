@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-// clang-format off
-PairStyle(eam/opt,PairEAMOpt);
-// clang-format on
+
+PairStyle(eam/opt,PairEAMOpt)
+
 #else
 
 #ifndef LMP_PAIR_EAM_OPT_H
@@ -33,10 +33,10 @@ class PairEAMOpt : virtual public PairEAM {
   void compute(int, int);
 
  private:
-  template <int EVFLAG, int EFLAG, int NEWTON_PAIR> void eval();
+  template < int EVFLAG, int EFLAG, int NEWTON_PAIR > void eval();
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,17 +15,18 @@
    Contributing author: Stan Moore (SNL)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <stdlib.h>
 #include "dihedral_opls_kokkos.h"
-
 #include "atom_kokkos.h"
-#include "atom_masks.h"
 #include "comm.h"
-#include "error.h"
-#include "force.h"
-#include "memory_kokkos.h"
 #include "neighbor_kokkos.h"
-
-#include <cmath>
+#include "domain.h"
+#include "force.h"
+#include "update.h"
+#include "memory.h"
+#include "error.h"
+#include "atom_masks.h"
 
 using namespace LAMMPS_NS;
 
@@ -48,8 +48,6 @@ DihedralOPLSKokkos<DeviceType>::DihedralOPLSKokkos(LAMMPS *lmp) : DihedralOPLS(l
   k_warning_flag = DAT::tdual_int_scalar("Dihedral:warning_flag");
   d_warning_flag = k_warning_flag.view<DeviceType>();
   h_warning_flag = k_warning_flag.h_view;
-
-  centroidstressflag = CENTROID_NOTAVAIL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -58,8 +56,8 @@ template<class DeviceType>
 DihedralOPLSKokkos<DeviceType>::~DihedralOPLSKokkos()
 {
   if (!copymode) {
-    memoryKK->destroy_kokkos(k_eatom,eatom);
-    memoryKK->destroy_kokkos(k_vatom,vatom);
+    memory->destroy_kokkos(k_eatom,eatom);
+    memory->destroy_kokkos(k_vatom,vatom);
   }
 }
 
@@ -71,25 +69,29 @@ void DihedralOPLSKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
   eflag = eflag_in;
   vflag = vflag_in;
 
-  ev_init(eflag,vflag,0);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 
   // reallocate per-atom arrays if necessary
 
   if (eflag_atom) {
-    memoryKK->destroy_kokkos(k_eatom,eatom);
-    memoryKK->create_kokkos(k_eatom,eatom,maxeatom,"dihedral:eatom");
-    d_eatom = k_eatom.view<DeviceType>();
+    memory->destroy_kokkos(k_eatom,eatom);
+    memory->create_kokkos(k_eatom,eatom,maxeatom,"dihedral:eatom");
+    d_eatom = k_eatom.d_view;
   }
   if (vflag_atom) {
-    memoryKK->destroy_kokkos(k_vatom,vatom);
-    memoryKK->create_kokkos(k_vatom,vatom,maxvatom,"dihedral:vatom");
-    d_vatom = k_vatom.view<DeviceType>();
+    memory->destroy_kokkos(k_vatom,vatom);
+    memory->create_kokkos(k_vatom,vatom,maxvatom,6,"dihedral:vatom");
+    d_vatom = k_vatom.d_view;
   }
 
+  atomKK->sync(execution_space,datamask_read);
   k_k1.template sync<DeviceType>();
   k_k2.template sync<DeviceType>();
   k_k3.template sync<DeviceType>();
   k_k4.template sync<DeviceType>();
+  if (eflag || vflag) atomKK->modified(execution_space,datamask_modify);
+  else atomKK->modified(execution_space,F_MASK);
 
   x = atomKK->k_x.view<DeviceType>();
   f = atomKK->k_f.view<DeviceType>();
@@ -122,13 +124,14 @@ void DihedralOPLSKokkos<DeviceType>::compute(int eflag_in, int vflag_in)
       Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagDihedralOPLSCompute<0,0> >(0,ndihedrallist),*this);
     }
   }
+  DeviceType::fence();
 
   // error check
 
   k_warning_flag.template modify<DeviceType>();
   k_warning_flag.template sync<LMPHostType>();
   if (h_warning_flag())
-    error->warning(FLERR,"Dihedral problem");
+    error->warning(FLERR,"Dihedral problem",0);
 
   if (eflag_global) energy += ev.evdwl;
   if (vflag_global) {
@@ -159,7 +162,7 @@ KOKKOS_INLINE_FUNCTION
 void DihedralOPLSKokkos<DeviceType>::operator()(TagDihedralOPLSCompute<NEWTON_BOND,EVFLAG>, const int &n, EV_FLOAT& ev) const {
 
   // The f array is atomic
-  Kokkos::View<F_FLOAT*[3], typename DAT::t_f_array::array_layout,typename KKDevice<DeviceType>::value,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > a_f = f;
+  Kokkos::View<F_FLOAT*[3], typename DAT::t_f_array::array_layout,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > a_f = f;
 
   const int i1 = dihedrallist(n,0);
   const int i2 = dihedrallist(n,1);
@@ -349,10 +352,10 @@ void DihedralOPLSKokkos<DeviceType>::allocate()
   k_k3 = DAT::tdual_ffloat_1d("DihedralOPLS::k3",n+1);
   k_k4 = DAT::tdual_ffloat_1d("DihedralOPLS::k4",n+1);
 
-  d_k1 = k_k1.template view<DeviceType>();
-  d_k2 = k_k2.template view<DeviceType>();
-  d_k3 = k_k3.template view<DeviceType>();
-  d_k4 = k_k4.template view<DeviceType>();
+  d_k1 = k_k1.d_view;
+  d_k2 = k_k2.d_view;
+  d_k3 = k_k3.d_view;
+  d_k4 = k_k4.d_view;
 }
 
 /* ----------------------------------------------------------------------
@@ -363,29 +366,6 @@ template<class DeviceType>
 void DihedralOPLSKokkos<DeviceType>::coeff(int narg, char **arg)
 {
   DihedralOPLS::coeff(narg, arg);
-
-  int n = atom->ndihedraltypes;
-  for (int i = 1; i <= n; i++) {
-    k_k1.h_view[i] = k1[i];
-    k_k2.h_view[i] = k2[i];
-    k_k3.h_view[i] = k3[i];
-    k_k4.h_view[i] = k4[i];
-  }
-
-  k_k1.template modify<LMPHostType>();
-  k_k2.template modify<LMPHostType>();
-  k_k3.template modify<LMPHostType>();
-  k_k4.template modify<LMPHostType>();
-}
-
-/* ----------------------------------------------------------------------
-   proc 0 reads coeffs from restart file, bcasts them
-------------------------------------------------------------------------- */
-
-template<class DeviceType>
-void DihedralOPLSKokkos<DeviceType>::read_restart(FILE *fp)
-{
-  DihedralOPLS::read_restart(fp);
 
   int n = atom->ndihedraltypes;
   for (int i = 1; i <= n; i++) {
@@ -421,8 +401,8 @@ void DihedralOPLSKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int i1, const 
   F_FLOAT v[6];
 
   // The eatom and vatom arrays are atomic
-  Kokkos::View<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,typename KKDevice<DeviceType>::value,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_eatom = k_eatom.view<DeviceType>();
-  Kokkos::View<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,typename KKDevice<DeviceType>::value,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_vatom = k_vatom.view<DeviceType>();
+  Kokkos::View<E_FLOAT*, typename DAT::t_efloat_1d::array_layout,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_eatom = k_eatom.view<DeviceType>();
+  Kokkos::View<F_FLOAT*[6], typename DAT::t_virial_array::array_layout,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic|Kokkos::Unmanaged> > v_vatom = k_vatom.view<DeviceType>();
 
   if (eflag_either) {
     if (eflag_global) {
@@ -537,7 +517,7 @@ void DihedralOPLSKokkos<DeviceType>::ev_tally(EV_FLOAT &ev, const int i1, const 
 
 namespace LAMMPS_NS {
 template class DihedralOPLSKokkos<LMPDeviceType>;
-#ifdef LMP_KOKKOS_GPU
+#ifdef KOKKOS_HAVE_CUDA
 template class DihedralOPLSKokkos<LMPHostType>;
 #endif
 }

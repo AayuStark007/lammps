@@ -14,16 +14,13 @@
  ***************************************************************************/
 
 #include "lal_answer.h"
-#if (LAL_USE_OMP == 1)
-#include <omp.h>
-#endif
 
-namespace LAMMPS_AL {
+using namespace LAMMPS_AL;
 #define AnswerT Answer<numtyp,acctyp>
 
 template <class numtyp, class acctyp>
 AnswerT::Answer() : _allocated(false),_eflag(false),_vflag(false),
-                    _inum(0),_ilist(nullptr),_newton(false) {
+                            _inum(0),_ilist(NULL),_newton(false) {
 }
 
 template <class numtyp, class acctyp>
@@ -59,7 +56,7 @@ bool AnswerT::alloc(const int inum) {
 
 template <class numtyp, class acctyp>
 bool AnswerT::init(const int inum, const bool charge, const bool rot,
-                   UCL_Device &devi) {
+                       UCL_Device &devi) {
   clear();
 
   bool success=true;
@@ -83,10 +80,6 @@ bool AnswerT::init(const int inum, const bool charge, const bool rot,
   time_answer.zero();
   _time_cast=0.0;
   _time_cpu_idle=0.0;
-
-  success=success && (error_flag.alloc(1,*dev,UCL_READ_WRITE,
-                                        UCL_WRITE_ONLY)==UCL_SUCCESS);
-  if (success) error_flag.zero();
 
   return success && alloc(ef_inum);
 }
@@ -118,7 +111,6 @@ bool AnswerT::add_fields(const bool charge, const bool rot) {
 template <class numtyp, class acctyp>
 void AnswerT::clear() {
   _gpu_bytes=0;
-  error_flag.clear();
   if (!_allocated)
     return;
   _allocated=false;
@@ -127,7 +119,7 @@ void AnswerT::clear() {
   engv.clear();
   time_answer.clear();
   _inum=0;
-  _ilist=nullptr;
+  _ilist=NULL;
   _eflag=false;
   _vflag=false;
 }
@@ -146,21 +138,12 @@ double AnswerT::host_memory_usage() const {
 
 template <class numtyp, class acctyp>
 void AnswerT::copy_answers(const bool eflag, const bool vflag,
-                           const bool ef_atom, const bool vf_atom,
-                           const int red_blocks) {
+                               const bool ef_atom, const bool vf_atom) {
   time_answer.start();
   _eflag=eflag;
   _vflag=vflag;
   _ef_atom=ef_atom;
   _vf_atom=vf_atom;
-  #ifdef LAL_NO_BLOCK_REDUCE
-  _ev_stride=_inum;
-  #else
-  if (ef_atom || vf_atom)
-    _ev_stride=_inum;
-  else
-    _ev_stride=red_blocks;
-  #endif
 
   int csize=_ev_fields;
   if (!eflag)
@@ -169,24 +152,20 @@ void AnswerT::copy_answers(const bool eflag, const bool vflag,
     csize-=6;
 
   if (csize>0)
-    engv.update_host(_ev_stride*csize,true);
+    engv.update_host(_inum*csize,true);
   if (_rot)
     force.update_host(_inum*4*2,true);
   else
     force.update_host(_inum*4,true);
   time_answer.stop();
-
-  #ifndef GERYON_OCL_FLUSH
-  force.flush();
-  #endif
 }
 
 template <class numtyp, class acctyp>
 void AnswerT::copy_answers(const bool eflag, const bool vflag,
-                           const bool ef_atom, const bool vf_atom,
-                           int *ilist, const int red_blocks) {
+                               const bool ef_atom, const bool vf_atom,
+                               int *ilist) {
   _ilist=ilist;
-  copy_answers(eflag,vflag,ef_atom,vf_atom,red_blocks);
+  copy_answers(eflag,vflag,ef_atom,vf_atom);
 }
 
 template <class numtyp, class acctyp>
@@ -198,29 +177,24 @@ double AnswerT::energy_virial(double *eatom, double **vatom,
   double evdwl=0.0;
   int vstart=0;
   if (_eflag) {
-    #if (LAL_USE_OMP_SIMD == 1)
-    #pragma omp simd reduction(+:evdwl)
-    #endif
-    for (int i=0; i<_ev_stride; i++)
+    for (int i=0; i<_inum; i++)
       evdwl+=engv[i];
-    if (_ef_atom) {
-      if (_ilist==nullptr) {
-        for (int i=0; i<_ev_stride; i++)
+    if (_ef_atom)
+      if (_ilist==NULL)
+        for (int i=0; i<_inum; i++)
           eatom[i]+=engv[i];
-      } else {
-        for (int i=0; i<_ev_stride; i++)
+      else
+        for (int i=0; i<_inum; i++)
           eatom[_ilist[i]]+=engv[i];
-      }
-    }
-    vstart=_ev_stride;
+    vstart=_inum;
   }
   if (_vflag) {
-    int iend=vstart+_ev_stride;
+    int iend=vstart+_inum;
     for (int j=0; j<6; j++) {
       for (int i=vstart; i<iend; i++)
         virial[j]+=engv[i];
-      if (_vf_atom){
-        if (_ilist==nullptr) {
+      if (_vf_atom)
+        if (_ilist==NULL) {
           int ii=0;
           for (int i=vstart; i<iend; i++)
             vatom[ii++][j]+=engv[i];
@@ -229,9 +203,8 @@ double AnswerT::energy_virial(double *eatom, double **vatom,
           for (int i=vstart; i<iend; i++)
             vatom[_ilist[ii++]][j]+=engv[i];
         }
-      }
-      vstart+=_ev_stride;
-      iend+=_ev_stride;
+      vstart+=_inum;
+      iend+=_inum;
     }
   }
 
@@ -248,52 +221,42 @@ double AnswerT::energy_virial(double *eatom, double **vatom,
     return energy_virial(eatom,vatom,virial);
 
   double evdwl=0.0;
-  int ii, vstart=0, iend=_ev_stride;
+  int ii, vstart=0, iend=_inum;
   if (_eflag) {
-    iend=_ev_stride*2;
-    #if (LAL_USE_OMP_SIMD == 1)
-    #pragma omp simd reduction(+:evdwl)
-    #endif
-    for (int i=0; i<_ev_stride; i++)
+    iend=_inum*2;
+    for (int i=0; i<_inum; i++)
       evdwl+=engv[i];
-    double ecv=0.0;
-    #if (LAL_USE_OMP_SIMD == 1)
-    #pragma omp simd reduction(+:ecv)
-    #endif
-    for (int i=_ev_stride; i<iend; i++)
-      ecv+=engv[i];
-    ecoul+=ecv;
-    if (_ef_atom) {
-      if (_ilist==nullptr) {
-        for (int i=0; i<_ev_stride; i++)
+    for (int i=_inum; i<iend; i++)
+      ecoul+=engv[i];
+    if (_ef_atom)
+      if (_ilist==NULL) {
+        for (int i=0; i<_inum; i++)
           eatom[i]+=engv[i];
-        for (int i=_ev_stride; i<iend; i++)
+        for (int i=_inum; i<iend; i++)
           eatom[i]+=engv[i];
       } else {
-        for (int i=0, ii=0; i<_ev_stride; i++)
+        for (int i=0, ii=0; i<_inum; i++)
           eatom[_ilist[ii++]]+=engv[i];
-        for (int i=_ev_stride, ii=0; i<iend; i++)
+        for (int i=_inum, ii=0; i<iend; i++)
           eatom[_ilist[ii++]]+=engv[i];
       }
-    }
     vstart=iend;
-    iend+=_ev_stride;
+    iend+=_inum;
   }
   if (_vflag) {
     for (int j=0; j<6; j++) {
       for (int i=vstart; i<iend; i++)
         virial[j]+=engv[i];
-      if (_vf_atom) {
-        if (_ilist==nullptr) {
+      if (_vf_atom)
+        if (_ilist==NULL) {
           for (int i=vstart, ii=0; i<iend; i++)
             vatom[ii++][j]+=engv[i];
         } else {
           for (int i=vstart, ii=0; i<iend; i++)
             vatom[_ilist[ii++]][j]+=engv[i];
         }
-      }
-      vstart+=_ev_stride;
-      iend+=_ev_stride;
+      vstart+=_inum;
+      iend+=_inum;
     }
   }
 
@@ -302,78 +265,37 @@ double AnswerT::energy_virial(double *eatom, double **vatom,
 
 template <class numtyp, class acctyp>
 void AnswerT::get_answers(double **f, double **tor) {
-  if (_ilist==nullptr) {
-    typedef struct { double x,y,z; } vec3d;
-    typedef struct { acctyp x,y,z,w; } vec4d_t;
-    vec3d *fp=reinterpret_cast<vec3d*>(&(f[0][0]));
-    vec4d_t *forcep=reinterpret_cast<vec4d_t*>(&(force[0]));
-
-    #if (LAL_USE_OMP == 1)
-    #pragma omp parallel
-    #endif
-    {
-      #if (LAL_USE_OMP == 1)
-      const int nthreads = omp_get_num_threads();
-      const int tid = omp_get_thread_num();
-      const int idelta = _inum / nthreads + 1;
-      const int ifrom = tid * idelta;
-      const int ito = std::min(ifrom + idelta, _inum);
-      #else
-      const int tid = 0;
-      const int ifrom = 0;
-      const int ito = _inum;
-      #endif
-
-      for (int i=ifrom; i<ito; i++) {
-        fp[i].x+=forcep[i].x;
-        fp[i].y+=forcep[i].y;
-        fp[i].z+=forcep[i].z;
-      }
-      if (_rot) {
-        vec3d *torp=reinterpret_cast<vec3d*>(&(tor[0][0]));
-        vec4d_t *torquep=reinterpret_cast<vec4d_t*>(&(force[_inum*4]));
-        for (int i=ifrom; i<ito; i++) {
-          torp[i].x+=torquep[i].x;
-          torp[i].y+=torquep[i].y;
-          torp[i].z+=torquep[i].z;
-        }
+  int fl=0;
+  if (_ilist==NULL) {
+    for (int i=0; i<_inum; i++) {
+      f[i][0]+=force[fl];
+      f[i][1]+=force[fl+1];
+      f[i][2]+=force[fl+2];
+      fl+=4;
+    }
+    if (_rot) {
+      for (int i=0; i<_inum; i++) {
+        tor[i][0]+=force[fl];
+        tor[i][1]+=force[fl+1];
+        tor[i][2]+=force[fl+2];
+        fl+=4;
       }
     }
   } else {
-    #if (LAL_USE_OMP == 1)
-    #pragma omp parallel
-    #endif
-    {
-      #if (LAL_USE_OMP == 1)
-      const int nthreads = omp_get_num_threads();
-      const int tid = omp_get_thread_num();
-      const int idelta = _inum / nthreads + 1;
-      const int ifrom = tid * idelta;
-      const int ito = std::min(ifrom + idelta, _inum);
-      int fl=ifrom*4;
-      #else
-      const int tid = 0;
-      const int ifrom = 0;
-      const int ito = _inum;
-      int fl=0;
-      #endif
-
-      for (int i=ifrom; i<ito; i++) {
+    for (int i=0; i<_inum; i++) {
+      int ii=_ilist[i];
+      f[ii][0]+=force[fl];
+      f[ii][1]+=force[fl+1];
+      f[ii][2]+=force[fl+2];
+      fl+=4;
+    }
+    if (_rot) {
+      for (int i=0; i<_inum; i++) {
         int ii=_ilist[i];
-        f[ii][0]+=force[fl];
-        f[ii][1]+=force[fl+1];
-        f[ii][2]+=force[fl+2];
+        tor[ii][0]+=force[fl];
+        tor[ii][1]+=force[fl+1];
+        tor[ii][2]+=force[fl+2];
         fl+=4;
-      }
-      if (_rot) {
-        fl=_inum*4 + ifrom*4;
-        for (int i=ifrom; i<ito; i++) {
-          int ii=_ilist[i];
-          tor[ii][0]+=force[fl];
-          tor[ii][1]+=force[fl+1];
-          tor[ii][2]+=force[fl+2];
-          fl+=4;
-        }
       }
     }
   }
@@ -389,4 +311,4 @@ void AnswerT::cq(const int cq_index) {
 }
 
 template class Answer<PRECISION,ACC_PRECISION>;
-}
+

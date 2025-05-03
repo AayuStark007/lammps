@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,19 +15,26 @@
    Contributing author: Trung Dac Nguyen (ORNL)
 ------------------------------------------------------------------------- */
 
+#include "lmptype.h"
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "pair_zbl_gpu.h"
-
 #include "atom.h"
-#include "domain.h"
-#include "error.h"
+#include "atom_vec.h"
+#include "comm.h"
 #include "force.h"
-#include "gpu_extra.h"
-#include "neigh_list.h"
-#include "neigh_request.h"
 #include "neighbor.h"
-#include "suffix.h"
-
-#include <cmath>
+#include "neigh_list.h"
+#include "integrate.h"
+#include "memory.h"
+#include "error.h"
+#include "neigh_request.h"
+#include "universe.h"
+#include "update.h"
+#include "domain.h"
+#include <string.h>
+#include "gpu_extra.h"
 
 using namespace LAMMPS_NS;
 
@@ -43,9 +49,9 @@ int zbl_gpu_init(const int ntypes, double **cutsq, double **host_sw1,
                  const int maxspecial, const double cell_size,
                  int &gpu_mode, FILE *screen);
 void zbl_gpu_clear();
-int ** zbl_gpu_compute_n(const int ago, const int inum, const int nall,
-                         double **host_x, int *host_type, double *sublo,
-                         double *subhi, tagint *tag, int **nspecial,
+int ** zbl_gpu_compute_n(const int ago, const int inum,
+                         const int nall, double **host_x, int *host_type,
+                         double *sublo, double *subhi, tagint *tag, int **nspecial,
                          tagint **special, const bool eflag, const bool vflag,
                          const bool eatom, const bool vatom, int &host_start,
                          int **ilist, int **jnum,
@@ -64,7 +70,6 @@ PairZBLGPU::PairZBLGPU(LAMMPS *lmp) : PairZBL(lmp), gpu_mode(GPU_FORCE)
   respa_enable = 0;
   reinitflag = 0;
   cpu_time = 0.0;
-  suffix_flag |= Suffix::GPU;
   GPU_EXTRA::gpu_ready(lmp->modify, lmp->error);
 }
 
@@ -81,7 +86,8 @@ PairZBLGPU::~PairZBLGPU()
 
 void PairZBLGPU::compute(int eflag, int vflag)
 {
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = vflag_fdotr = 0;
 
   int nall = atom->nlocal + atom->nghost;
   int inum, host_start;
@@ -89,21 +95,10 @@ void PairZBLGPU::compute(int eflag, int vflag)
   bool success = true;
   int *ilist, *numneigh, **firstneigh;
   if (gpu_mode != GPU_FORCE) {
-    double sublo[3],subhi[3];
-    if (domain->triclinic == 0) {
-      sublo[0] = domain->sublo[0];
-      sublo[1] = domain->sublo[1];
-      sublo[2] = domain->sublo[2];
-      subhi[0] = domain->subhi[0];
-      subhi[1] = domain->subhi[1];
-      subhi[2] = domain->subhi[2];
-    } else {
-      domain->bbox(domain->sublo_lamda,domain->subhi_lamda,sublo,subhi);
-    }
     inum = atom->nlocal;
     firstneigh = zbl_gpu_compute_n(neighbor->ago, inum, nall,
-                                   atom->x, atom->type, sublo,
-                                   subhi, atom->tag, atom->nspecial,
+                                   atom->x, atom->type, domain->sublo,
+                                   domain->subhi, atom->tag, atom->nspecial,
                                    atom->special, eflag, vflag, eflag_atom,
                                    vflag_atom, host_start,
                                    &ilist, &numneigh, cpu_time, success);
@@ -133,7 +128,7 @@ void PairZBLGPU::compute(int eflag, int vflag)
 void PairZBLGPU::init_style()
 {
   if (force->newton_pair)
-    error->all(FLERR,"Pair style zbl/gpu requires newton pair off");
+    error->all(FLERR,"Cannot use newton pair with zbl/gpu pair style");
 
   // Repeat cutsq calculation because done after call to init_style
   double maxcut = -1.0;
@@ -156,14 +151,13 @@ void PairZBLGPU::init_style()
   cut_globalsq = cut_global * cut_global;
 
   int maxspecial=0;
-  if (atom->molecular != Atom::ATOMIC)
+  if (atom->molecular)
     maxspecial=atom->maxspecial;
-  int mnf = 5e-2 * neighbor->oneatom;
   int success = zbl_gpu_init(atom->ntypes+1, cutsq, sw1, sw2, sw3, sw4,
                              sw5, d1a, d2a, d3a, d4a, zze,
                              cut_globalsq, cut_innersq, cut_inner,
                              atom->nlocal, atom->nlocal+atom->nghost,
-                             mnf, maxspecial, cell_size, gpu_mode, screen);
+                             300, maxspecial, cell_size, gpu_mode, screen);
   GPU_EXTRA::check_flag(success,error,world);
 
   if (gpu_mode == GPU_FORCE) {
@@ -183,7 +177,7 @@ double PairZBLGPU::memory_usage()
 
 /* ---------------------------------------------------------------------- */
 
-void PairZBLGPU::cpu_compute(int start, int inum, int eflag, int /* vflag */,
+void PairZBLGPU::cpu_compute(int start, int inum, int eflag, int vflag,
                              int *ilist, int *numneigh, int **firstneigh) {
   int i,j,ii,jj,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;

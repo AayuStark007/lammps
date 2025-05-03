@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -19,16 +19,13 @@
 
 #ifdef LMP_KOKKOS
 
-#include "atom_kokkos.h"          // IWYU pragma: export
-#include "comm_kokkos.h"          // IWYU pragma: export
-#include "comm_tiled_kokkos.h"    // IWYU pragma: export
-#include "domain_kokkos.h"        // IWYU pragma: export
-#include "kokkos.h"               // IWYU pragma: export
-#include "memory_kokkos.h"        // IWYU pragma: export
-#include "modify_kokkos.h"        // IWYU pragma: export
-#include "neighbor_kokkos.h"      // IWYU pragma: export
-
-#define LAMMPS_INLINE KOKKOS_INLINE_FUNCTION
+#include "kokkos.h"
+#include "atom_kokkos.h"
+#include "comm_kokkos.h"
+#include "comm_tiled_kokkos.h"
+#include "domain_kokkos.h"
+#include "neighbor_kokkos.h"
+#include "modify_kokkos.h"
 
 #else
 
@@ -39,27 +36,23 @@
 #include "comm_brick.h"
 #include "comm_tiled.h"
 #include "domain.h"
-#include "memory.h"
-#include "modify.h"
 #include "neighbor.h"
-
-#define LAMMPS_INLINE inline
+#include "modify.h"
 
 namespace LAMMPS_NS {
 
 class KokkosLMP {
  public:
   int kokkos_exists;
-  int nthreads;
-  int ngpus;
+  int num_threads;
+  int ngpu;
   int numa;
 
-  KokkosLMP(class LAMMPS *, int, char **) { kokkos_exists = 0; }
+  KokkosLMP(class LAMMPS *, int, char **) {kokkos_exists = 0;}
   ~KokkosLMP() {}
-  static void finalize() {}
   void accelerator(int, char **) {}
-  int neigh_list_kokkos(int) { return 0; }
-  int neigh_count(int) { return 0; }
+  int neigh_list_kokkos(int) {return 0;}
+  int neigh_count(int) {return 0;}
 };
 
 class AtomKokkos : public Atom {
@@ -67,8 +60,8 @@ class AtomKokkos : public Atom {
   tagint **k_special;
   AtomKokkos(class LAMMPS *lmp) : Atom(lmp) {}
   ~AtomKokkos() {}
-  void sync(const ExecutionSpace /*space*/, unsigned int /*mask*/) {}
-  void modified(const ExecutionSpace /*space*/, unsigned int /*mask*/) {}
+  void sync(const ExecutionSpace space, unsigned int mask) {}
+  void modified(const ExecutionSpace space, unsigned int mask) {}
 };
 
 class CommKokkos : public CommBrick {
@@ -80,7 +73,7 @@ class CommKokkos : public CommBrick {
 class CommTiledKokkos : public CommTiled {
  public:
   CommTiledKokkos(class LAMMPS *lmp) : CommTiled(lmp) {}
-  CommTiledKokkos(class LAMMPS *lmp, Comm *oldcomm) : CommTiled(lmp, oldcomm) {}
+  CommTiledKokkos(class LAMMPS *lmp, Comm *oldcomm) : CommTiled(lmp,oldcomm) {}
   ~CommTiledKokkos() {}
 };
 
@@ -96,13 +89,6 @@ class NeighborKokkos : public Neighbor {
   ~NeighborKokkos() {}
 };
 
-class MemoryKokkos : public Memory {
- public:
-  MemoryKokkos(class LAMMPS *lmp) : Memory(lmp) {}
-  ~MemoryKokkos() {}
-  void grow_kokkos(tagint **, tagint **, int, int, const char *) {}
-};
-
 class ModifyKokkos : public Modify {
  public:
   ModifyKokkos(class LAMMPS *lmp) : Modify(lmp) {}
@@ -113,11 +99,11 @@ class DAT {
  public:
   typedef double tdual_xfloat_1d;
   typedef double tdual_FFT_SCALAR_1d;
-  typedef int tdual_int_1d;
+  typedef int t_int_1d;
   typedef int tdual_int_2d;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(cluster/atom,ComputeClusterAtom);
-// clang-format on
+
+ComputeStyle(cluster/atom,ComputeClusterAtom)
+
 #else
 
 #ifndef LMP_COMPUTE_CLUSTER_ATOM_H
@@ -36,13 +36,13 @@ class ComputeClusterAtom : public Compute {
   double memory_usage();
 
  private:
-  int nmax, commflag;
+  int nmax,commflag;
   double cutsq;
   class NeighList *list;
   double *clusterID;
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -59,7 +59,7 @@ E: Cannot use compute cluster/atom unless atoms have IDs
 
 Atom IDs are used to identify clusters.
 
-E: Compute cluster/atom requires a pair style to be defined
+E: Compute cluster/atom requires a pair style be defined
 
 This is so that the pair style defines a cutoff distance which
 is used to find clusters.

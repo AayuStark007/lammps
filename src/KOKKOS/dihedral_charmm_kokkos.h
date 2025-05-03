@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,14 +12,13 @@
 ------------------------------------------------------------------------- */
 
 #ifdef DIHEDRAL_CLASS
-// clang-format off
-DihedralStyle(charmm/kk,DihedralCharmmKokkos<LMPDeviceType>);
-DihedralStyle(charmm/kk/device,DihedralCharmmKokkos<LMPDeviceType>);
-DihedralStyle(charmm/kk/host,DihedralCharmmKokkos<LMPHostType>);
-// clang-format on
+
+DihedralStyle(charmm/kk,DihedralCharmmKokkos<LMPDeviceType>)
+DihedralStyle(charmm/kk/device,DihedralCharmmKokkos<LMPDeviceType>)
+DihedralStyle(charmm/kk/host,DihedralCharmmKokkos<LMPHostType>)
+
 #else
 
-// clang-format off
 #ifndef LMP_DIHEDRAL_CHARMM_KOKKOS_H
 #define LMP_DIHEDRAL_CHARMM_KOKKOS_H
 
@@ -36,13 +35,13 @@ struct s_EVM_FLOAT {
   F_FLOAT vp[6];
   KOKKOS_INLINE_FUNCTION
   s_EVM_FLOAT() {
-          evdwl = 0;
-          ecoul = 0;
-          emol = 0;
-          v[0] = 0; v[1] = 0; v[2] = 0;
-          v[3] = 0; v[4] = 0; v[5] = 0;
-          vp[0] = 0; vp[1] = 0; vp[2] = 0;
-          vp[3] = 0; vp[4] = 0; vp[5] = 0;
+	  evdwl = 0;
+	  ecoul = 0;
+	  emol = 0;
+	  v[0] = 0; v[1] = 0; v[2] = 0;
+	  v[3] = 0; v[4] = 0; v[5] = 0;
+	  vp[0] = 0; vp[1] = 0; vp[2] = 0;
+	  vp[3] = 0; vp[4] = 0; vp[5] = 0;
   }
 
   KOKKOS_INLINE_FUNCTION
@@ -97,10 +96,9 @@ class DihedralCharmmKokkos : public DihedralCharmm {
 
   DihedralCharmmKokkos(class LAMMPS *);
   virtual ~DihedralCharmmKokkos();
-  void compute(int, int);
-  void coeff(int, char **);
-  void init_style();
-  void read_restart(FILE *);
+  virtual void compute(int, int);
+  virtual void coeff(int, char **);
+  virtual void init_style();
 
   template<int NEWTON_BOND, int EVFLAG>
   KOKKOS_INLINE_FUNCTION
@@ -133,16 +131,15 @@ class DihedralCharmmKokkos : public DihedralCharmm {
   typename AT::t_f_array f;
   typename AT::t_int_2d dihedrallist;
 
-  typedef typename KKDevice<DeviceType>::value KKDeviceType;
-  Kokkos::DualView<E_FLOAT*,Kokkos::LayoutRight,KKDeviceType> k_eatom;
-  Kokkos::DualView<F_FLOAT*[6],Kokkos::LayoutRight,KKDeviceType> k_vatom;
-  Kokkos::View<E_FLOAT*,Kokkos::LayoutRight,KKDeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_eatom;
-  Kokkos::View<F_FLOAT*[6],Kokkos::LayoutRight,KKDeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_vatom;
+  Kokkos::DualView<E_FLOAT*,Kokkos::LayoutRight,DeviceType> k_eatom;
+  Kokkos::DualView<F_FLOAT*[6],Kokkos::LayoutRight,DeviceType> k_vatom;
+  Kokkos::View<E_FLOAT*,Kokkos::LayoutRight,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_eatom;
+  Kokkos::View<F_FLOAT*[6],Kokkos::LayoutRight,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_vatom;
 
-  Kokkos::DualView<E_FLOAT*,Kokkos::LayoutRight,KKDeviceType> k_eatom_pair;
-  Kokkos::DualView<F_FLOAT*[6],Kokkos::LayoutRight,KKDeviceType> k_vatom_pair;
-  Kokkos::View<E_FLOAT*,Kokkos::LayoutRight,KKDeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_eatom_pair;
-  Kokkos::View<F_FLOAT*[6],Kokkos::LayoutRight,KKDeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_vatom_pair;
+  Kokkos::DualView<E_FLOAT*,Kokkos::LayoutRight,DeviceType> k_eatom_pair;
+  Kokkos::DualView<F_FLOAT*[6],Kokkos::LayoutRight,DeviceType> k_vatom_pair;
+  Kokkos::View<E_FLOAT*,Kokkos::LayoutRight,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_eatom_pair;
+  Kokkos::View<F_FLOAT*[6],Kokkos::LayoutRight,DeviceType,Kokkos::MemoryTraits<Kokkos::Atomic> > d_vatom_pair;
 
   int nlocal,newton_bond;
   int eflag,vflag;
@@ -164,7 +161,7 @@ class DihedralCharmmKokkos : public DihedralCharmm {
   typename AT::t_ffloat_1d d_cos_shift;
   typename AT::t_ffloat_1d d_weight;
 
-  void allocate();
+  virtual void allocate();
 };
 
 }

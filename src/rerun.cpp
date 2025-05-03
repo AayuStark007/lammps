@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,25 +11,25 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
+#include <string.h>
 #include "rerun.h"
-
+#include "read_dump.h"
 #include "domain.h"
-#include "error.h"
-#include "finish.h"
+#include "update.h"
 #include "integrate.h"
 #include "modify.h"
 #include "output.h"
-#include "read_dump.h"
+#include "finish.h"
 #include "timer.h"
-#include "update.h"
-
-#include <cstring>
+#include "error.h"
+#include "force.h"
 
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-Rerun::Rerun(LAMMPS *lmp) : Command(lmp) {}
+Rerun::Rerun(LAMMPS *lmp) : Pointers(lmp) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -52,14 +51,13 @@ void Rerun::command(int narg, char **arg)
     if (strcmp(arg[iarg],"start") == 0) break;
     if (strcmp(arg[iarg],"stop") == 0) break;
     if (strcmp(arg[iarg],"dump") == 0) break;
-    if (strcmp(arg[iarg],"post") == 0) break;
     iarg++;
   }
   int nfile = iarg;
   if (nfile == 0 || nfile == narg) error->all(FLERR,"Illegal rerun command");
 
   // parse optional args up until "dump"
-  // use MAXBIGINT -1 so Output can add 1 to it and still be a big int
+  // user MAXBIGINT -1 so Output can add 1 to it and still be a big int
 
   bigint first = 0;
   bigint last = MAXBIGINT - 1;
@@ -67,50 +65,41 @@ void Rerun::command(int narg, char **arg)
   int nskip = 1;
   int startflag = 0;
   int stopflag = 0;
-  int postflag = 0;
   bigint start = -1;
   bigint stop = -1;
 
   while (iarg < narg) {
     if (strcmp(arg[iarg],"first") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal rerun command");
-      first = utils::bnumeric(FLERR,arg[iarg+1],false,lmp);
+      first = force->bnumeric(FLERR,arg[iarg+1]);
       if (first < 0) error->all(FLERR,"Illegal rerun command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"last") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal rerun command");
-      last = utils::bnumeric(FLERR,arg[iarg+1],false,lmp);
+      last = force->bnumeric(FLERR,arg[iarg+1]);
       if (last < 0) error->all(FLERR,"Illegal rerun command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"every") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal rerun command");
-      nevery = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      nevery = force->inumeric(FLERR,arg[iarg+1]);
       if (nevery < 0) error->all(FLERR,"Illegal rerun command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"skip") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal rerun command");
-      nskip = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      nskip = force->inumeric(FLERR,arg[iarg+1]);
       if (nskip <= 0) error->all(FLERR,"Illegal rerun command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"start") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal rerun command");
       startflag = 1;
-      start = utils::bnumeric(FLERR,arg[iarg+1],false,lmp);
+      start = force->bnumeric(FLERR,arg[iarg+1]);
       if (start < 0) error->all(FLERR,"Illegal rerun command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"stop") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal rerun command");
       stopflag = 1;
-      stop = utils::bnumeric(FLERR,arg[iarg+1],false,lmp);
+      stop = force->bnumeric(FLERR,arg[iarg+1]);
       if (stop < 0) error->all(FLERR,"Illegal rerun command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"post") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal rerun command");
-      if (strcmp(arg[iarg+1],"yes") == 0) {
-        postflag = 1;
-      } else if (strcmp(arg[iarg+1],"no") == 0) {
-        postflag = 0;
-      } else error->all(FLERR,"Illegal rerun command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"dump") == 0) {
       break;
@@ -131,11 +120,11 @@ void Rerun::command(int narg, char **arg)
   rd->store_files(nfile,arg);
   if (nremain)
     nremain = rd->fields_and_keywords(nremain,&arg[narg-nremain]);
-  else nremain = rd->fields_and_keywords(0,nullptr);
+  else nremain = rd->fields_and_keywords(0,NULL);
   if (nremain) rd->setup_reader(nremain,&arg[narg-nremain]);
-  else rd->setup_reader(0,nullptr);
+  else rd->setup_reader(0,NULL);
 
-  // perform the pseudo run
+  // perform the psuedo run
   // invoke lmp->init() only once
   // read all relevant snapshots
   // use setup_minimal() since atoms are already owned by correct procs
@@ -193,7 +182,7 @@ void Rerun::command(int narg, char **arg)
   update->nsteps = ndump;
 
   Finish finish(lmp);
-  finish.end(postflag);
+  finish.end(1);
 
   update->whichflag = 0;
   update->firststep = update->laststep = 0;

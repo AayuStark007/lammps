@@ -67,7 +67,7 @@
       INTEGER i
 
       ! parse the command line parameters
-      ! initialize defaults
+      ! intialize defaults
       ccmd = 0
       inet = 1
       host = "localhost"//achar(0)

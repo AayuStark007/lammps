@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,10 +11,12 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <stdlib.h>
 #include "fix_minimize.h"
 #include "atom.h"
 #include "domain.h"
 #include "memory.h"
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -24,12 +25,12 @@ using namespace FixConst;
 
 FixMinimize::FixMinimize(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
-  nvector(0), peratom(nullptr), vectors(nullptr)
+  nvector(0), peratom(NULL), vectors(NULL)
 {
   // register callback to this fix from Atom class
   // don't perform initial allocation here, must wait until add_vector()
 
-  atom->add_callback(Atom::GROW);
+  atom->add_callback(0);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -38,15 +39,13 @@ FixMinimize::~FixMinimize()
 {
   // unregister callbacks to this fix from Atom class
 
-  atom->delete_callback(id,Atom::GROW);
+  atom->delete_callback(id,0);
 
   // delete locally stored data
 
   memory->destroy(peratom);
-  if (vectors) {
-    for (int m = 0; m < nvector; m++) memory->destroy(vectors[m]);
-    memory->sfree(vectors);
-  }
+  for (int m = 0; m < nvector; m++) memory->destroy(vectors[m]);
+  memory->sfree(vectors);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -167,7 +166,7 @@ double FixMinimize::memory_usage()
 {
   double bytes = 0.0;
   for (int m = 0; m < nvector; m++)
-    bytes += (double)atom->nmax*peratom[m]*sizeof(double);
+    bytes += atom->nmax*peratom[m]*sizeof(double);
   return bytes;
 }
 
@@ -185,7 +184,7 @@ void FixMinimize::grow_arrays(int nmax)
    copy values within local atom-based arrays
 ------------------------------------------------------------------------- */
 
-void FixMinimize::copy_arrays(int i, int j, int /*delflag*/)
+void FixMinimize::copy_arrays(int i, int j, int delflag)
 {
   int m,iper,nper,ni,nj;
 

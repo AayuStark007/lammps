@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,18 +15,19 @@
    Contributing author: Eric Simon (Cray)
 ------------------------------------------------------------------------- */
 
+#include <math.h>
+#include <string.h>
+#include <stdlib.h>
 #include "improper_class2.h"
-
 #include "atom.h"
+#include "neighbor.h"
+#include "update.h"
+#include "domain.h"
 #include "comm.h"
-#include "error.h"
 #include "force.h"
 #include "math_const.h"
 #include "memory.h"
-#include "neighbor.h"
-
-#include <cmath>
-#include <cstring>
+#include "error.h"
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -45,8 +45,6 @@ ImproperClass2::ImproperClass2(LAMMPS *lmp) : Improper(lmp)
 
 ImproperClass2::~ImproperClass2()
 {
-  if (copymode) return;
-
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(setflag_i);
@@ -90,7 +88,8 @@ void ImproperClass2::compute(int eflag, int vflag)
   double fabcd[4][3];
 
   eimproper = 0.0;
-  ev_init(eflag,vflag);
+  if (eflag || vflag) ev_setup(eflag,vflag);
+  else evflag = 0;
 
   for (i = 0; i < 3; i++)
     for (j = 0; j < 4; j++)
@@ -152,8 +151,27 @@ void ImproperClass2::compute(int eflag, int vflag)
     // angle error check
 
     for (i = 0; i < 3; i++) {
-      if (costheta[i] == -1.0)
-        problem(FLERR, i1, i2, i3, i4);
+      if (costheta[i] == -1.0) {
+        int me;
+        MPI_Comm_rank(world,&me);
+        if (screen) {
+          char str[128];
+          sprintf(str,"Improper problem: %d " BIGINT_FORMAT " "
+                  TAGINT_FORMAT " " TAGINT_FORMAT " "
+                  TAGINT_FORMAT " " TAGINT_FORMAT,
+                  me,update->ntimestep,
+                  atom->tag[i1],atom->tag[i2],atom->tag[i3],atom->tag[i4]);
+          error->warning(FLERR,str,0);
+          fprintf(screen,"  1st atom: %d %g %g %g\n",
+                  me,x[i1][0],x[i1][1],x[i1][2]);
+          fprintf(screen,"  2nd atom: %d %g %g %g\n",
+                  me,x[i2][0],x[i2][1],x[i2][2]);
+          fprintf(screen,"  3rd atom: %d %g %g %g\n",
+                  me,x[i3][0],x[i3][1],x[i3][2]);
+          fprintf(screen,"  4th atom: %d %g %g %g\n",
+                  me,x[i4][0],x[i4][1],x[i4][2]);
+        }
+      }
     }
 
     for (i = 0; i < 3; i++) {
@@ -511,19 +529,19 @@ void ImproperClass2::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi;
-  utils::bounds(FLERR,arg[0],1,atom->nimpropertypes,ilo,ihi,error);
+  force->bounds(FLERR,arg[0],atom->nimpropertypes,ilo,ihi);
 
   int count = 0;
 
   if (strcmp(arg[1],"aa") == 0) {
     if (narg != 8) error->all(FLERR,"Incorrect args for improper coefficients");
 
-    double k1_one = utils::numeric(FLERR,arg[2],false,lmp);
-    double k2_one = utils::numeric(FLERR,arg[3],false,lmp);
-    double k3_one = utils::numeric(FLERR,arg[4],false,lmp);
-    double theta0_1_one = utils::numeric(FLERR,arg[5],false,lmp);
-    double theta0_2_one = utils::numeric(FLERR,arg[6],false,lmp);
-    double theta0_3_one = utils::numeric(FLERR,arg[7],false,lmp);
+    double k1_one = force->numeric(FLERR,arg[2]);
+    double k2_one = force->numeric(FLERR,arg[3]);
+    double k3_one = force->numeric(FLERR,arg[4]);
+    double theta0_1_one = force->numeric(FLERR,arg[5]);
+    double theta0_2_one = force->numeric(FLERR,arg[6]);
+    double theta0_3_one = force->numeric(FLERR,arg[7]);
 
     // convert theta0's from degrees to radians
 
@@ -541,8 +559,8 @@ void ImproperClass2::coeff(int narg, char **arg)
   } else {
     if (narg != 3) error->all(FLERR,"Incorrect args for improper coefficients");
 
-    double k0_one = utils::numeric(FLERR,arg[1],false,lmp);
-    double chi0_one = utils::numeric(FLERR,arg[2],false,lmp);
+    double k0_one = force->numeric(FLERR,arg[1]);
+    double chi0_one = force->numeric(FLERR,arg[2]);
 
     // convert chi0 from degrees to radians
 
@@ -586,15 +604,15 @@ void ImproperClass2::read_restart(FILE *fp)
   allocate();
 
   if (comm->me == 0) {
-    utils::sfread(FLERR,&k0[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
-    utils::sfread(FLERR,&chi0[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
+    fread(&k0[1],sizeof(double),atom->nimpropertypes,fp);
+    fread(&chi0[1],sizeof(double),atom->nimpropertypes,fp);
 
-    utils::sfread(FLERR,&aa_k1[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
-    utils::sfread(FLERR,&aa_k2[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
-    utils::sfread(FLERR,&aa_k3[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
-    utils::sfread(FLERR,&aa_theta0_1[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
-    utils::sfread(FLERR,&aa_theta0_2[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
-    utils::sfread(FLERR,&aa_theta0_3[1],sizeof(double),atom->nimpropertypes,fp,nullptr,error);
+    fread(&aa_k1[1],sizeof(double),atom->nimpropertypes,fp);
+    fread(&aa_k2[1],sizeof(double),atom->nimpropertypes,fp);
+    fread(&aa_k3[1],sizeof(double),atom->nimpropertypes,fp);
+    fread(&aa_theta0_1[1],sizeof(double),atom->nimpropertypes,fp);
+    fread(&aa_theta0_2[1],sizeof(double),atom->nimpropertypes,fp);
+    fread(&aa_theta0_3[1],sizeof(double),atom->nimpropertypes,fp);
   }
   MPI_Bcast(&k0[1],atom->nimpropertypes,MPI_DOUBLE,0,world);
   MPI_Bcast(&chi0[1],atom->nimpropertypes,MPI_DOUBLE,0,world);
@@ -613,7 +631,7 @@ void ImproperClass2::read_restart(FILE *fp)
    angle-angle interactions within improper
 ------------------------------------------------------------------------- */
 
-void ImproperClass2::angleangle(int eflag, int /*vflag*/)
+void ImproperClass2::angleangle(int eflag, int vflag)
 {
   int i1,i2,i3,i4,i,j,k,n,type;
   double eimproper;
@@ -833,7 +851,7 @@ double ImproperClass2::dot(double *a, double *b)
 void ImproperClass2::write_data(FILE *fp)
 {
   for (int i = 1; i <= atom->nimpropertypes; i++)
-    fprintf(fp,"%d %g %g\n",i,k0[i],chi0[i]*180.0/MY_PI);
+    fprintf(fp,"%d %g %g\n",i,k0[i],chi0[i]);
 
   fprintf(fp,"\nAngleAngle Coeffs\n\n");
   for (int i = 1; i <= atom->nimpropertypes; i++)

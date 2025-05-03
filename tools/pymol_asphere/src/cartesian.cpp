@@ -4,7 +4,7 @@
  *		Also contains quaternion structures and operations
  *
  *    Cartesian point of doubles: cPt
- *    Cartesian point of integers: iPt
+ *    Cartesian point of intergers: iPt
  *    Vector of doubles: vectorPt
  *    Color of doubles:   colorPt
  *    Quaternion: Quaternion
@@ -879,7 +879,7 @@ double c::closest_approach(const cPt &l1_1, const cPt &l1_2, const cPt &l2_1,
   double tc, tN, tD = D;      
 
   // compute the closest points between the two lines
-  if (D < 0.00000000001) { // parallel lines
+  if (D < 0.00000000001) { // parrallel lines
     sN = 0.0; sD = 1.0; tN = e; tD = c;
   } else {  // get the closest points on the infinite lines
     sN = (b*e - c*d);
@@ -936,7 +936,7 @@ void c::closest_approach_points(const cPt &l1_1, const cPt &l1_2,
   double tc, tN, tD = D;
 
   // compute the closest points between the two lines
-  if (D < 0.00000000001) { // parallel lines
+  if (D < 0.00000000001) { // parrallel lines
     sN = 0.0; sD = 1.0; tN = e; tD = c;
   } else {  // get the closest points on the infinite lines
     sN = (b*e - c*d);

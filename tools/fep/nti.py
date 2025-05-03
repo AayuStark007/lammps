@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 # nti.py - integrate compute fep results using the trapezoidal rule
 
-import sys
-import math
+import sys, math
 
 if len(sys.argv) < 3:
-    print("Thermodynamic Integration with Numerical Derivative")
-    print("Trapezoidal integration of compute_fep results at equally-spaced points")
-    print("usage: nti.py temperature hderiv < out.fep")
+    print "Thermodynamic Integration with Numerical Derivative"
+    print "Trapezoidal integration of compute_fep results at equally-spaced points"
+    print "usage: nti.py temperature hderiv < fep.lmp"
     sys.exit()
 
 hderiv = float(sys.argv[2])
@@ -28,4 +27,4 @@ for line in sys.stdin:
     lo = hi
     i += 1
 
-print(sum/(i - 1))    # int_0^1: divide by i - 1 == multiply by delta
+print sum / i      # int_0^1: divide by i == multiply by delta

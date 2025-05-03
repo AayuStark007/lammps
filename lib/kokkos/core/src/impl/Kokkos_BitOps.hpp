@@ -2,11 +2,10 @@
 //@HEADER
 // ************************************************************************
 //
-//                        Kokkos v. 3.0
-//       Copyright (2020) National Technology & Engineering
-//               Solutions of Sandia, LLC (NTESS).
+//                        Kokkos v. 2.0
+//              Copyright (2014) Sandia Corporation
 //
-// Under the terms of Contract DE-NA0003525 with NTESS,
+// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -24,10 +23,10 @@
 // contributors may be used to endorse or promote products derived from
 // this software without specific prior written permission.
 //
-// THIS SOFTWARE IS PROVIDED BY NTESS "AS IS" AND ANY
+// THIS SOFTWARE IS PROVIDED BY SANDIA CORPORATION "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NTESS OR THE
+// PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL SANDIA CORPORATION OR THE
 // CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 // EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
 // PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -36,7 +35,7 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact Christian R. Trott (crtrott@sandia.gov)
+// Questions? Contact  H. Carter Edwards (hcedwar@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
@@ -46,113 +45,78 @@
 #define KOKKOS_BITOPS_HPP
 
 #include <Kokkos_Macros.hpp>
-#include <cstdint>
+#include <stdint.h>
 #include <climits>
 
-#ifdef KOKKOS_COMPILER_INTEL
-#include <immintrin.h>
-#endif
-
 namespace Kokkos {
-
-KOKKOS_FORCEINLINE_FUNCTION
-int log2(unsigned i) {
-  enum : int { shift = sizeof(unsigned) * CHAR_BIT - 1 };
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
-  return shift - __clz(i);
-#elif defined(KOKKOS_COMPILER_INTEL)
-  return _bit_scan_reverse(i);
-#elif defined(KOKKOS_COMPILER_CRAYC)
-  return i ? shift - _leadz32(i) : 0;
-#elif defined(__GNUC__) || defined(__GNUG__)
-  return shift - __builtin_clz(i);
-#else
-  int offset = 0;
-  if (i) {
-    for (offset = shift; (i & (1 << offset)) == 0; --offset)
-      ;
-  }
-  return offset;
-#endif
-}
-
 namespace Impl {
 
-/**\brief  Find first zero bit.
- *
- *  If none then return -1 ;
- */
 KOKKOS_FORCEINLINE_FUNCTION
-int bit_first_zero(unsigned i) noexcept {
-  enum : unsigned { full = ~0u };
-
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
-  return full != i ? __ffs(~i) - 1 : -1;
-#elif defined(KOKKOS_COMPILER_INTEL)
-  return full != i ? _bit_scan_forward(~i) : -1;
-#elif defined(KOKKOS_COMPILER_CRAYC)
-  return full != i ? _popcnt(i ^ (i + 1)) - 1 : -1;
-#elif defined(KOKKOS_COMPILER_GNU) || defined(__GNUC__) || defined(__GNUG__)
-  return full != i ? __builtin_ffs(~i) - 1 : -1;
+int bit_scan_forward( unsigned i )
+{
+#if defined( __CUDA_ARCH__ )
+  return __ffs(i) - 1;
+#elif defined( __GNUC__ ) || defined( __GNUG__ )
+  return __builtin_ffs(i) - 1;
+#elif defined( __INTEL_COMPILER )
+  return _bit_scan_forward(i);
 #else
-  int offset = -1;
-  if (full != i) {
-    for (offset = 0; i & (1 << offset); ++offset)
-      ;
+
+  unsigned t = 1u;
+  int r = 0;
+  while ( i && ( i & t == 0 ) )
+  {
+    t = t << 1;
+    ++r;
   }
-  return offset;
+  return r;
 #endif
 }
 
 KOKKOS_FORCEINLINE_FUNCTION
-int bit_scan_forward(unsigned i) {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
-  return __ffs(i) - 1;
-#elif defined(KOKKOS_COMPILER_INTEL)
-  return _bit_scan_forward(i);
-#elif defined(KOKKOS_COMPILER_CRAYC)
-  return i ? _popcnt(~i & (i - 1)) : -1;
-#elif defined(KOKKOS_COMPILER_GNU) || defined(__GNUC__) || defined(__GNUG__)
-  return __builtin_ffs(i) - 1;
+int bit_scan_reverse( unsigned i )
+{
+  enum { shift = static_cast<int>( sizeof(unsigned) * CHAR_BIT - 1 ) };
+#if defined( __CUDA_ARCH__ )
+  return shift - __clz(i);
+#elif defined( __GNUC__ ) || defined( __GNUG__ )
+  return shift - __builtin_clz(i);
+#elif defined( __INTEL_COMPILER )
+  return _bit_scan_reverse(i);
 #else
-  int offset = -1;
-  if (i) {
-    for (offset = 0; (i & (1 << offset)) == 0; ++offset)
-      ;
+  unsigned t = 1u << shift;
+  int r = 0;
+  while ( i && ( i & t == 0 ) )
+  {
+    t = t >> 1;
+    ++r;
   }
-  return offset;
+  return r;
 #endif
 }
 
 /// Count the number of bits set.
 KOKKOS_FORCEINLINE_FUNCTION
-int bit_count(unsigned i) {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+int bit_count( unsigned i )
+{
+#if defined( __CUDA_ARCH__ )
   return __popc(i);
-#elif defined(__INTEL_COMPILER)
-  return _popcnt32(i);
-#elif defined(KOKKOS_COMPILER_CRAYC)
-  return _popcnt(i);
-#elif defined(__GNUC__) || defined(__GNUG__)
+#elif defined( __GNUC__ ) || defined( __GNUG__ )
   return __builtin_popcount(i);
+#elif defined ( __INTEL_COMPILER )
+  return _popcnt32(i);
 #else
   // http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetNaive
-  i = i - ((i >> 1) & ~0u / 3u);                           // temp
-  i = (i & ~0u / 15u * 3u) + ((i >> 2) & ~0u / 15u * 3u);  // temp
-  i = (i + (i >> 4)) & ~0u / 255u * 15u;                   // temp
+  i = i - ( ( i >> 1 ) & ~0u / 3u );                             // temp
+  i = ( i & ~0u / 15u * 3u ) + ( ( i >> 2 ) & ~0u / 15u * 3u );  // temp
+  i = ( i + ( i >> 4 ) ) & ~0u / 255u * 15u;                     // temp
 
   // count
-  return (int)((i * (~0u / 255u)) >> (sizeof(unsigned) - 1) * CHAR_BIT);
+  return (int)( ( i * ( ~0u / 255u ) ) >> ( sizeof(unsigned) - 1 ) * CHAR_BIT );
 #endif
 }
 
-KOKKOS_INLINE_FUNCTION
-unsigned integral_power_of_two_that_contains(const unsigned N) {
-  const unsigned i = Kokkos::log2(N);
-  return ((1u << i) < N) ? i + 1 : i;
-}
+} // namespace Impl
+} // namespace Kokkos
 
-}  // namespace Impl
-}  // namespace Kokkos
-
-#endif  // KOKKOS_BITOPS_HPP
+#endif // KOKKOS_BITOPS_HPP

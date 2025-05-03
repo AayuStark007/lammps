@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,19 +12,17 @@
 ------------------------------------------------------------------------- */
 
 #ifdef REGION_CLASS
-// clang-format off
-RegionStyle(block/kk,RegBlockKokkos<LMPDeviceType>);
-RegionStyle(block/kk/device,RegBlockKokkos<LMPDeviceType>);
-RegionStyle(block/kk/host,RegBlockKokkos<LMPHostType>);
-// clang-format on
+
+RegionStyle(block/kk,RegBlockKokkos<LMPDeviceType>)
+RegionStyle(block/kk/device,RegBlockKokkos<LMPDeviceType>)
+RegionStyle(block/kk/host,RegBlockKokkos<LMPHostType>)
+
 #else
 
-// clang-format off
 #ifndef LMP_REGION_BLOCK_KOKKOS_H
 #define LMP_REGION_BLOCK_KOKKOS_H
 
 #include "region_block.h"
-#include "kokkos_base.h"
 #include "kokkos_type.h"
 
 namespace LAMMPS_NS {
@@ -32,7 +30,7 @@ namespace LAMMPS_NS {
 struct TagRegBlockMatchAll{};
 
 template<class DeviceType>
-class RegBlockKokkos : public RegBlock, public KokkosBase {
+class RegBlockKokkos : public RegBlock {
   friend class FixPour;
 
  public:
@@ -41,20 +39,20 @@ class RegBlockKokkos : public RegBlock, public KokkosBase {
 
   RegBlockKokkos(class LAMMPS *, int, char **);
   ~RegBlockKokkos();
-  void match_all_kokkos(int, DAT::tdual_int_1d);
+  void match_all_kokkos(int, DAT::t_int_1d);
 
   KOKKOS_INLINE_FUNCTION
   void operator()(TagRegBlockMatchAll, const int&) const;
 
  private:
   int groupbit;
-  typename AT::t_int_1d d_match;
+  DAT::t_int_1d d_match;
 
   typename AT::t_x_array_randomread x;
   typename AT::t_int_1d_randomread mask;
 
   KOKKOS_INLINE_FUNCTION
-  int k_inside(double, double, double) const;
+  int inside(double, double, double) const;
   KOKKOS_INLINE_FUNCTION
   int match(double, double, double) const;
   KOKKOS_INLINE_FUNCTION

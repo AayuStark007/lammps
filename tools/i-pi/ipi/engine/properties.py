@@ -141,7 +141,7 @@ def help_latex(idict, standalone=True):
 }
 """
       rstr += "\n\\begin{document}\n"
-      rstr += "The following are the different allowable outputs:\n\\par"
+      rstr += "The following are the different allowable ouputs:\n\\par"
 
    for out in sorted(idict):
       rstr += "\\ipiitem{" + out + "}"
@@ -212,7 +212,7 @@ class Properties(dobject):
    _DEFAULT_MINFID = 1e-12
 
    def __init__(self):
-      """Initializes Properties."""
+      """Initialises Properties."""
 
       self.property_dict = {
       "step": {       "dimension" : "number",
@@ -460,7 +460,7 @@ class Properties(dobject):
          key: A string contained in property_dict.
 
       Returns:
-         The property labeled by the keyword key, along with its unit
+         The property labelled by the keyword key, along with its unit
          keyword, and the argument lists for the function used to calculate
          the property specified by the keyword key.
       """
@@ -1094,7 +1094,7 @@ class Trajectories(dobject):
    """
 
    def __init__(self):
-      """Initializes a Trajectories object."""
+      """Initialises a Trajectories object."""
 
       self.traj_dict = {
       # Note that here we want to return COPIES of the different arrays, so we make sure to make an operation in order not to return a reference.
@@ -1216,7 +1216,7 @@ class Trajectories(dobject):
          key: A string contained in trajectory_dict.
 
       Returns:
-         The trajectory labeled by the keyword key, along with its unit
+         The trajectory labelled by the keyword key, along with its unit
          keyword, and the argument lists for the function used to calculate
          the trajectory specified by the keyword key.
       """

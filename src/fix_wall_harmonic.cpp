@@ -1,7 +1,6 @@
-// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,6 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include <math.h>
 #include "fix_wall_harmonic.h"
 #include "atom.h"
 #include "error.h"
@@ -22,10 +22,7 @@ using namespace FixConst;
 /* ---------------------------------------------------------------------- */
 
 FixWallHarmonic::FixWallHarmonic(LAMMPS *lmp, int narg, char **arg) :
-  FixWall(lmp, narg, arg)
-{
-  dynamic_group_allow = 1;
-}
+  FixWall(lmp, narg, arg) {}
 
 /* ----------------------------------------------------------------------
    interaction of all particles in group with a wall
@@ -37,7 +34,6 @@ FixWallHarmonic::FixWallHarmonic(LAMMPS *lmp, int narg, char **arg) :
 void FixWallHarmonic::wall_particle(int m, int which, double coord)
 {
   double delta,dr,fwall;
-  double vn;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -64,12 +60,6 @@ void FixWallHarmonic::wall_particle(int m, int which, double coord)
       f[i][dim] -= fwall;
       ewall[0] += epsilon[m]*dr*dr;
       ewall[m+1] += fwall;
-
-      if (evflag) {
-        if (side < 0) vn = -fwall*delta;
-        else vn = fwall*delta;
-        v_tally(dim,i,vn);
-      }
     }
 
   if (onflag) error->one(FLERR,"Particle on or inside fix wall surface");

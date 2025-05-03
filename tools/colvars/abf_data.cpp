@@ -12,12 +12,13 @@ ABFdata::ABFdata(const char *gradFileName)
 
     std::ifstream gradFile;
     std::ifstream countFile;
+    int n;
     char hash;
     double xi;
     char *countFileName;
 
     countFileName = new char[strlen (gradFileName) + 2];
-    strcpy (countFileName, gradFileName);
+    strcpy (countFileName, gradFileName); 
     countFileName[strlen (gradFileName) - 4] = '\0';
     strcat (countFileName, "count");
 
@@ -82,7 +83,7 @@ ABFdata::ABFdata(const char *gradFileName)
         pos[i] = 0;
 
     for (unsigned int i = 0; i < scalar_dim; i++) {
-        // Here we do the Euclidean division iteratively
+        // Here we do the Euclidian division iteratively
         for (int k = Nvars - 1; k > 0; k--) {
             if (pos[k] == sizes[k]) {
                 pos[k] = 0;
@@ -151,8 +152,7 @@ ABFdata::ABFdata(const char *gradFileName)
     }
     // Could check for end-of-file string here
     countFile.close();
-    delete[] countFileName;
-    delete[] pos;
+    delete [] countFileName;
 
     // for metadynamics
     bias = new double[scalar_dim];
@@ -213,7 +213,7 @@ void ABFdata::write_histogram(const char *fileName)
         pos[i] = 0;
 
     for (index = 0; index < scalar_dim; index++) {
-        // Here we do the Euclidean division iteratively
+        // Here we do the Euclidian division iteratively
         for (i = Nvars - 1; i > 0; i--) {
             if (pos[i] == sizes[i]) {
                 pos[i] = 0;
@@ -269,9 +269,9 @@ void ABFdata::write_bias(const char *fileName)
         if (minbias == 0.0 || (bias[index] > 0.0 && bias[index] < minbias))
             minbias = bias[index];
     }
-
+    
     for (index = 0; index < scalar_dim; index++) {
-        // Here we do the Euclidean division iteratively
+        // Here we do the Euclidian division iteratively
         for (i = Nvars - 1; i > 0; i--) {
             if (pos[i] == sizes[i]) {
                 pos[i] = 0;
@@ -316,7 +316,7 @@ void ABFdata::write_field(double *field, const char *fileName)
     f = field;
 
     for (index = 0; index < scalar_dim; index++) {
-        // Here we do the Euclidean division iteratively
+        // Here we do the Euclidian division iteratively
         for (i = Nvars - 1; i > 0; i--) {
             if (pos[i] == sizes[i]) {
                 pos[i] = 0;
