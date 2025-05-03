@@ -1,4 +1,4 @@
-# serial = GNU g++ compiler, no MPI
+# omp_nrk = USER-OMP package, Using g++ compiler and MPI stubs on Rumpkernels
 
 SHELL = /bin/sh
 
@@ -6,17 +6,17 @@ SHELL = /bin/sh
 # compiler/linker settings
 # specify flags and libraries needed for your compiler
 
-#CC =      g++
-CCFLAGS =	-g -O3 -fpermissive
+# CC =		g++ # will be provided by the main makefile
+CCFLAGS =	-g -O3 -fopenmp -fpermissive
 SHFLAGS =	-fPIC
 DEPFLAGS =	-M
 
-#LINK =     g++
-LINKFLAGS =	-g -O
+# LINK =		g++ # will be provided by the main makefile
+LINKFLAGS =	-g -O -fopenmp
 LIB = 
 SIZE =		size
 
-#ARCHIVE =	ar
+# ARCHIVE =	ar # will be provided by the main makefile
 ARFLAGS =	-rc
 SHLIBFLAGS =	-shared
 
@@ -39,9 +39,13 @@ LMP_INC =	-DLAMMPS_GZIP -DLAMMPS_MEMALIGN=64
 # PATH = path for MPI library
 # LIB = name of MPI library
 
-MPI_INC =       -I../STUBS 
-MPI_PATH =      -L../STUBS
-MPI_LIB =	-lmpi_stubs
+# MPI_INC =       -DMPICH_SKIP_MPICXX -DOMPI_SKIP_MPICXX=1
+# MPI_PATH = 
+# MPI_LIB =	
+
+MPI_INC =       -I../STUBS -I$(RUMPRUN_PKGS_DIR)/include
+MPI_PATH =      -L../STUBS -L$(RUMPRUN_PKGS_DIR)/lib
+MPI_LIB =	-lmpi_stubs -lpthread -lgomp
 
 # FFT library
 # see discussion in Section 2.2 (step 6) of manual
@@ -100,7 +104,13 @@ shlib:	$(OBJ) $(EXTRA_LINK_DEPENDS)
 
 # Compilation rules
 
-%.o:%.cpp
+%.o:%.cpp $(EXTRA_CPP_DEPENDS)
+	$(CC) $(CCFLAGS) $(SHFLAGS) $(EXTRA_INC) -c $<
+
+%.d:%.cpp $(EXTRA_CPP_DEPENDS)
+	$(CC) $(CCFLAGS) $(EXTRA_INC) $(DEPFLAGS) $< > $@
+
+%.o:%.cu $(EXTRA_CPP_DEPENDS)
 	$(CC) $(CCFLAGS) $(SHFLAGS) $(EXTRA_INC) -c $<
 
 # Individual dependencies
