@@ -85,12 +85,12 @@ Comm::Comm(LAMMPS *lmp) : Pointers(lmp)
   if (lmp->kokkos) {
     nthreads = lmp->kokkos->num_threads * lmp->kokkos->numa;
   } else if (getenv("OMP_NUM_THREADS") == NULL) {
-    nthreads = 1;
+    nthreads = omp_get_num_procs();
     if (me == 0)
       error->message(FLERR,"OMP_NUM_THREADS environment is not set. "
                            "Defaulting to 1 thread.");
   } else {
-    nthreads = omp_get_max_threads();
+    nthreads = omp_get_num_procs();
   }
 
   // enforce consistent number of threads across all MPI tasks
